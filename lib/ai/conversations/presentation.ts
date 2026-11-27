@@ -1,7 +1,8 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
+import {adaptDisplayValue} from "./displayPropCompatibility";
 import {nativeSpecSchema,nativeFunctions,readNativeSnapshot,recoverNativeDisplaySpec,safeNativeJSON} from "./nativePresentation";
-import {resolveElementProps,splitRepeatVisibility,evaluateVisibility,getByPath,resolveRepeatStatePath,resolveRepeatItemStatePath,type PropResolutionContext} from "@json-render/core";
+import {resolveElementProps,splitRepeatVisibility,evaluateVisibility,getByPath,resolveRepeatStatePath,resolveRepeatItemStatePath,type PropResolutionContext,type Spec} from "@json-render/core";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
@@ -205,19 +206,47 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
  if(!raw||typeof raw!=="object"||Array.isArray(raw))return;
  const r=raw as Record<string,unknown>;
  if(r.type!=="rich_presentation"||r.version!==1)return;
- const valid=<T>(schema:z.ZodType<T>,value:unknown):T|undefined=>{const v=schema.safeParse(value);return v.success?v.data:undefined;};
+ const valid=<T>(schema:z.ZodType<T>,value:unknown):T|undefined=>{const v=schema.safeParse(adaptDisplayValue(schema,value));return v.success?v.data:undefined;};
  const list=<T>(schema:z.ZodType<T>,value:unknown):T[]=>Array.isArray(value)?value.flatMap(v=>{const p=valid(schema,v);return p===undefined?[]:[p];}):[];
- const native=valid(nativeSpecSchema,r.nativeSpec)??recoverNativeDisplaySpec(r.nativeSpec);
+ // Retain a leaf whose real renderer cannot consume it, even when valid
+ // siblings exist. The fallback is inert; it cannot acquire actions.
+ const unresolved:unknown[]=[];
+ const leaf=<T>(schema:z.ZodType<T>,value:unknown):T|undefined=>{
+  if(value===undefined)return undefined;
+  const result=valid(schema,value);
+  if(result===undefined)unresolved.push(value);
+  return result;
+ };
+ const leaves=<T>(schema:z.ZodType<T>,value:unknown):T[]=>Array.isArray(value)?value.flatMap(v=>{const p=leaf(schema,v);return p===undefined?[]:[p];}):value===undefined?[]:(unresolved.push(value),[]);
+ const panels=leaves(presentationPanelSchema,r.panels),tables=leaves(recordTableSchema,r.tables);
+ const agenda=leaf(agendaSchema,r.agenda),scenario=leaf(scenarioComparisonSchema,r.scenario),calculator=leaf(interactiveCalcSchema,r.calculator);
+ let native=valid(nativeSpecSchema,r.nativeSpec)??recoverNativeDisplaySpec(r.nativeSpec);
+ if(r.nativeSpec!==undefined&&!native)unresolved.push(r.nativeSpec);
+ if(unresolved.length){
+  const elements:Spec["elements"]={...native?.elements};
+  const keyFor=(base:string)=>{let key=base;while(Object.hasOwn(elements,key))key+="_";return key;};
+  const children=native?[native.root]:[];
+  for(const value of unresolved){
+   const key=keyFor("authored");
+   // Never evaluate invalid expressions or unsafe paths in fallback content.
+   const data=safeNativeJSON(value)?value:JSON.stringify(value)??String(value);
+   elements[key]={type:"LunaFallback",props:{widget:"Authored content",values:data},children:[]};
+   children.push(key);
+  }
+  const root=keyFor("recovered");
+  elements[root]={type:"Stack",props:{},children};
+  native={root,elements,...(native?.state?{state:native.state}:{})};
+ }
  const repaired=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout:r.layout==="grid"?"grid":"stack",
-  panels:list(presentationPanelSchema,r.panels),tables:list(recordTableSchema,r.tables),
+  panels,tables,
   suggestions:list(z.string().trim().min(1),r.suggestions),
   ...(r.report===true?{report:true}:{}),
   ...(native?{nativeSpec:native}:{}),
   ...(valid(richPresentationBaseSchema.shape.pdfSpec,r.pdfSpec)?{pdfSpec:r.pdfSpec}:{}),
   ...(valid(richPresentationBaseSchema.shape.files,r.files)?{files:r.files}:{}),
-  ...(valid(agendaSchema,r.agenda)?{agenda:r.agenda}:{}),
-  ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
-  ...(valid(interactiveCalcSchema,r.calculator)?{calculator:r.calculator}:{})});
+  ...(agenda?{agenda}:{}),
+  ...(scenario?{scenario}:{}),
+  ...(calculator?{calculator}:{})});
  return repaired.success?repaired.data:undefined;
 }
 

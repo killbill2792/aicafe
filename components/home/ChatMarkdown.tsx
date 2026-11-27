@@ -6,7 +6,7 @@ import { useEffect, useReducer, useRef, useState, type ReactNode, type Ref } fro
 import {Streamdown,defaultRehypePlugins,type Components,type ExtraProps} from "streamdown";
 import type {Root,Element,Text} from "hast";
 import {decodeString} from "micromark-util-decode-string";
-import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
+import {useAdaptiveTable,wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import { createPortal } from "react-dom";
 
 type Verification = { start:number;end:number;source?:"owner"|"estimate"|"unchecked";detail?:string };
@@ -196,10 +196,10 @@ function sourceAnnotationPlugin(options:MarkOptions){
   // header text. Attach display labels to those nodes, not a second table.
   const elements=(n:Element,tag:string)=>n.children.filter((c):c is Element=>c.type==="element"&&c.tagName===tag);
   const plain=(n:Element):string=>n.children.map(c=>c.type==="text"?c.value:c.type==="element"?plain(c):"").join("");
-  const labelWideTable=(table:Element)=>{
+  const labelTable=(table:Element)=>{
    const head=elements(table,"thead")[0],row=head&&elements(head,"tr")[0];
    const labels=row?elements(row,"th").map(plain):[];
-   if(labels.length<=4)return;
+   if(!labels.length)return;
    for(const body of elements(table,"tbody"))for(const tr of elements(body,"tr")){
     elements(tr,"td").forEach((td,i)=>{td.properties.dataCafeColumn=labels[i]??"";});
    }
@@ -208,7 +208,7 @@ function sourceAnnotationPlugin(options:MarkOptions){
    for(let i=0;i<parent.children.length;i++){
     const node=parent.children[i];
     if(node.type==="element"){
-     if(node.tagName==="table")labelWideTable(node);
+     if(node.tagName==="table")labelTable(node);
      // Preserve explicit numbering for numbered owner instructions, including
      // a non-one start, using the parser's list-item source position.
      if(ordered&&node.tagName==="li"){
@@ -244,15 +244,11 @@ function sourceAnnotationPlugin(options:MarkOptions){
 const headingClass="mt-4 mb-1 font-semibold leading-snug text-balance wrap-break-word text-ink";
 const cellClass="border-b border-line px-1.5 sm:px-3 py-2 align-top whitespace-normal wrap-anywhere";
 const alignment=(value:unknown)=>value==="right"||value==="end"?"text-end":value==="center"?"text-center":"text-start";
-function ResponseTable({children,node}:React.ComponentProps<"table">&ExtraProps){
- const head=node?.children.find((child):child is Element=>child.type==="element"&&child.tagName==="thead");
- const row=head?.children.find((child):child is Element=>child.type==="element"&&child.tagName==="tr");
- const columns=row?.children.filter((child):child is Element=>child.type==="element"&&child.tagName==="th")??[];
- const wide=columns.length>4;
- return <div role="region" aria-label="Response table" tabIndex={0} className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
-  <table role="table" className={"w-full table-fixed border-collapse text-[0.9375rem] sm:text-[1.0625rem] "+(wide?wideResponseTableClass:"")}>
+function ResponseTable({children}:React.ComponentProps<"table">&ExtraProps){
+ const ref=useAdaptiveTable();
+ return <div ref={ref} role="region" aria-label="Response table" tabIndex={0} className="luna-table-region min-w-0 max-w-full overflow-x-auto rounded-lg border border-line focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
+  <table role="table" className={"w-full table-auto border-collapse text-[0.9375rem] sm:text-[1.0625rem] "+wideResponseTableClass}>
    <caption className="sr-only">Response table</caption>
-   <colgroup>{columns.map((c,i)=><col key={i} style={columns.length<=3&&c.properties.align==="right"?{width:"35%"}:undefined}/>)}</colgroup>
    {children}
   </table>
  </div>;

@@ -257,6 +257,7 @@ function AnswerFeedback({message,copy}:{message:ConversationMessage;copy:Supervi
         <ThumbsDown size={18} aria-hidden="true"/><span>{copy.feedbackDown}</span>
       </button>
       {rating&&<span role="status">{copy.feedbackSaved}</span>}
+      {(message.blocks??[]).some(block=>block!==null&&typeof block==="object"&&"type" in block&&(block.type==="text"||block.type==="rich_presentation"))&&!(message.blocks??[]).some(block=>recoverRichPresentation(block)?.report)&&<a href={"/api/ai/threads/"+encodeURIComponent(message.threadId)+"/messages/"+encodeURIComponent(message.id)+"/report"} download className="inline-flex min-h-12 items-center gap-1.5 rounded-lg px-2 text-sm hover:text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={18} aria-hidden="true"/>{en.SupervisorPresentation.exportSavedAnswerPdf}</a>}
     </div>
     {rating==="down"&&<textarea aria-label={copy.feedbackDown} value={comment} onChange={e=>setComment(e.target.value)}
       maxLength={1000} rows={2} className="mt-2 min-h-12 w-full rounded-lg border border-line p-3 text-[1.0625rem]"/>}

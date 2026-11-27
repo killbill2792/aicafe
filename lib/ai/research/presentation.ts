@@ -370,7 +370,7 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
  if(native&&ctx&&typeof spec.root==="string"&&!Object.values(spec.elements).some(e=>obj(e)&&e.type==="LunaSnapshot")){
   const elements=Object.fromEntries(Object.entries(spec.elements).map(([key,e])=>{
    if(!obj(e))return [key,e];
-   if(e.type==="LunaChart"&&obj(e.props))return [key,{...e,props:{...e.props,asOf:ctx.asOf}}];
+   if(e.type==="LunaChart"&&obj(e.props))return [key,{...e,props:{...e.props,asOf:e.props.asOf??ctx.asOf,...(e.props.currency===undefined?{currency:["cents","cents/hour"].includes(String(e.props.unit))?ctx.currency??null:null}:{})}}];
    if(e.type!=="DataView")return [key,e];
    const snapshot=resolveResearchView(e.props,queries,ctx,onDeliveryLoss);
    return [key,{type:"LunaSnapshot",props:{snapshotJSON:JSON.stringify(snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]})},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];

@@ -4593,6 +4593,7 @@
     "scenarioNotice": "Only previously calculated alternatives are shown. Ask Supervisor to recalculate a different assumption.",
     "downloadReport": "Download saved answer report",
     "downloadPdf": "Download PDF",
+    "exportSavedAnswerPdf": "Export saved answer as PDF",
     "reportPreparing": "Report available when this answer is saved.",
     "notRecorded": "Not recorded",
     "unitUnknown": "Stored value; unit not specified",

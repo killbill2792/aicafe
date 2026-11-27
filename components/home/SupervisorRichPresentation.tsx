@@ -1,9 +1,10 @@
 "use client";
-import {createContext,useContext,useId,useMemo,useState} from "react";
+import {createContext,useContext,useId,useMemo,useState,useLayoutEffect,useRef,type CSSProperties,type ReactNode} from "react";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
-import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
+import {adaptDisplayValue} from "@/lib/ai/conversations/displayPropCompatibility";
+import {useAdaptiveTable,wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import {JSONUIProvider,Renderer,defineRegistry,type ComponentRegistry} from "@json-render/react";
 import {defineCatalog} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
@@ -44,13 +45,16 @@ export function presentationSpec(p:RichPresentation):Spec{
  }
  return {root:"root",elements};
 }
-function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
- const evidenceId=useId(),coverageId=useId();
- const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
-  {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
- const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(["cents","cents/hour"].includes(panel.unit)&&!panel.currency?" (currency not set)":"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
+type DisplayPanel=Omit<PresentationPanel,"from"|"to"|"asOf">&Partial<Pick<PresentationPanel,"from"|"to"|"asOf">>;
+function Panel({panel,locale}:{panel:DisplayPanel;locale:string}){
+ const evidenceId=useId(),coverageId=useId(),tableRef=useAdaptiveTable();
+ const money=["cents","cents/hour"].includes(panel.unit);
+ const currency=money&&panel.currency&&/^[A-Za-z]{3}$/.test(panel.currency)?panel.currency:null;
+ const formatter=new Intl.NumberFormat(locale,currency?
+  {style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
+ const format=(v:number)=>formatter.format(money?v/100:v)+(money&&!currency?" "+(panel.currency??"(currency not set)"):"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
- const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
+ const table=<div ref={tableRef} role="region" aria-label={panel.title} tabIndex={0} className="luna-table-region overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
     <tbody>{panel.points.map((p,i)=><tr key={i} className="border-b border-line"><th scope="row" className="wrap-break-word py-2 pe-3 text-start font-normal">{p.label}</th><td className="py-2 text-end">{format(p.value)}</td></tr>)}</tbody>
    </table></div>;
@@ -64,7 +68,7 @@ function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
  </figure>;
 }
 function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:string}){
- const evidenceId=useId();
+ const evidenceId=useId(),tableRef=useAdaptiveTable();
  const first=panels[0],scalar=panels.every(p=>p.points.length===1);
  const series:ComparisonSeries[]=panels.map((p,i)=>({id:"s"+i,label:(i+1)+". "+p.title+" · "+p.from+" – "+p.to,points:p.points.map(v=>({label:scalar?"—":v.label,value:v.value}))}));
  const labels=[...new Set(series.flatMap(s=>s.points.map(v=>v.label)))];
@@ -75,7 +79,7 @@ function ComparisonView({panels,locale}:{panels:PresentationPanel[];locale:strin
  return <figure data-testid="supervisor-comparison" className="min-w-0 space-y-2 py-2">
   <PresentationBoundary><ComparisonChart series={series} labels={labels} line={line} format={format}/></PresentationBoundary>
   <div className="flex flex-wrap gap-3 text-[0.8125rem] text-ink-muted">{series.map(s=><span key={s.id}>{s.label}</span>)}</div>
-  <div role="region" className="overflow-x-auto focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink" tabIndex={0} aria-label={copy.comparisonValues}>
+  <div ref={tableRef} role="region" className="luna-table-region overflow-x-auto focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink" tabIndex={0} aria-label={copy.comparisonValues}>
    <table aria-describedby={evidenceId} className="w-full text-[0.9375rem] tabular-nums"><caption className="sr-only">{copy.comparisonValues}</caption><thead><tr><th scope="col" className="py-2 text-start">{first.currency??first.measurement??first.unit}</th>{series.map(s=><th key={s.id} scope="col" className="px-2 text-end">{s.label}</th>)}</tr></thead>
     <tbody>{labels.map(label=><tr key={label}><th scope="row" className="py-2 text-start">{label}</th>{series.map(s=>{const v=s.points.find(p=>p.label===label);return <td key={s.id} className="px-2 text-end">{v?format(v.value):copy.notRecorded}</td>})}</tr>)}</tbody></table>
   </div>
@@ -125,7 +129,7 @@ function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
  </section>;
 }
 function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
- const evidenceId=useId(),scopeId=useId(),wide=table.columns.length>4;
+ const evidenceId=useId(),scopeId=useId(),tableRef=useAdaptiveTable();
  const fmt=(value:RecordTable["rows"][number][number],u:RecordTable["columns"][number]["unit"])=>{
   if(value===null)return copy.notRecorded;
   if(typeof value!=="number")return String(value);
@@ -137,15 +141,15 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
   {table.view!=="tool_response_evidence"&&<p id={evidenceId} className="wrap-break-word text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>}
   <p id={scopeId} className="wrap-break-word text-[0.8125rem] text-ink-muted">{table.scope}</p>
-  <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
-   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
+  <div ref={tableRef} role="region" tabIndex={0} aria-label={table.title} className="luna-table-region max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
+   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-auto text-[0.9375rem] tabular-nums "+wideResponseTableClass}><caption className="sr-only">{table.title}</caption>
     <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-bottom font-medium wrap-anywhere">{c.label}<span className="block text-[0.8125rem] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
     <tbody role="rowgroup">{table.rows.map((row,i)=><tr role="row" key={i}>{row.map((v,j)=>{
      const rowHeader=j===0&&["label","local date"].includes(table.columns[j].unit);
      const Tag=rowHeader?"th":"td";
-     const cls="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top wrap-break-word wrap-anywhere"+(rowHeader?" font-normal":"")+(wide?" "+wideResponseCellClass:"");
+     const cls="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top wrap-break-word wrap-anywhere"+(rowHeader?" font-normal":"")+" "+wideResponseCellClass;
      const value=fmt(v,table.columns[j].unit);
-     return <Tag key={j} role={rowHeader?"rowheader":"cell"} scope={rowHeader?"row":undefined} className={cls}>{wide?<><span aria-hidden="true" className={wideResponseLabelClass}>{table.columns[j].label}</span><span className="min-w-0 wrap-anywhere">{value}</span></>:value}</Tag>;
+     return <Tag key={j} role={rowHeader?"rowheader":"cell"} scope={rowHeader?"row":undefined} className={cls}><span aria-hidden="true" className={wideResponseLabelClass}>{table.columns[j].label}</span><span className="min-w-0 wrap-anywhere">{value}</span></Tag>;
     })}</tr>)}</tbody>
    </table>
   </div>
@@ -232,6 +236,7 @@ const nativeCatalog=defineCatalog(schema,{components:{...upstreamComponents,Luna
  * Render inert text, not active HTML, network URLs or widget actions. */
 function AuthoredValues({value}:{value:unknown}){
  const display=(v:unknown):string=>typeof v==="string"?v:v==null?"Not recorded":JSON.stringify(v,null,2)??String(v);
+ const humanize=(key:string)=>key.replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/[_-]+/g," ").replace(/^./u,c=>c.toUpperCase());
  if(value&&typeof value==="object"&&!Array.isArray(value)){
   const data=value as Record<string,unknown>;
   const rawRows=Array.isArray(data.rows)?data.rows:Array.isArray(data.points)?data.points:undefined;
@@ -239,9 +244,9 @@ function AuthoredValues({value}:{value:unknown}){
    const {columns,rows}=normalizeTableData(data.columns,rawRows);
    const width=columns.length;
    const rest=Object.fromEntries(Object.entries(data).filter(([k])=>!["rows","points","columns"].includes(k)));
-   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{columns[i]??"Value "+(i+1)}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></div></div>;
+   return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><NativeAdaptiveTable><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{columns[i]??"Value "+(i+1)}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></NativeAdaptiveTable></div>;
   }
-  return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{key}</dt><dd className="whitespace-pre-wrap wrap-break-word">{display(v)}</dd></div>)}</dl>;
+  return <dl className="min-w-0 space-y-2">{Object.entries(value).map(([key,v])=><div key={key} className="min-w-0"><dt className="text-sm font-medium text-ink-muted">{humanize(key)}</dt><dd className="whitespace-pre-wrap wrap-break-word">{v!==null&&typeof v==="object"?<AuthoredValues value={v}/>:display(v)}</dd></div>)}</dl>;
  }
  return <p className="whitespace-pre-wrap wrap-break-word">{display(value)}</p>;
 }
@@ -263,6 +268,29 @@ function NamedNativeControl({label,role,children}:{label:string;role:string;chil
   if(control&&!control.hasAttribute("aria-labelledby"))control.setAttribute("aria-label",label);
  }}>{children}</div>;
 }
+/** Use the upstream Grid for its authored styles and gap, but let the
+ * browser's intrinsic flex layout determine how many tracks fit. No device
+ * breakpoints, maximum column count, or prescribed minimum card width. */
+function AdaptiveGrid({columns,children}:{columns:unknown;children:ReactNode}){
+ const ref=useRef<HTMLDivElement>(null);
+ const preferred=typeof columns==="number"&&Number.isFinite(columns)&&columns>=1?Math.floor(columns):undefined;
+ useLayoutEffect(()=>{
+  const container=ref.current,grid=container?.firstElementChild;
+  if(!container||!grid)return;
+  const sync=()=>{
+   const gap=getComputedStyle(grid).columnGap;
+   const value=gap==="normal"?"0px":gap;
+   if(container.style.getPropertyValue("--luna-gap")!==value)container.style.setProperty("--luna-gap",value);
+  };
+  sync();const observer=new ResizeObserver(sync);observer.observe(grid);return()=>observer.disconnect();
+ });
+ const style=preferred?{"--luna-track":"max(0px, calc((100% - ("+preferred+" - 1) * var(--luna-gap, 0px)) / "+preferred+"))"} as CSSProperties:undefined;
+ return <div ref={ref} data-testid="luna-adaptive-grid" className="luna-adaptive-flow min-w-0" style={style}>{children}</div>;
+}
+function NativeAdaptiveTable({children}:{children:ReactNode}){
+ const ref=useAdaptiveTable();
+ return <div ref={ref} className="luna-table-region luna-responsive-table min-w-0 max-w-full overflow-x-auto">{children}</div>;
+}
 function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  // A polling parent may reconstruct an equal message object. The keyed
  // widget survives that refresh without resetting edits or keyboard focus.
@@ -270,13 +298,20 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  const registry=useMemo(()=>{
   const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
    LunaChart:({props})=>{
-    const p=nativeChartProps.safeParse(props);if(!p.success)return <AuthoredValues value={props}/>;
+    const p=nativeChartProps.safeParse(adaptDisplayValue(nativeChartProps,props));
+    if(!p.success)return <AuthoredValues value={props}/>;
     const {description,measurement,asOf,...values}=p.data;
-    if(!asOf)return <AuthoredValues value={props}/>;
-    const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
-    if(panel.success)return <Panel panel={panel.data} locale={locale}/>;
-    const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});
-    return table.success?<RecordTableView table={table.data} locale={locale}/>:<AuthoredValues value={props}/>;
+    const points=values.points.flatMap(point=>point.value===null?[]:[{...point,value:point.value}]);
+    // A date or a provenance contract is not required for an authored chart.
+    // Unknown values remain visible instead of being plotted as zero.
+    if(points.length===values.points.length)return <Panel panel={{...values,points,source:"response_evidence",...(asOf?{asOf}:{}),...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})}} locale={locale}/>;
+    const format=(value:number|null)=>{
+     if(value===null)return copy.notRecorded;
+     const monetary=values.unit==="cents"||values.unit==="cents/hour";
+     try{return new Intl.NumberFormat(locale,monetary&&values.currency?{style:"currency",currency:values.currency}:{maximumFractionDigits:20}).format(monetary?value/100:value)+(values.unit==="cents/hour"?" / h":"");}
+     catch{return [String(monetary?value/100:value),values.currency].filter(Boolean).join(" ");}
+    };
+    return <figure className="min-w-0 space-y-2"><figcaption className="font-medium">{values.title}</figcaption>{description&&<p className="text-sm text-ink-muted">{description}</p>}<div className="overflow-x-auto"><table className="w-full table-auto text-sm"><thead><tr><th scope="col" className="text-start">{copy.categoryLabel}</th><th scope="col" className="text-end">{measurement??values.unit}</th></tr></thead><tbody>{values.points.map((point,i)=><tr key={i}><th scope="row" className="text-start font-normal">{point.label}</th><td className="text-end">{format(point.value)}</td></tr>)}</tbody></table></div></figure>;
    },
    LunaSnapshot:({props})=><NativeSnapshot value={props.snapshotJSON} locale={locale}/>,
    LunaFallback:({props,children})=><div className="min-w-0 space-y-2"><AuthoredValues value={props.values}/>{children}</div>,
@@ -290,12 +325,14 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
     const component=<PresentationBoundary fallback={<div className="min-w-0"><AuthoredValues value={input.element.props}/>{input.children}</div>}><Component {...input} element={{...input.element,props:parsed.data}}/></PresentationBoundary>;
     const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
     const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
+    if(name==="Grid")return <AdaptiveGrid columns={"columns" in parsed.data?parsed.data.columns:undefined}>{component}</AdaptiveGrid>;
+    if(name==="Table")return <NativeAdaptiveTable>{component}</NativeAdaptiveTable>;
     return role?<NamedNativeControl role={role} label={label}>{component}</NamedNativeControl>:component;
    };
   }
   return registry;
  },[locale]);
- return <div className="min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{children}</div>}/></JSONUIProvider></div>;
+ return <div className="luna-native-widget min-w-0 max-w-full" data-testid="luna-native-widget"><JSONUIProvider registry={registry} store={store} functions={nativeFunctions}><Renderer spec={spec} registry={registry} fallback={({children})=><div className="min-w-0"><p role="status">This part of the answer could not be displayed.</p>{children}</div>}/></JSONUIProvider></div>;
 }
 export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{},disabled,message,attachments}:{block:unknown;locale:string;onSuggest?:(text:string)=>void;disabled:boolean;message?:Parameters<typeof presentationReport>[1]&{threadId:string;id:string};attachments?:{threadId:string;items:StoredAttachment[]}|null}){
  const data=useMemo(()=>recoverRichPresentation(block),[block]);
@@ -305,7 +342,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{
    if(element.props.layout==="details"&&title)return <details data-supervisor-layout="details" className="min-w-0 space-y-2"><summary className="min-h-12 cursor-pointer wrap-break-word py-3 text-[1.0625rem] font-medium text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{title}</summary>{children}</details>;
    return <div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className="min-w-0 space-y-2">
     {title&&<h3 className="wrap-break-word text-[1.0625rem] font-medium text-ink">{title}</h3>}
-    <div className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>
+    <div className={element.props.layout==="grid"?"luna-adaptive-flow-content min-w-0 gap-3":"min-w-0 space-y-3"}>{children}</div>
    </div>;
   },
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},

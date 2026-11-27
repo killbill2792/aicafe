@@ -3,16 +3,17 @@ import { schema } from "@json-render/react/schema";
 import { shadcnComponentDefinitions } from "@json-render/shadcn/catalog";
 import { z } from "zod";
 import {normalizeTableData} from "./tableFormatting";
+import {adaptDisplayProperties} from "./displayPropCompatibility";
 import { CALC_OPS,exactDecimal,runCalculation,type CalcUnit } from "@/lib/metrics/core/calculator";
 
 /** Import the complete installed public web catalog; never maintain a copied
  * inventory. The same upstream definitions generate model instructions and
  * describe the registry on the client. Our domain components are additions. */
-export const upstreamComponents=shadcnComponentDefinitions;
+export const upstreamComponents={...shadcnComponentDefinitions,Grid:{...shadcnComponentDefinitions.Grid,description:"Adaptive grid. Columns is a preferred count, not a fixed or maximum count; omit it for content-driven wrapping. The renderer fits the authored content to available space."}};
 export const nativeChartProps=z.object({
  kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  title:z.string(),unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),
- currency:z.string().nullable(),measurement:z.string().optional(),description:z.string().optional(),asOf:z.iso.date().optional(),
+ currency:z.string().nullable().default(null),measurement:z.string().optional(),description:z.string().optional(),asOf:z.iso.date().optional(),
  points:z.array(z.object({label:z.string(),value:z.number().finite().nullable()})).min(1),
 });
 export const nativeChartDefinition={props:nativeChartProps,slots:[],description:"Luna financial charts and metrics. Use local state bindings or calculated values in points; monetary values are in minor units."};
@@ -210,19 +211,8 @@ export function parseUpstreamProps(name:string,props:Record<string,unknown>){
   values.columns=table.columns;
   values.rows=table.rows.map(row=>row.map(value=>value===null?"Not recorded":String(value)));
  }
- const shape=definition.props.shape as Record<string,z.ZodType>;
- for(const [key,field] of Object.entries(shape)){
-  if(!Object.hasOwn(values,key)){if(field.safeParse(null).success)values[key]=null;continue;}
-  const raw=values[key];if(field.safeParse(raw).success)continue;
-  // Adapt harmless display types using the installed schema, not a copied
-  // per-widget vocabulary. Do not fabricate values or execute new actions.
-  const candidates=typeof raw==="number"||typeof raw==="boolean"?[String(raw)]:typeof raw==="string"&&raw.trim()?[
-   ...(/^[+-]?(?:\d+\.?\d*|\.\d+)$/u.test(raw)&&Number.isFinite(Number(raw))?[Number(raw)]:[]),
-   ...(raw==="true"||raw==="false"?[raw==="true"]:[])
-  ]:[];
-  for(const candidate of candidates)if(field.safeParse(candidate).success){values[key]=candidate;break;}
- }
- return definition.props.safeParse(values);
+ const adapted=adaptDisplayProperties(definition.props,values);
+ return definition.props.safeParse(adapted);
 }
 const calcInput=z.object({name:z.string(),unit:z.enum(["cents","count","percent","ratio"]),value:z.union([z.string(),z.number().finite()])});
 const calcArgs=z.object({inputs:z.array(calcInput),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS),args:z.array(z.string())})),format:z.enum(["number","currency","percent"]).optional(),currency:z.string().optional()});
