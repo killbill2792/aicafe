@@ -1,5 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {retainProviderPayload} from "@/lib/externalData/retainPayload";
 import {createHash} from "node:crypto";
 import {z} from "zod";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
@@ -178,12 +179,13 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
       row.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase()||
       row.businessDate!==businessDate.replaceAll("-",""))
     throw new ToastApiError("invalid_response");
-   const raw=JSON.stringify(row);
+   const payload=retainProviderPayload(row);
+   const raw=JSON.stringify(payload);
    const hash=createHash("sha256").update(raw).digest("hex");
    const {error:archiveError}=await db.from("toast_raw_records").upsert({
     business_id:businessId,restaurant_guid:restaurantGuid,entity:"analytics_report",
     entity_guid:reportRequestGuid,business_date:businessDate,
-    payload:row,payload_sha256:hash,
+    payload,payload_sha256:hash,
     capture_key:"era:"+reportRequestGuid+":"+restaurantGuid+":"+businessDate+":"+hash
    },{onConflict:"business_id,capture_key",ignoreDuplicates:true});
    if(archiveError)throw new ToastApiError("unavailable");
