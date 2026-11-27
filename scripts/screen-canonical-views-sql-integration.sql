@@ -4,6 +4,7 @@ BEGIN;
 SELECT gen_random_uuid() AS a,gen_random_uuid() AS b,
  gen_random_uuid() AS oa,gen_random_uuid() AS ob,
  gen_random_uuid() AS bill,gen_random_uuid() AS item,
+ gen_random_uuid() AS loc_a,gen_random_uuid() AS loc_b,
  gen_random_uuid() AS order_a,gen_random_uuid() AS order_b \gset
 INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
 VALUES(:'oa','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
@@ -14,6 +15,14 @@ INSERT INTO public.businesses(id,name,is_demo,timezone,currency)
 VALUES(:'a','Disposable Screen A',false,'UTC','CAD'),(:'b','Disposable Screen B',false,'UTC','CAD');
 INSERT INTO public.memberships(business_id,user_id,role)
 VALUES(:'a',:'oa','owner'),(:'b',:'ob','owner');
+INSERT INTO public.locations(id,business_id,name)
+VALUES(:'loc_a',:'a','Fixture A'),(:'loc_b',:'b','Fixture B');
+INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,
+ external_employee_id,scheduled_start,scheduled_end,deleted)
+VALUES (:'a',:'loc_a','toast','shared-id','toast-employee',current_date-1+time '08:00',current_date-1+time '10:00',false),
+ (:'a',:'loc_a','square','shared-id','square-employee',current_date-1+time '11:00',current_date-1+time '14:00',false),
+ (:'a',:'loc_a','square','removed','square-employee',current_date-1+time '15:00',current_date-1+time '16:00',true),
+ (:'b',:'loc_b','square','shared-id','foreign-employee',current_date-1+time '08:00',current_date-1+time '10:00',false);
 INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,
  staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status,card_fees_status,labor_wage_status)
 VALUES(:'a',current_date-1,1200,2,3,250,NULL,NULL,30,0,'actual','actual','missing'),
@@ -106,6 +115,10 @@ SELECT (
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_orders WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_staff_clock_entries WHERE business_id=:'b')=0
+ AND (SELECT array_agg(source_ref order by source_ref)=array['square-shift:shared-id','toast-shift:shared-id']
+   AND bool_and(data->>'provider'=source AND data->'paid'='false'::jsonb)
+ FROM public.cv_shifts WHERE business_id=:'a' AND business_date=current_date-1)
+ AND (SELECT count(*) FROM public.cv_shifts WHERE business_id=:'b')=0
  AND (SELECT wages_cents=3500 AND loaded_cost_cents=3920 AND day_loaded_cost_cents=3920
  FROM public.cv_staff_clock_entries WHERE business_id=:'a' AND business_date=current_date-1)
  AND (SELECT wages_cents IS NULL AND day_loaded_cost_cents IS NULL

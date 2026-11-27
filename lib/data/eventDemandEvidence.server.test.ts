@@ -106,6 +106,16 @@ describe("LDI D — authorized composite reader / PR F contract",()=>{
     expect(partial.readiness?.staffing.coverage).toBe("unknown");
     expect(partial.readiness?.inventory.items[0].quantity).toBe(12);
   });
+  it("keeps Square and Toast shift evidence separately attributed for event readiness",async()=>{
+    reads.shifts.mockResolvedValueOnce({rows:["square","toast"].map(source=>({source,
+      business_date:request.eventDate,data:{employee_id:"private-id",paid:false,
+        scheduled_start:"2026-11-02T08:00:00Z",scheduled_end:"2026-11-02T14:00:00Z"}})),truncated:false});
+    const result=await readEventDemandEvidence(fakeDb().db,ownerA,request);
+    expect(result.readiness?.staffing).toMatchObject({coverage:"recorded",shifts:[
+      {source:"square",status:"scheduled"},{source:"toast",status:"scheduled"},
+    ]});
+    expect(JSON.stringify(result.readiness?.staffing)).not.toContain("private-id");
+  });
   it("downgrades missing source reads instead of converting unknown to zero",async()=>{
     reads.daily.mockRejectedValueOnce(new Error("Toast unavailable"));
     reads.facts.mockRejectedValueOnce(new Error("Owner facts unavailable"));

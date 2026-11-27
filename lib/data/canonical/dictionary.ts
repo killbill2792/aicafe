@@ -551,7 +551,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_shifts": {
-    "meaning": "Published application shifts",
+    "meaning": "Application shifts and provider-planned shifts",
     "columns": {
       "business_id": {
         "meaning": "Authenticated café UUID; never query other cafés.",
@@ -560,7 +560,7 @@ export const canonicalDictionary = {
         "example": "What data does my café have?"
       },
       "source": {
-        "meaning": "Data origin: Toast, owner, or application.",
+        "meaning": "Application, Toast, or Square.",
         "unit": "label",
         "source": "app",
         "example": "Where did this number come from?"
@@ -584,7 +584,7 @@ export const canonicalDictionary = {
         "example": "What happened last week?"
       },
       "data": {
-        "meaning": "Restricted, non-sensitive attributes relevant to this canonical entity.",
+        "meaning": "Shift timing and scheduling details. Provider rows are planned and have paid=false.",
         "unit": "JSON",
         "source": "app",
         "example": "Show the source detail."

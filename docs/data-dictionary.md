@@ -147,16 +147,16 @@ Employee roster
 
 ## cv_shifts
 
-Published application shifts
+Application shifts and provider-planned shifts
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
-| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
+| source | Application, Toast, or Square. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
-| data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
+| data | Shift timing and scheduling details. Provider rows are planned and have paid=false. | JSON | app | Show the source detail. |
 
 ## cv_menu
 
