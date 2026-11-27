@@ -21,7 +21,7 @@ export default function AITeamCard({ team, copy, selectedAgent, selectedStatus, 
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
         event.preventDefault();
         onSelect(member.agentId);
-      } : undefined} className={`group relative flex w-[76vw] min-w-[250px] max-w-[290px] shrink-0 snap-center flex-col pt-1 text-ink no-underline transition-transform duration-200 hover:-translate-y-1 focus-visible:-translate-y-1 focus-visible:rounded-3xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink motion-reduce:transform-none motion-reduce:transition-none md:w-auto md:min-w-0 ${selected ? "-translate-y-1" : ""}`}>
+      } : undefined} className={`group relative flex w-[76vw] min-w-[250px] max-w-[290px] shrink-0 snap-center flex-col pt-1 text-ink no-underline transition-transform duration-200 hover:-translate-y-1 focus-visible:-translate-y-1 focus-visible:rounded-3xl focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink motion-reduce:transform-none motion-reduce:transition-none md:w-auto md:min-w-0 ${selected ? "-translate-y-1" : ""}`}>
         <AgentAvatar agentId={member.agentId} selected={selected} />
         <span className={`relative z-20 -mt-5 flex min-h-[154px] flex-col rounded-[22px] px-4 pb-4 pt-7 transition-shadow duration-200 motion-reduce:transition-none ${selected ? `${visual.strongSurface} ${visual.glow} shadow-xl` : `${visual.softSurface} shadow-card group-hover:shadow-lg`}`}>
           {selected && <span className="absolute inset-x-3 -top-5 flex min-h-10 items-center justify-center gap-2 rounded-full bg-accent px-3 text-[1.0625rem] font-extrabold text-on-accent shadow-md"><Check aria-hidden="true" size={19} strokeWidth={3} />{copy.names[member.agentId]}</span>}
@@ -31,7 +31,7 @@ export default function AITeamCard({ team, copy, selectedAgent, selectedStatus, 
             <ChevronRight aria-hidden="true" size={20} className={`mt-2 shrink-0 ${visual.accent} rtl:rotate-180`} />
           </span>
           <span className="mt-3 block text-[1.0625rem] font-semibold leading-snug text-ink">{copy.status(member)}</span>
-          {need && <span className="mt-1 block break-words text-[1.0625rem] leading-snug text-ink" dir="auto">{need}</span>}
+          {need && <span className="mt-1 block wrap-break-word text-[1.0625rem] leading-snug text-ink" dir="auto">{need}</span>}
         </span>
       </Link>;
     })}</div>

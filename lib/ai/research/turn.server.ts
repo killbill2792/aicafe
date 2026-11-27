@@ -134,7 +134,7 @@ export async function runResearchTurn(args:{
   addText("context",args.cafeContext,"Café context");
   (args.history??[]).forEach((h,i)=>addText("history"+(i+1),h.content,h.role==="user"?"Earlier owner message; historical context":"Earlier Supervisor message"));
   (args.ownerEvidence??[]).forEach((e,i)=>addText("attachment"+(i+1),e,"Owner-provided attachment"));
-  const textRefs="Presentation text references: owner=current owner message and verified matched owner answers; context=admitted café context; historyN=Nth chronological message in the history below (starting at 1); attachmentN=Nth text evidence attachment below. These references do not imply current business verification.";
+  const textRefs="Presentation text references: owner=current owner message and matched owner answers; context=café context; historyN=Nth chronological message in the history below (starting at 1); attachmentN=Nth text attachment below. These references identify the corresponding information.";
   const input:unknown[]=[
     {role:"developer",content:args.cafeContext+"\n"+textRefs},
     ...(continuation?[{role:"developer",content:continuation}]:[]),
@@ -401,7 +401,7 @@ export async function runResearchTurn(args:{
           const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues,signal:controller.signal},fc.name,fc.arguments).finally(clear);
           if(controller.signal.aborted&&readOnly){if(args.checkpoint)await args.checkpoint.endTool({source:"sql_research",period:null,missing:["interrupted"]});endReason="timeout";break researchLoop;}
           await args.beforeAcceptResult?.();
-          const ref=result.ok===true?admit(fc.name==="run_sql"?"Returned SQL evidence; see answer for coverage":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
+          const ref=result.ok===true?admit(fc.name==="run_sql"?"SQL query result":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
             fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
             fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});

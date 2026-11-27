@@ -57,7 +57,7 @@ function RoutineDraft({block,threadId,disabled}:{block:unknown;threadId?:string;
   if(dismissed)return <p role="status" className="text-[0.875rem] text-ink-muted">{copy.dismissed}</p>;
   return <section data-routine-draft aria-label={d.title} className="glass min-w-0 max-w-lg rounded-3xl p-4">
     <p className="flex items-center gap-2 text-[0.875rem] text-ink-muted"><Clock3 size={16} className="shrink-0" aria-hidden="true"/>{copy.draftTitle}</p>
-    <p className="mt-1 break-words text-[1.0625rem] font-medium text-ink">{d.title}</p>
+    <p className="mt-1 wrap-break-word text-[1.0625rem] font-medium text-ink">{d.title}</p>
     <p className="text-[0.875rem] text-ink-muted">{when} · {d.localTime}</p>
     <div className="mt-3 flex flex-wrap gap-2">
       <button type="button" onClick={()=>void save()} disabled={busy||disabled||!threadId}
@@ -175,11 +175,11 @@ function SavedRoutine({block,onEdit,disabled=false}:{
       <span role="status" className="min-w-0 flex-1">{label}</span>
       {!isDeleted&&<details className="relative shrink-0">
         <summary aria-label={copy.actions+": "+current.title}
-          className="flex min-h-12 min-w-12 cursor-pointer list-none items-center justify-center rounded-full hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+          className="flex min-h-12 min-w-12 cursor-pointer list-none items-center justify-center rounded-full hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
           <Ellipsis size={20} aria-hidden="true"/>
         </summary>
         <div role="group" aria-label={copy.actions} className="absolute end-0 top-full z-10 mt-1 flex min-w-44 flex-col gap-1 rounded-xl border border-line bg-surface p-2 shadow-lg">
-          <p className="max-w-64 break-words px-2 text-[0.875rem] font-medium text-ink">{current.title}</p>
+          <p className="max-w-64 wrap-break-word px-2 text-[0.875rem] font-medium text-ink">{current.title}</p>
           <p className="px-2 text-[0.8125rem] text-ink-muted">{localDay} · {current.localTime} · {current.timezone}</p>
           <button type="button" disabled={busy||unavailable||!onEdit}
             onClick={()=>onEdit?.("Edit saved routine \""+current.title+"\" (routine ID "+current.routineId+", revision "+current.revision+"): ")}

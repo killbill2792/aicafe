@@ -78,7 +78,7 @@ export default function SignupForm() {
     );
   }
 
-  const inputClass = "h-14 w-full rounded-2xl border border-line bg-card px-4 text-base text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2";
+  const inputClass = "h-14 w-full rounded-2xl border border-line bg-card px-4 text-base text-ink focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2";
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-3">
       <label htmlFor="signup-name" className="text-sm font-semibold text-ink">{t("fullName")}</label>

@@ -61,7 +61,7 @@ export type ChatStartProps = {
 };
 
 function SafeAction({ item }: { item: ChatStartAttentionItem }) {
-  const className = "mt-auto inline-flex min-h-12 w-fit max-w-full items-center justify-center rounded-xl bg-accent-soft px-3 py-1.5 text-[0.9375rem] font-semibold text-accent-text no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+  const className = "mt-auto inline-flex min-h-12 w-fit max-w-full items-center justify-center rounded-xl bg-accent-soft px-3 py-1.5 text-[0.9375rem] font-semibold text-accent-text no-underline focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
   // The shared reader validates relative-only hrefs. OAuth setup needs an actual navigation.
   if (!item.href.startsWith("/") || item.href.startsWith("//")) return null;
   return item.href.startsWith("/api/pos/square/connect?")
@@ -71,9 +71,9 @@ function SafeAction({ item }: { item: ChatStartAttentionItem }) {
 
 /** The greeting is independent of deferred or unavailable business facts. */
 export function SupervisorWelcome({heading,intro}:{heading:string;intro:string}){
-  return <div className="supervisor-welcome-motion mx-auto w-full max-w-[36rem] pb-4 pt-5 sm:pt-12" data-testid="supervisor-welcome">
+  return <div className="supervisor-welcome-motion mx-auto w-full max-w-xl pb-4 pt-5 sm:pt-12" data-testid="supervisor-welcome">
     <h1 className="text-balance font-headline text-[1.625rem] font-medium leading-tight tracking-[-0.025em] text-ink sm:text-[2.125rem]">{heading}</h1>
-    <p className="mt-2 max-w-[32rem] text-[1.0625rem] leading-relaxed text-ink-muted">{intro}</p>
+    <p className="mt-2 max-w-lg text-[1.0625rem] leading-relaxed text-ink-muted">{intro}</p>
   </div>;
 }
 
@@ -83,18 +83,18 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
   return <div className="w-full min-w-0 space-y-3" data-testid="chat-start">
     {!hasMessages && welcome && <SupervisorWelcome {...welcome}/> }
     {!hasMessages && unavailableMessage && <p role="status" className="text-[1.0625rem] leading-relaxed text-ink">{unavailableMessage}</p>}
-    {!hasMessages && copy.suggestions.length > 0 && <div className="mx-auto w-full max-w-[36rem]" aria-label={copy.suggestionsLabel}>
+    {!hasMessages && copy.suggestions.length > 0 && <div className="mx-auto w-full max-w-xl" aria-label={copy.suggestionsLabel}>
       <div className="flex flex-wrap gap-x-2 gap-y-1" dir="inherit">
         {copy.suggestions.map((label, index) => <button type="button" key={index}
           disabled={suggestionsDisabled} onClick={() => onSuggestion(index === 3 ? copy.experimentPrompt : label)}
-          className="inline-flex min-h-12 max-w-full items-center rounded-full border border-line px-3 py-1.5 text-start text-[0.875rem] font-medium leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
+          className="inline-flex min-h-12 max-w-full items-center rounded-full border border-line px-3 py-1.5 text-start text-[0.875rem] font-medium leading-snug text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
           {label}
         </button>)}
       </div>
     </div>}
     <button type="button" aria-expanded={expanded} onClick={onToggle}
-      className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl px-2 text-start text-[0.9375rem] font-medium leading-snug text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-      <span className="min-w-0 flex-1 break-words" dir="auto">
+      className="flex min-h-12 w-full min-w-0 items-center gap-2 rounded-xl px-2 text-start text-[0.9375rem] font-medium leading-snug text-ink-muted hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      <span className="min-w-0 flex-1 wrap-break-word" dir="auto">
         <span className="block">{hasMessages && !expanded ? copy.keyNumbers : copy.summary}</span>
         {!hasMessages&&!expanded&&(data.partial||data.estimated||data.incomplete||data.salesCaption)&&
           <span className="block text-[0.8125rem] leading-snug">{[data.partial?copy.partial:null,data.estimated?copy.estimate:null,data.incomplete?copy.incomplete:null,data.salesCaption].filter(Boolean).join(" · ")}</span>}
@@ -115,7 +115,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
             { label: copy.youKeep, value: data.kept },
           ] as const).map((number) => <div key={number.label} className="min-w-0 rounded-lg bg-surface2 p-2">
             <p className="text-[0.8125rem] font-semibold leading-snug text-ink-muted">{number.label}</p>
-            <p className="mt-1 break-words font-headline text-[1.0625rem] font-bold leading-tight text-ink" dir="auto">{number.value}</p>
+            <p className="mt-1 wrap-break-word font-headline text-[1.0625rem] font-bold leading-tight text-ink" dir="auto">{number.value}</p>
             {number.label===copy.sales&&data.salesCaption&&<p className="mt-1 text-[0.8125rem] leading-snug text-ink-muted" dir="auto">{data.salesCaption}</p>}
             {number.label===copy.youKeep&&<>
               {data.shareCaption&&<p className="mt-1 text-[0.8125rem] leading-snug text-ink-muted">{data.shareCaption}</p>}
@@ -136,7 +136,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
               <h3 className="text-[0.9375rem] font-semibold text-ink-muted">{title}</h3>
               <ul className="mt-1 space-y-1">
                 {lines.map((line) => <li key={line.key} className="min-w-0">
-                  <Link href={line.href} className="inline-flex min-h-12 w-full items-center break-words text-[0.9375rem] leading-snug text-ink underline-offset-2 hover:underline" dir="auto">
+                  <Link href={line.href} className="inline-flex min-h-12 w-full items-center wrap-break-word text-[0.9375rem] leading-snug text-ink underline-offset-2 hover:underline" dir="auto">
                     {line.text}
                   </Link>
                 </li>)}
@@ -158,7 +158,7 @@ export default function ChatStart({ data, copy, hasMessages, expanded, onToggle,
                 </div>
               </div>
               {item ? <>
-                <p className="min-w-0 flex-1 break-words text-[0.9375rem] leading-snug text-ink">{item.displayTitle}</p>
+                <p className="min-w-0 flex-1 wrap-break-word text-[0.9375rem] leading-snug text-ink">{item.displayTitle}</p>
                 <SafeAction item={item} />
               </> : <p className="flex flex-1 items-center gap-1.5 text-[0.9375rem] font-semibold text-ink">
                 <Check size={18} aria-hidden="true" />{copy.allGood}

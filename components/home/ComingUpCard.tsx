@@ -62,10 +62,10 @@ export function ComingUpView({ state, locale, t, onAsk, onChatAboutDay, disabled
               return <li key={day.date} className="min-w-0">
                 <button type="button" disabled={disabled} onClick={() => onChatAboutDay(day.date,t("chatDayTitle",{date:day.date,what}).slice(0,120),
                   t("chatDayPrompt",{date:day.date,context:eventDayChatContext(day,outlook)}))}
-                  className="flex min-h-12 w-full min-w-0 items-start gap-2 rounded-xl bg-surface2 p-2.5 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-60">
+                  className="flex min-h-12 w-full min-w-0 items-start gap-2 rounded-xl bg-surface2 p-2.5 text-start focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-60">
                   <span className="min-w-0 flex-1">
-                    <span className="block break-words text-[0.9375rem] font-semibold leading-snug text-ink" dir="auto">{when} · {what}</span>
-                    {basis && <span className="mt-0.5 block break-words text-[0.8125rem] leading-snug text-ink-muted" dir="auto">{basis}</span>}
+                    <span className="block wrap-break-word text-[0.9375rem] font-semibold leading-snug text-ink" dir="auto">{when} · {what}</span>
+                    {basis && <span className="mt-0.5 block wrap-break-word text-[0.8125rem] leading-snug text-ink-muted" dir="auto">{basis}</span>}
                     <span className="mt-1 block text-[0.9375rem] font-semibold text-accent-text">{t("chatAboutThis")}</span>
                   </span>
                 </button>

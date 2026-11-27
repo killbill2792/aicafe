@@ -72,8 +72,8 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
    <Link href="/staff" className="inline-flex min-h-12 items-center text-accent-text"><span className="inline-block rtl:rotate-180">←</span> {t("schedule")}</Link>
    <h1 className="font-headline text-2xl font-extrabold">{t("rulesAndCosts")}</h1>
    <p className="rounded-2xl bg-accent-soft p-4">{t("ruleInfo")}</p>
-   {readOnly&&<p className="rounded-xl bg-surface2 p-3 text-muted">{t("readOnly")}</p>}
-   {durationRules.map(group=><section key={group.title} className="rounded-[20px] border border-line bg-surface p-4">
+   {readOnly&&<p className="rounded-xl bg-surface2 p-3 text-ink-muted">{t("readOnly")}</p>}
+   {durationRules.map(group=><section key={group.title} className="rounded-card border border-line bg-surface p-4">
     <h2 className="mb-2 text-xl font-bold">{t(group.title)}</h2>
     {group.rows.map(([enabled,first,second,label,sentence])=><div key={enabled} className="border-t border-line py-3">
       <div className="flex flex-wrap items-center gap-3">
@@ -83,7 +83,7 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
        {(first==="meal_break_minutes"||first==="rest_break_minutes")&&<span>{t("minutesUnit")}</span>}
        {second&&<><span>{t(second==="meal_break_after_minutes"?"after":"every")}</span><NumberField key={second+String(values[second])} value={Number(values[second])} onCommit={v=>change(second,v)} label={t(label)} min={ranges[second][0]} max={ranges[second][1]} disabled={pending||readOnly} locale={locale} twoParts/></>}
       </div>
-      <p className="text-sm text-muted">{values.owner_set.includes(first)?t("yours"):t("defaultRule")}</p>
+      <p className="text-sm text-ink-muted">{values.owner_set.includes(first)?t("yours"):t("defaultRule")}</p>
     </div>)}
     {group.title==="overtime"&&<div className="flex flex-wrap items-center gap-3 border-t border-line py-3">
      <label className="font-semibold" htmlFor="ot-rate">{t("overtimePays")}</label>
@@ -97,21 +97,21 @@ export default function RulesWorkspace({initial,week,readOnly=false,payroll}:{in
      {multiplierError&&<span role="alert" className="text-neg">{t("invalidMultiplier")}</span>}
     </div>}
    </section>)}
-   <section className="rounded-[20px] border border-line bg-surface p-4">
+   <section className="rounded-card border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("coverage")}</h2>
     <label className="flex min-h-12 items-center gap-2"><input className="size-5" type="checkbox" disabled={pending||readOnly} checked={Boolean(values.coverage_enabled)} onChange={e=>change("coverage_enabled",e.target.checked)}/>{t("minimumCoverage")}</label>
     <div className="flex flex-wrap items-center gap-2">{t("atLeast")}<NumberField key={"coverage"+String(values.min_headcount)} value={Number(values.min_headcount)} min={1} max={30} label={t("peopleWhileOpen")} disabled={pending||readOnly} locale={locale} onCommit={v=>change("min_headcount",v)}/>{t("whileOpen")}</div>
    </section>
-   <section className="rounded-[20px] border border-line bg-surface p-4">
+   <section className="rounded-card border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("prepTiming")}</h2>
     {(["prep_minutes_before_open","prep_minutes_after_close"] as const).map(key=><div key={key} className="flex flex-wrap items-center gap-2 py-2">{t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")}<NumberField key={key+String(values[key])} value={Number(values[key])} min={0} max={240} label={t(key==="prep_minutes_before_open"?"prepBeforeOpen":"prepAfterClose")} disabled={pending||readOnly} locale={locale} onCommit={v=>change(key,v)} twoParts/></div>)}
    </section>
    <PayrollCostCard settings={payroll} readOnly={readOnly} labels={{
 title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("payrollCostsField"),hint:staffT("payrollCostsHint"),source:staffT("payrollSource"),ownerSource:staffT("payrollSourceOwner"),estimateSource:staffT("payrollSourceEstimate"),quickbooksSource:staffT("payrollSourceQuickBooks"),importedSource:staffT("payrollSourceImported"),connectedSource:staffT("payrollSourceConnected"),actualUsing:staffT("payrollActualUsing"),fallbackNote:staffT("payrollFallbackNote"),save:staffT("payrollSave"),saving:staffT("payrollSaving"),saved:staffT("payrollSaved"),invalid:staffT("payrollInvalid"),saveFailed:staffT("payrollSaveFailed")
 }}/>
-   <section className="rounded-[20px] border border-line bg-surface p-4">
+   <section className="rounded-card border border-line bg-surface p-4">
     <h2 className="text-xl font-bold">{t("yourRules")}</h2>
-    <p className="my-2 text-muted">{t("writeYourRules")}</p>
+    <p className="my-2 text-ink-muted">{t("writeYourRules")}</p>
     {values.custom.map(rule=><div key={rule.id} className="flex items-center justify-between gap-3 border-t border-line py-2">
       <p>{rule.rule_text}</p><button disabled={pending||readOnly} className="min-h-12 px-3 text-neg"
        onClick={()=>transition(async()=>{const result=await removeCustomRule({id:rule.id});if(result.ok){
@@ -129,7 +129,7 @@ title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("
    </section>
    <details className="rounded-2xl border border-line bg-surface p-4">
     <summary className="min-h-12 cursor-pointer font-bold">{t("advanced")}</summary>
-    <p className="mb-4 text-muted">{t("advancedNote")}</p>
+    <p className="mb-4 text-ink-muted">{t("advancedNote")}</p>
     {!readOnly&&<OliviaRuleReviewPanel week={week} onChanged={refresh}/>}
    </details>
    {undo&&<div role="status" className="flex items-center justify-between rounded-xl bg-surface2 p-3">
@@ -137,7 +137,7 @@ title:staffT("payrollCostsTitle"),body:staffT("payrollCostsBody"),field:staffT("
        const last=undo;setUndo(null);if(last.key==="ot_multiplier_bp"){setCustom(false);setCustomValue(formatRate(Number(last.value)));}change(last.key,last.value);
       }} className="min-h-12 rounded-lg px-3 font-bold text-accent-text">{t("undo")}</button>
     </div>}
-   {message&&<p role="status" className="text-sm text-muted">{message}</p>}
-   <p className="text-sm text-muted">{t("legalNote")}</p>
+   {message&&<p role="status" className="text-sm text-ink-muted">{message}</p>}
+   <p className="text-sm text-ink-muted">{t("legalNote")}</p>
  </div>;
 }

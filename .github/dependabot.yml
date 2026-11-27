@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    allow:
+      - dependency-name: "@json-render/*"
+    groups:
+      luna-json-render:
+        patterns:
+          - "@json-render/*"
+    open-pull-requests-limit: 2

@@ -126,7 +126,7 @@ export default function ToastOwnerDashboard({businessId,currency,children}:{busi
  const relative=data.lastGoodSyncAt&&lastLoadedAt?new Intl.RelativeTimeFormat(locale,{numeric:"auto"}).format(
   -Math.max(0,Math.round((lastLoadedAt-Date.parse(data.lastGoodSyncAt))/3600000)),"hour"):t("noSyncYet");
  return <>{lead}<div className="flex flex-col gap-4 text-[1.0625rem]" dir={locale==="ar"?"rtl":"ltr"}>
-  {data.connection==="connected"&&<section className="rounded-card-lg bg-card p-4 text-sm text-muted">
+  {data.connection==="connected"&&<section className="rounded-card-lg bg-card p-4 text-sm text-ink-muted">
     {t("ownerPayrollLimitsNote")}
   </section>}
   {data.missingLaborScope&&<section role="alert" className="rounded-card-lg border border-warn bg-warn-tint p-4 text-warn">
@@ -224,7 +224,7 @@ export default function ToastOwnerDashboard({businessId,currency,children}:{busi
     <span>{row.orders==null?t("noAmount"):t("ownerOrders",{count:number.format(row.orders)})}</span>
     <span className="text-ink-muted">{row.status==="checked_internal"?t("ownerState_checked_internal"):row.status==="owner_confirmed"?t("ownerState_owner_confirmed"):row.status==="owner_match"?t("ownerState_owner_match"):row.status==="checked"?t("ownerState_checked"):row.status==="checking"?t("ownerState_checking"):
      row.status==="missing"?t("ownerState_missing"):t("ownerState_needs_look")}</span>
-    {row.paidOtherDay>0&&<p className="w-full text-muted">{t("paidOtherDayInfo",{count:row.paidOtherDay})}</p>}
+    {row.paidOtherDay>0&&<p className="w-full text-ink-muted">{t("paidOtherDayInfo",{count:row.paidOtherDay})}</p>}
     <details className="w-full"><summary className="min-h-12 cursor-pointer py-3">{t("summaryTitle")}</summary>
      <ToastSummaryComparison restaurantNames={data.restaurantNames} businessId={businessId} days={data.restaurantGuids.map(restaurantGuid=>({date:row.date,restaurantGuid,oursCents:null}))} currency={currency} onSaved={load}/>
     </details>

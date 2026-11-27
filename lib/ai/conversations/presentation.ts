@@ -1,5 +1,7 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
+import {nativeSpecSchema,nativeFunctions,readNativeSnapshot,recoverNativeDisplaySpec} from "./nativePresentation";
+import {resolveElementProps,splitRepeatVisibility,evaluateVisibility,getByPath,resolveRepeatStatePath,resolveRepeatItemStatePath,type PropResolutionContext} from "@json-render/core";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
 /** Versioned, renderer-independent, serializable UI. No client code or action bindings. */
@@ -99,29 +101,24 @@ export function presentationGroupRoots(groups:readonly PresentationGroup[]):numb
  const children=new Set(groups.flatMap(g=>g.items));
  return groups.flatMap((g,i)=>!g.id||!children.has(g.id)?[i]:[]);
 }
-/** Validate topology before recursive rendering. At most six group levels,
- * twelve groups, and each owned data leaf exactly once. */
+/** Validate topology before rendering: each owned data leaf exactly once; acyclic nesting has no fixed depth. */
 export function validPresentationGroups(groups:readonly PresentationGroup[],leaves:readonly string[],panels:PresentationPanel[]):boolean{
  const ids=new Map<string,number>();
  for(let i=0;i<groups.length;i++){const id=groups[i].id;if(id){if(ids.has(id))return false;ids.set(id,i);}}
- const seenGroups=new Set<number>(),seenLeaves=new Set<string>();
- const visit=(i:number,depth:number):boolean=>{
-  if(depth>6||seenGroups.has(i))return false;
+ const seenGroups=new Set<number>(),seenLeaves=new Set<string>(),pending=presentationGroupRoots(groups);
+ while(pending.length){
+  const i=pending.pop()!;if(seenGroups.has(i))return false;
   seenGroups.add(i);const g=groups[i];
   if(g.layout==="details"&&!g.title||g.layout==="compare"&&!compatibleComparison(g.items,panels))return false;
-  for(const key of g.items){
-   const child=ids.get(key);
-   if(child!==undefined){if(!visit(child,depth+1))return false;}
-   else{if(!leaves.includes(key)||seenLeaves.has(key))return false;seenLeaves.add(key);}
-  }
-  return true;
- };
- return presentationGroupRoots(groups).every(i=>visit(i,1))&&seenGroups.size===groups.length&&seenLeaves.size===leaves.length;
+  for(const key of g.items){const child=ids.get(key);if(child!==undefined)pending.push(child);else{if(!leaves.includes(key)||seenLeaves.has(key))return false;seenLeaves.add(key);}}
+ }
+ return seenGroups.size===groups.length&&seenLeaves.size===leaves.length;
 }
 const richPresentationBaseSchema=z.strictObject({
   type:z.literal("rich_presentation"),version:z.literal(1),
   layout:z.enum(["stack","grid"]),
   panels:z.array(presentationPanelSchema),
+  nativeSpec:nativeSpecSchema.optional(),
   groups:z.array(presentationGroupSchema).min(1).optional(),
   report:z.literal(true).optional(),
   files:z.array(z.uuid()).min(1).max(3).refine(ids=>new Set(ids).size===ids.length).optional(),
@@ -134,7 +131,7 @@ const richPresentationBaseSchema=z.strictObject({
 // Infer the snapshot type from the structural fields before applying graph
 // refinements, which themselves consume that type. Avoid circular inference.
 export type RichPresentation=z.infer<typeof richPresentationBaseSchema>;
-export const richPresentationSchema=richPresentationBaseSchema.refine(p=>p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
+export const richPresentationSchema=richPresentationBaseSchema.refine(p=>Number(Boolean(p.nativeSpec))+p.panels.length+p.suggestions.length+Number(Boolean(p.agenda))+Number(Boolean(p.scenario))+Number(Boolean(p.report))+Number(Boolean(p.calculator))+(p.tables?.length??0)+(p.files?.length??0)>0).refine(p=>{
  if(!p.groups)return true;
  return validPresentationGroups(p.groups,p.groups.some(g=>g.id)?allPresentationLeaves(p):presentationLeaves(p),p.panels);
 });
@@ -183,7 +180,7 @@ export function presentationReport(block:RichPresentation,message:{
   "",texts.filter((t):t is string=>t!==null).join(""),
   ...(notes.length?["","Source cautions",...notes]:[])];
  lines.push(...presentationDataLines(block));
- lines.push("","Export only. Refer to the original conversation for approvals, work status and current evidence.");
+ lines.push("","Export only. Refer to the original conversation for approvals, work status and current information.");
  return lines.join("\n");
 }
 
@@ -208,10 +205,12 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
  if(r.type!=="rich_presentation"||r.version!==1)return;
  const valid=<T>(schema:z.ZodType<T>,value:unknown):T|undefined=>{const v=schema.safeParse(value);return v.success?v.data:undefined;};
  const list=<T>(schema:z.ZodType<T>,value:unknown):T[]=>Array.isArray(value)?value.flatMap(v=>{const p=valid(schema,v);return p===undefined?[]:[p];}):[];
+ const native=valid(nativeSpecSchema,r.nativeSpec)??recoverNativeDisplaySpec(r.nativeSpec);
  const repaired=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout:r.layout==="grid"?"grid":"stack",
   panels:list(presentationPanelSchema,r.panels),tables:list(recordTableSchema,r.tables),
   suggestions:list(z.string().trim().min(1),r.suggestions),
   ...(r.report===true?{report:true}:{}),
+  ...(native?{nativeSpec:native}:{}),
   ...(valid(richPresentationBaseSchema.shape.files,r.files)?{files:r.files}:{}),
   ...(valid(agendaSchema,r.agenda)?{agenda:r.agenda}:{}),
   ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
@@ -222,12 +221,40 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
 /** Preserve authored visual data on the existing text-only background report surfaces. */
 export function presentationDataLines(block:RichPresentation):string[]{
  const lines:string[]=[];
+ if(block.nativeSpec){
+  const spec=block.nativeSpec,stateModel=spec.state??{};
+  const pending:{key:string;ctx:PropResolutionContext}[]=[{key:spec.root,ctx:{stateModel,functions:nativeFunctions}}];
+  while(pending.length){
+   const {key,ctx}=pending.pop()!,e=spec.elements[key];if(!e)continue;
+   const visibility=e.repeat&&ctx.repeatBasePath===undefined?splitRepeatVisibility(e.visible):{container:e.visible,itemFilter:undefined};
+   if(visibility.container!==undefined&&!evaluateVisibility(visibility.container,ctx))continue;
+   if(e.type==="LunaSnapshot"){const snapshot=recoverRichPresentation(readNativeSnapshot(e.props.snapshotJSON));if(snapshot&&!snapshot.nativeSpec)lines.push(...presentationDataLines(snapshot));}
+   else{
+    const props=resolveElementProps(e.props,ctx);
+    if(e.type==="LunaFallback")lines.push(JSON.stringify(props.values)??String(props.values));
+    for(const name of ["title","text","label","description","message","caption"]){if(typeof props[name]==="string"&&props[name])lines.push(props[name]);}
+    if(Array.isArray(props.rows))for(const row of props.rows)if(Array.isArray(row))lines.push(row.map(v=>v==null?"Not recorded":String(v)).join(" | "));
+    if(Array.isArray(props.points))for(const point of props.points)if(point&&typeof point==="object"&&"label" in point&&"value" in point)lines.push(String(point.label)+": "+String(point.value));
+   }
+   const children:{key:string;ctx:PropResolutionContext}[]=[];
+   if(e.repeat){
+    const path=resolveRepeatStatePath(e.repeat.statePath,ctx.repeatBasePath),items=path===undefined?undefined:getByPath(stateModel,path);
+    if(path!==undefined&&Array.isArray(items))for(const [index,item] of items.entries()){
+     const scope={...ctx,repeatItem:item,repeatIndex:index,repeatBasePath:resolveRepeatItemStatePath(path,index)};
+     if(visibility.itemFilter===undefined||evaluateVisibility(visibility.itemFilter,scope))for(const key of e.children??[])children.push({key,ctx:scope});
+    }
+   }else for(const key of e.children??[])children.push({key,ctx});
+   for(const slot of Object.values(e.slots??{}))for(const key of slot)children.push({key,ctx});
+   pending.push(...children.reverse());
+  }
+  if(!lines.length)lines.push("Interactive view available in the conversation.");
+ }
  for(const p of block.panels){
-  lines.push("",p.title,p.sourceDetail??p.source,...(p.coverage?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
+  lines.push("",p.title,p.sourceDetail??(p.source==="response_evidence"?"":p.source==="sql_research"?"SQL query":p.source),...(p.coverage&&p.source!=="response_evidence"?["Coverage: "+p.coverage]:[]),"Period: "+p.from+" – "+p.to+"; snapshot: "+p.asOf,
     ...p.points.map(point=>point.label+": "+point.value+" "+(p.measurement??p.unit)+(p.currency?" ("+p.currency+")":"")));
  }
  if(block.tables)for(const t of block.tables){
-  lines.push("",t.title,t.view+(t.coverage==="authored"?"":" · "+t.coverage)+" · "+t.scope,"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
+  lines.push("",t.title,[t.view==="tool_response_evidence"?"":t.view==="tool_sql_research"?"SQL query":t.view,t.coverage==="authored"||t.view==="tool_response_evidence"?"":t.coverage,t.scope].filter(Boolean).join(" · "),"Period: "+t.from+" – "+t.to+"; snapshot: "+t.asOf,
    t.columns.map(c=>c.label+" ("+c.unit+")").join(" | "),...t.rows.map(row=>row.map(v=>v===null?"Not recorded":String(v)).join(" | ")));
  }
  if(block.calculator){

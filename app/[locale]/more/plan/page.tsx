@@ -52,7 +52,7 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
     <BackHeader title={t("planTitle")} subtitle={t("planSubtitle")} backHref="/more" backLabel={common("back")} />
     <nav aria-label={t("planTitle")} className="grid grid-cols-3 gap-1 rounded-2xl bg-surface p-1">
       {TABS.map(id => <Link key={id} href={`/more/plan?tab=${id}`} aria-current={tab === id ? "page" : undefined}
-        className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-[0.9375rem] font-bold no-underline ${tab === id ? "bg-card text-ink shadow-sm" : "text-ink-muted"}`}>
+        className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-[0.9375rem] font-bold no-underline ${tab === id ? "bg-card text-ink shadow-xs" : "text-ink-muted"}`}>
         {id === "break-even" ? t("planBreakEven") : id === "profit-goal" ? t("planProfitGoal") : t("planWhatIf")}
       </Link>)}
     </nav>

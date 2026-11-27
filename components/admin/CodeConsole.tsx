@@ -37,23 +37,23 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
  };
  return <section className="space-y-7">
   <div><h1 className="text-2xl font-bold">Free access codes</h1><p className="text-sm text-slate-600">No payments. Codes are stored as hashes; copy a new code when it is created.</p></div>
-  {error&&<p role="alert" className="rounded border border-red-400 p-3 text-red-700">{error}</p>}
-  {revealed&&<div className="rounded border border-amber-400 bg-amber-50 p-4"><p className="font-bold">New code — shown only once</p><code className="select-all text-xl">{revealed}</code><button className="ms-3 underline" onClick={()=>{navigator.clipboard.writeText(revealed)}}>Copy</button><button className="ms-3 underline" onClick={()=>setRevealed("")}>Dismiss</button></div>}
+  {error&&<p role="alert" className="rounded-sm border border-red-400 p-3 text-red-700">{error}</p>}
+  {revealed&&<div className="rounded-sm border border-amber-400 bg-amber-50 p-4"><p className="font-bold">New code — shown only once</p><code className="select-all text-xl">{revealed}</code><button className="ms-3 underline" onClick={()=>{navigator.clipboard.writeText(revealed)}}>Copy</button><button className="ms-3 underline" onClick={()=>setRevealed("")}>Dismiss</button></div>}
   <form className="grid gap-3 rounded-xl border bg-white p-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();void action({
     action:"create",code:code||undefined,durationMonths:durationKind==="months"?months:null,
     fixedEndDate:durationKind==="fixed"?end:null,maxCafes:max,note,
     timeZone:durationKind==="fixed"?Intl.DateTimeFormat().resolvedOptions().timeZone:undefined,
   });}}>
    <h2 className="sm:col-span-2 font-bold">Create code</h2>
-   <label className="grid gap-1 text-sm">Custom code (optional)<input className="rounded border p-2" value={code} onChange={e=>setCode(e.target.value)} maxLength={32} placeholder="Generated if blank"/></label>
-   <label className="grid gap-1 text-sm">Grant type<select className="rounded border p-2" value={durationKind} onChange={e=>setDurationKind(e.target.value)}><option value="months">Months from redeem</option><option value="fixed">Fixed end date</option></select></label>
-   {durationKind==="months"?<label className="grid gap-1 text-sm">Months<input className="rounded border p-2" type="number" min="1" max="120" value={months} onChange={e=>setMonths(Number(e.target.value))}/></label>:
-     <label className="grid gap-1 text-sm">End date (inclusive)<input className="rounded border p-2" required type="date" value={end} onChange={e=>setEnd(e.target.value)}/></label>}
-   <label className="grid gap-1 text-sm">Maximum cafés<input className="rounded border p-2" type="number" min="1" max="100000" value={max} onChange={e=>setMax(Number(e.target.value))}/></label>
-   <label className="grid gap-1 text-sm sm:col-span-2">Internal note<input className="rounded border p-2" value={note} onChange={e=>setNote(e.target.value)} maxLength={500}/></label>
-   <button disabled={busy} className="rounded bg-slate-900 p-2 text-white sm:col-span-2">Create code</button>
+   <label className="grid gap-1 text-sm">Custom code (optional)<input className="rounded-sm border p-2" value={code} onChange={e=>setCode(e.target.value)} maxLength={32} placeholder="Generated if blank"/></label>
+   <label className="grid gap-1 text-sm">Grant type<select className="rounded-sm border p-2" value={durationKind} onChange={e=>setDurationKind(e.target.value)}><option value="months">Months from redeem</option><option value="fixed">Fixed end date</option></select></label>
+   {durationKind==="months"?<label className="grid gap-1 text-sm">Months<input className="rounded-sm border p-2" type="number" min="1" max="120" value={months} onChange={e=>setMonths(Number(e.target.value))}/></label>:
+     <label className="grid gap-1 text-sm">End date (inclusive)<input className="rounded-sm border p-2" required type="date" value={end} onChange={e=>setEnd(e.target.value)}/></label>}
+   <label className="grid gap-1 text-sm">Maximum cafés<input className="rounded-sm border p-2" type="number" min="1" max="100000" value={max} onChange={e=>setMax(Number(e.target.value))}/></label>
+   <label className="grid gap-1 text-sm sm:col-span-2">Internal note<input className="rounded-sm border p-2" value={note} onChange={e=>setNote(e.target.value)} maxLength={500}/></label>
+   <button disabled={busy} className="rounded-sm bg-slate-900 p-2 text-white sm:col-span-2">Create code</button>
   </form>
-  <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
+  <div className="overflow-x-auto rounded-sm border bg-white"><table className="w-full text-left text-sm">
    <thead><tr className="bg-slate-100">{["Code hint","Grant","Limit","Redeemed cafés","Note","Active"].map(x=><th key={x} className="p-3">{x}</th>)}</tr></thead>
    <tbody>{codes.map(c=><tr className="border-t" key={c.id}><td className="p-3"><Link href={"/admin/codes/"+c.id} className="underline">{c.code_hint}</Link></td>
     <td className="p-3">{c.duration_months?c.duration_months+" months":"Until "+c.fixed_end_date}</td><td className="p-3">{c.max_cafes}</td>
@@ -65,7 +65,7 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
    {(page+1)*perPage<codeTotal&&<Link className="underline" href={pageUrl(page+1,cafePage)}>Next codes</Link>}
   </nav>
   <h2 className="text-xl font-bold">Recent redemptions</h2>
-  <div className="overflow-x-auto rounded border bg-white"><table className="w-full text-left text-sm">
+  <div className="overflow-x-auto rounded-sm border bg-white"><table className="w-full text-left text-sm">
    <thead><tr className="bg-slate-100">{["Café","Owner","Code","Redeemed","Grant end","Current access end"].map(x=><th className="p-3" key={x}>{x}</th>)}</tr></thead>
    <tbody>{redemptions.map(r=><tr key={r.code_id+r.business_id} className="border-t">
     <td className="p-3">{r.cafeName}</td><td className="p-3">{r.ownerEmail}</td>
@@ -75,10 +75,10 @@ export default function CodeConsole({codes,redemptions,access,cafes,page,perPage
   </table></div>
   <h2 className="text-xl font-bold">Café access control</h2>
   <p className="text-[1.0625rem]">{cafeTotal} cafés · page {cafePage+1} of {Math.max(1,Math.ceil(cafeTotal/cafePerPage))}</p>
-  <div className="space-y-2">{cafes.map(c=>{const state=access.find(a=>a.business_id===c.id);return <div key={c.id} className="flex flex-wrap items-center gap-3 rounded border bg-white p-3 text-sm">
+  <div className="space-y-2">{cafes.map(c=>{const state=access.find(a=>a.business_id===c.id);return <div key={c.id} className="flex flex-wrap items-center gap-3 rounded-sm border bg-white p-3 text-sm">
    <strong>{c.name}</strong><span>{state?.mode??"grandfathered"} {state?.access_end??""}</span>
    <form className="flex items-center gap-2" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);void action({action:"extend",businessId:c.id,accessEnd:form.get("end")});}}>
-    <label>Extend until <input name="end" type="date" required className="rounded border p-1"/></label>
+    <label>Extend until <input name="end" type="date" required className="rounded-sm border p-1"/></label>
     <button disabled={busy} className="underline">Extend</button>
    </form>
    <button disabled={busy} className="underline" onClick={()=>void action({action:"setMode",businessId:c.id,mode:"grandfathered"})}>Full access</button>

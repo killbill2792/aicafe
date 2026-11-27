@@ -109,10 +109,10 @@ export default function HowIGotThis({lines,locale,copy,currency}:{
 }){
  if(!lines.length)return null;
  return <details dir={locale==="ar"?"rtl":"ltr"} className="rounded-xl border border-line bg-surface2 text-ink">
-   <summary className="flex min-h-12 cursor-pointer items-center rounded-xl px-4 py-3 text-[1.0625rem] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">{lines.some(line=>line.source==="suggest_new_item_price")?copy.howCalculated:copy.howIGotThis}</summary>
+   <summary className="flex min-h-12 cursor-pointer items-center rounded-xl px-4 py-3 text-[1.0625rem] font-semibold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{lines.some(line=>line.source==="suggest_new_item_price")?copy.howCalculated:copy.howIGotThis}</summary>
    <div className="space-y-3 border-t border-line px-4 py-3">{lines.map((line,i)=>{
      const shown=(index:number)=>formatCardValue(line.inputs[index].value,locale,currency);
-     return <p key={i} className="break-words text-[1.0625rem] leading-relaxed">
+     return <p key={i} className="wrap-break-word text-[1.0625rem] leading-relaxed">
      <span className="font-semibold">{localizedLabel(line.label,locale)}: </span>
      {line.formula==="breakEven"&&line.inputs.length===5?
        <bdi dir="ltr">(

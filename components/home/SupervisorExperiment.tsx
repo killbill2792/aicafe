@@ -56,7 +56,7 @@ export default function SupervisorExperiment({threadId,locale,copy,canUseAi=true
    value==="committed"||value==="manual_confirmed"?copy.statusMonitoring:
    value==="rejected"||value==="expired"?copy.statusRejected:copy.statusMonitoring;
  const valid=Number.isSafeInteger(delta)&&delta>0&&delta<=100000;
- const actionClass="min-h-12 rounded-full border border-ink px-4 text-[1.0625rem] font-semibold disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
+ const actionClass="min-h-12 rounded-full border border-ink px-4 text-[1.0625rem] font-semibold disabled:opacity-50 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2";
  return <section className="border-t border-line bg-surface px-3 py-2">
   <button type="button" aria-expanded={open} onClick={()=>setOpen(x=>!x)}
     className={actionClass+" w-full text-start"}>{open?copy.close:copy.open}</button>

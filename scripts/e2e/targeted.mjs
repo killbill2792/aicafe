@@ -9,6 +9,52 @@ const ALL = SCENARIOS;
 // Screens restyled by the glass/rem text-size design change (look only, no behaviour change). The
 // global theme files already require every journey; these exact paths run the same full set.
 // Other unknown UI still fails closed.
+const TAILWIND_RESTYLE = new Set([
+  "app/[locale]/staff/page.tsx",
+  "app/admin/briefs/page.tsx",
+  "app/admin/cafes/[cafeId]/page.tsx",
+  "app/admin/codes/[codeId]/page.tsx",
+  "app/admin/conversations/[turnId]/page.tsx",
+  "app/admin/proactive/page.tsx",
+  "components/LoginForm.tsx",
+  "components/SideNav.tsx",
+  "components/admin/TestBriefButton.tsx",
+  "components/crew/CrewInbox.tsx",
+  "components/home/BeforeAfterRows.tsx",
+  "components/home/CafeNotesList.tsx",
+  "components/home/ChatJobProgress.tsx",
+  "components/home/ChatMarkdown.tsx",
+  "components/home/ChatStart.tsx",
+  "components/home/ClarifyCard.tsx",
+  "components/home/ComingUpCard.tsx",
+  "components/home/EventsVisualFixture.tsx",
+  "components/home/FactSummary.tsx",
+  "components/home/HowIGotThis.tsx",
+  "components/home/MemoryCard.tsx",
+  "components/home/SavedEventsCard.tsx",
+  "components/home/SupervisorChatComposer.test.tsx",
+  "components/home/SupervisorChatComposer.tsx",
+  "components/home/SupervisorExperiment.tsx",
+  "components/home/SupervisorMandatePanel.tsx",
+  "components/home/SupervisorProposalCard.tsx",
+  "components/home/SupervisorRichPresentation.tsx",
+  "components/home/SupervisorRoutineInlineCard.tsx",
+  "components/home/SupervisorWorkStatus.tsx",
+  "components/home/responseTableLayout.ts",
+  "components/menu/MenuCatalog.tsx",
+  "components/menu/PantryWorkspace.tsx",
+  "components/menu/ProductPhotoEditor.tsx",
+  "components/menu/SizeLabelClarifyDialog.tsx",
+  "components/money/MoneyViewSwitch.tsx",
+  "components/more/ProcessingFeeEstimateForm.tsx",
+  "components/shared/InfoPopover.tsx",
+  "components/staff/PosImportReviewPanel.tsx",
+  "components/staff/RulesWorkspace.tsx",
+  "components/staff/ShiftPreview.tsx",
+  "components/staff/StaffCommunicationHistory.tsx",
+  "components/staff/StaffReplyComposer.tsx",
+  "components/staff/StaffWorkspace.tsx",
+]);
 const GLASS_RESTYLE = new Set([
   "app/[locale]/menu/import-review/page.tsx",
   "app/[locale]/more/alerts/[id]/page.tsx",
@@ -76,7 +122,7 @@ export function scenariosForPath(path) {
   if (path === ".github/workflows/ai-cafe-pr-baseline.yml" ||
       path === "playwright.config.mjs" || path.startsWith("scripts/e2e/") ||
       path.startsWith("tests/e2e/") ||
-      path === "app/globals.css" || path.startsWith("app/fonts/") ||
+      path === "app/globals.css" || path === "tailwind.config.ts" || path === "postcss.config.mjs" || path.startsWith("app/fonts/") ||
       path.startsWith("app/themes") || path.startsWith("public/") ||
       path === "proxy.ts" ||
       path === "app/[locale]/layout.tsx" ||
@@ -164,6 +210,8 @@ export function scenariosForPath(path) {
       path === "components/money/MoneyViewSwitch.tsx" ||
       path.startsWith("lib/viewmodels/money")) return ["money"];
   if (path.startsWith("app/api/")) return [];
+  // Preserve specific journey mappings above; cover remaining migrated UI paths.
+  if (TAILWIND_RESTYLE.has(path)) return ALL;
   if (/^app\/\[locale\]\//.test(path) ||
       path.startsWith("components/") ||
       (path.startsWith("app/") && !path.endsWith(".test.ts") &&

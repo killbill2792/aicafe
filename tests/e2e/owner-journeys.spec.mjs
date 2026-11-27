@@ -2210,7 +2210,25 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     const attachment=(await uploaded.json()).attachment;
     const text="## Sales overview\nRevenue increased from the first day to the next. The chart is optional.\n\n| Day | Recorded status |\n| --- | --- |\n| First day | Complete |\n| Next day | Complete |";
     const suggestion="Compare another period";
-    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",panels:[
+    const nativeNode=(type,props,children=[])=>({type,props,children});
+    const forecastExpr={$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:1000000},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}],format:"currency",currency:owner.currency}};
+    const nativeSpec={root:"card",state:{factor:1.1,show:false,dialog:false},elements:{
+      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details","grid","code","openDialog","dialog","ledger","unformatted","fallback"]),
+      ledger:nativeNode("Table",{columns:["Native account","Amount"],rows:[["Sales",120.25],["Refund",-12.5],["Zero",0],["Missing",null]],caption:"Native accounting ledger"}),
+      unformatted:nativeNode("Text",{text:125}),
+      fallback:nativeNode("LunaFallback",{widget:"IncomeStatement",values:{title:"Fallback income statement",columns:["Account","Amount"],rows:[["Fallback revenue",7654],["Fallback expense",-321]]}}),
+      grid:nativeNode("Grid",{columns:4,gap:"sm"},["a","b","c","d"]),
+      a:nativeNode("Text",{text:"A"}),b:nativeNode("Text",{text:"B"}),c:nativeNode("Text",{text:"C"}),d:nativeNode("Text",{text:"D"}),
+      code:nativeNode("Text",{text:"Native muted surface",variant:"code"}),
+      openDialog:{...nativeNode("Button",{label:"Open forecast details"}),on:{press:{action:"setState",params:{statePath:"/dialog",value:true}}}},
+      dialog:nativeNode("Dialog",{title:"Forecast assumptions",description:"Local model assumptions",openPath:"/dialog"},["dialogText"]),
+      dialogText:nativeNode("Text",{text:"No business data is changed"}),
+      slider:nativeNode("Slider",{label:"Growth multiplier",value:{$bindState:"/factor"},min:0.5,max:2,step:0.1}),
+      value:nativeNode("Text",{text:forecastExpr}),
+      button:{...nativeNode("Button",{label:"Use 20% growth"}),on:{press:[{action:"setState",params:{statePath:"/factor",value:1.2}},{action:"setState",params:{statePath:"/show",value:true}}]}},
+      details:{...nativeNode("Text",{text:"Owner changed the assumption"}),visible:{$state:"/show",eq:true}},
+    }};
+    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",nativeSpec,panels:[
       {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
         points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]},
       {kind:"metric",title:"Recorded sales",unit:"cents",currency:owner.currency,source:"profitability",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Sales",value:3600}]},
@@ -2234,6 +2252,41 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       await expect(answer.getByRole("heading",{name:"Sales overview"})).toBeVisible();
       await expect(answer.getByText("Revenue increased from the first day to the next. The chart is optional.")).toBeVisible();
       const rich=answer.getByTestId("supervisor-rich-presentation");
+      const widget=rich.getByTestId("luna-native-widget");
+      await expect(widget.getByText("Interactive growth forecast")).toBeVisible();
+      const ledger=widget.getByRole("table").filter({hasText:"Native account"});
+      await expect(widget.getByText("Native accounting ledger",{exact:true})).toBeVisible();
+      await expect(widget.getByText("125",{exact:true})).toBeVisible();
+      const fallback=widget.getByRole("table").filter({hasText:"Fallback revenue"});
+      await expect(fallback.getByRole("cell",{name:"7654",exact:true})).toBeVisible();
+      await expect(fallback.getByRole("cell",{name:"-321",exact:true})).toBeVisible();
+      await expect(ledger).toBeVisible();
+      for(const value of ["120.25","-12.5","0","Not recorded"])await expect(ledger.getByRole("cell",{name:value,exact:true})).toBeVisible();
+      const grid=widget.locator(".grid-cols-4");
+      await expect(grid).toBeVisible();
+      expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(4);
+      const code=widget.getByText("Native muted surface",{exact:true});
+      await expect(code).toBeVisible();
+      expect(await code.evaluate(el=>{const sample=document.createElement("span");sample.className="bg-surface2";document.body.appendChild(sample);const matched=getComputedStyle(el).backgroundColor===getComputedStyle(sample).backgroundColor;sample.remove();return matched;})).toBe(true);
+      await widget.getByRole("button",{name:"Open forecast details"}).click();
+      const nativeDialog=page.getByRole("dialog",{name:"Forecast assumptions"});
+      await expect(nativeDialog).toBeVisible();
+      expect(await nativeDialog.evaluate(el=>getComputedStyle(el).animationName)).not.toBe("none");
+      await nativeDialog.getByRole("button",{name:"Close",exact:true}).click();
+      await expect(nativeDialog).toHaveCount(0);
+      const initial=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(11000);
+      const updated=new Intl.NumberFormat("en-US",{style:"currency",currency:owner.currency}).format(12000);
+      await expect(widget.getByText(initial,{exact:true})).toBeVisible();
+      await expect(widget.getByText("Owner changed the assumption")).toHaveCount(0);
+      const slider=widget.getByRole("slider",{name:"Growth multiplier"});
+      await expect(slider).toHaveAttribute("aria-valuenow","1.1");
+      await slider.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuenow","1.2");
+      await expect(widget.getByText(updated,{exact:true})).toBeVisible();
+      await widget.getByRole("button",{name:"Use 20% growth"}).click();
+      await expect(widget.getByText("Owner changed the assumption")).toBeVisible();
+      await expect(widget.getByText(updated,{exact:true})).toBeVisible();
+      expect(await widget.evaluate(el=>el.getBoundingClientRect().right<=window.innerWidth+1)).toBe(true);
       await expect(rich.locator('[data-supervisor-layout="stack"] [data-supervisor-layout="stack"] [data-supervisor-layout="grid"]')).toHaveCount(1);
       const chartDetail=rich.locator("figure details summary");
       await expect(chartDetail).toHaveAccessibleName(/Daily net sales/);
@@ -2247,6 +2300,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       expect(ax).toContain('table "Response table"');
       expect(ax).toContain('table "Daily net sales"');
       await expect(answer.getByRole("table",{name:"Response table"}).getByRole("columnheader",{name:"Recorded status"})).toBeVisible();
+      await expect(answer.getByRole("table",{name:"Response table"}).getByRole("cell",{name:"Complete",exact:true}).first()).toHaveCSS("overflow-wrap","anywhere");
       await expect(rich.getByRole("table",{name:"Daily net sales"})).toHaveAccessibleDescription(/Sales records.*Saved snapshot/);
       await expect(rich.getByRole("table",{name:"Comparison values"})).toHaveAccessibleDescription(/Recorded sales.*Recorded costs/);
       expect(ax).toContain('table "Comparison values"');

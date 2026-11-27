@@ -89,7 +89,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
   const lastChosenTimezoneRef = useRef(profile.timezone);
   const editRevisionRef = useRef(0);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const invalidClass = (key: string) => fieldErrors[key] ? " !border-neg ring-2 ring-neg" : "";
+  const invalidClass = (key: string) => fieldErrors[key] ? " border-neg! ring-2 ring-neg" : "";
   const clearFieldError = (key: string) => setFieldErrors((errors) => {
     if (!errors[key]) return errors;
     const next = { ...errors };
@@ -359,7 +359,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
         </div>
       </section>
 
-      <section id="cafe-hours" ref={hoursRef} tabIndex={-1} aria-labelledby="cafe-hours-heading" className="scroll-mt-24 flex flex-col gap-3 rounded-card-lg bg-card p-4 outline-none">
+      <section id="cafe-hours" ref={hoursRef} tabIndex={-1} aria-labelledby="cafe-hours-heading" className="scroll-mt-24 flex flex-col gap-3 rounded-card-lg bg-card p-4 outline-hidden">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="cafe-hours-heading" className="text-lg font-bold text-ink">{labels.regularHours}</h2>
@@ -411,7 +411,7 @@ export default function CafeProfileForm({ profile, labels, focusHours = false }:
 
       {error && <p role="alert" className="rounded-xl bg-warn-tint p-3 text-[1.0625rem] font-semibold text-warn">{error}</p>}
       {status === "saved" && <p className="rounded-xl bg-good-tint p-3 text-[1.0625rem] font-semibold text-good">{labels.saved}</p>}
-      <div className="sticky bottom-20 z-20 -mx-4 border-t border-line bg-card/95 px-4 py-3 shadow-lg backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
+      <div className="sticky bottom-20 z-20 -mx-4 border-t border-line bg-card/95 px-4 py-3 shadow-lg backdrop-blur-sm md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:shadow-none">
         <button type="button" onClick={save} disabled={isPending} className="min-h-14 w-full rounded-full bg-accent px-5 text-[1.0625rem] font-bold text-on-accent disabled:opacity-40">
           {isPending ? labels.saving : labels.save}
         </button>

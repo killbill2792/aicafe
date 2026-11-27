@@ -25,7 +25,7 @@ export default function TodayAtAGlanceCard({
         {stats.map((s) => (
           <div key={s.label} className="flex flex-col gap-0.5 rounded-2xl bg-surface2 p-3">
             <span className="text-[0.8125rem] font-semibold text-ink-muted">{s.label}</span>
-            <span className="break-words text-lg font-extrabold text-ink">{s.value}</span>
+            <span className="wrap-break-word text-lg font-extrabold text-ink">{s.value}</span>
           </div>
         ))}
         {secondaryStat && <div className="col-span-2 px-1 text-[0.8125rem] font-semibold text-ink-muted">{secondaryStat}</div>}

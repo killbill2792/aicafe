@@ -195,12 +195,14 @@ describe("source-independent inline presentation",()=>{
  });
 });
 
-it("uses the library's schema-derived native syntax without unsupported demo widgets or state requirements",()=>{
+it("uses the installed catalog and native state syntax without fabricated demo data",()=>{
  expect(INLINE_PRESENTATION_HINT).toContain('"type":"DataView"');
  expect(INLINE_PRESENTATION_HINT).toContain("points");
- expect(INLINE_PRESENTATION_HINT).not.toContain('"type":"Card"');
+ expect(INLINE_PRESENTATION_HINT).toContain("Card:");
+ expect(INLINE_PRESENTATION_HINT).toContain("Slider:");
+ expect(INLINE_PRESENTATION_HINT).toContain("$bindState");
  expect(INLINE_PRESENTATION_HINT).not.toContain("Include realistic sample data");
- expect(INLINE_PRESENTATION_HINT).not.toContain("You MUST include state patches");
+ expect(INLINE_PRESENTATION_HINT).toContain("only needed when using state-dependent");
 });
 it("distinguishes absent output, rejected view selection, and persisted visual receipts",async()=>{
  const provider:AgentProvider=async function*(){

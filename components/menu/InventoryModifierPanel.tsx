@@ -22,7 +22,7 @@ export default function InventoryModifierPanel({data,t,locale}:{
    <summary className="min-h-12 cursor-pointer text-lg font-semibold">{t.modifierHeading}
     {" ("+data.observed.length+")"}
    </summary>
-   <p className="my-3 text-[1.0625rem] text-muted">{t.modifierExplain}</p>
+   <p className="my-3 text-[1.0625rem] text-ink-muted">{t.modifierExplain}</p>
    {!data.observed.length&&<p className="text-[1.0625rem]">{t.modifierEmpty}</p>}
    <div className="space-y-3">
     {data.observed.map(item=>{
@@ -35,7 +35,7 @@ export default function InventoryModifierPanel({data,t,locale}:{
      const validNew=isNew&&Boolean(chosenIngredient&&amount!==null&&amount>0&&amount<=999999);
      return <div key={key} className="rounded-xl border border-line p-3">
       <p className="text-[1.0625rem] font-semibold">{item.name}</p>
-      <p className="text-[1.0625rem] text-muted">{item.provider+" · "+item.locationRef}</p>
+      <p className="text-[1.0625rem] text-ink-muted">{item.provider+" · "+item.locationRef}</p>
       {hint&&<p className="text-[1.0625rem]">{t.modifierSuggested+": "+hint.recipeName}</p>}
       <label className="block text-[1.0625rem]">{t.modifierRecipe}
        <select className="mt-1 min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[1.0625rem]"

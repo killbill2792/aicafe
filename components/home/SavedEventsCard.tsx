@@ -23,8 +23,8 @@ export function EventAdviceItem({action}:{action:Action}){
   return <li className="flex min-w-0 items-start gap-3 rounded-xl border border-line bg-surface2 p-3">
     <Lightbulb aria-hidden="true" size={22} className="mt-0.5 shrink-0 text-accent-text"/>
     <div className="min-w-0">
-      <h5 className="break-words font-semibold" dir="auto">{action.action}</h5>
-      <p className="mt-1 break-words text-ink-muted" dir="auto">{action.reason}</p>
+      <h5 className="wrap-break-word font-semibold" dir="auto">{action.action}</h5>
+      <p className="mt-1 wrap-break-word text-ink-muted" dir="auto">{action.reason}</p>
     </div>
   </li>;
 }
@@ -36,7 +36,7 @@ export function EventsTabs({tab,onChoose,t,compact=false}:{tab:Tab;onChoose:(nex
   return <div className={compact?"flex flex-wrap gap-2":"grid grid-cols-3 gap-2"} role="group" aria-label={t("title")}>
     {(["past","now","upcoming"] as const).map(key=><button key={key} type="button"
       aria-pressed={tab===key} onClick={()=>onChoose(key)}
-      className={(compact?"min-h-12 max-w-full rounded-full px-3.5 py-1 text-[0.9375rem]":"min-h-12 min-w-0 rounded-xl px-2 text-[1rem]")+" font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+      className={(compact?"min-h-12 max-w-full rounded-full px-3.5 py-1 text-[0.9375rem]":"min-h-12 min-w-0 rounded-xl px-2 text-[1rem]")+" font-semibold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink "+
         (tab===key?"bg-accent text-on-accent":"bg-surface2 text-ink")}>{t(key)}</button>)}
   </div>;
 }
@@ -191,7 +191,7 @@ export function VenueMapLink({address,t}:{address:string|null;t:T}){
   return <a href={url} target="_blank" rel="noopener noreferrer"
     aria-label={t("mapLink")+": "+address.trim()}
     className="inline-flex min-h-12 max-w-full flex-wrap items-center gap-1 text-[1.0625rem] text-accent-text underline">
-    <span dir="auto" className="break-words">{address.trim()}</span>
+    <span dir="auto" className="wrap-break-word">{address.trim()}</span>
     <span className="whitespace-nowrap">· {t("mapLink")}</span>
   </a>;
 }
@@ -204,7 +204,7 @@ export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis,viewDate=e
   return <article className="min-w-0 rounded-2xl border border-line bg-card">
     <button type="button" onClick={()=>onOpen(event)}
       aria-label={t("openEvent",{title:event.name,date:dateLabel(viewDate,locale,"long")})}
-      className="flex min-h-20 w-full min-w-0 items-center gap-3 rounded-2xl p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      className="flex min-h-20 w-full min-w-0 items-center gap-3 rounded-2xl p-4 text-start focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
       <div className="min-w-0 flex-1 space-y-1">
         <p className="text-[0.9375rem] font-semibold text-accent-text">
           <CalendarDays size={16} className="me-1 inline align-[-3px]" aria-hidden="true"/>
@@ -212,8 +212,8 @@ export function SavedEventListCard({event,locale,t,onOpen,hasAnalysis,viewDate=e
           {event.endDate!==event.startDate?" – "+dateLabel(event.endDate,locale,"long"):""}
           {event.startTime?" · "+event.startTime:""}
         </p>
-        <h4 className="break-words font-headline text-[1.1875rem] font-bold leading-snug text-ink" dir="auto">{event.name}</h4>
-        {(event.venue||event.areaLabel)&&<p className="break-words text-[1rem] text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
+        <h4 className="wrap-break-word font-headline text-[1.1875rem] font-bold leading-snug text-ink" dir="auto">{event.name}</h4>
+        {(event.venue||event.areaLabel)&&<p className="wrap-break-word text-[1rem] text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
         {(today||event.status!=="found")&&<p role="status" className={event.status==="found"?"font-semibold text-ink-muted":"font-semibold text-warn-text"}>
           {lifecycleLabel(event,today??viewDate,locale,t)}
         </p>}
@@ -264,7 +264,7 @@ function PlanHours({plan,t}:{plan:Plan;t:T}){
     <h4 className="text-[1.0625rem] font-semibold">{t("busyHours")}</h4>
     <div className="flex gap-1" role="img" aria-label={hours.map(h=>h.start+"–"+h.end).join(", ")}>
       {Array.from({length:24},(_,hour)=><div key={hour}
-        className={"h-9 min-w-0 flex-1 rounded-sm "+(active(hour)?"bg-accent":"bg-surface2")}/>)}
+        className={"h-9 min-w-0 flex-1 rounded-xs "+(active(hour)?"bg-accent":"bg-surface2")}/>)}
     </div>
     <p className="text-[1.0625rem] text-ink-muted">{hours.map(h=>h.start+"–"+h.end).join(" · ")} · {t("estimated")}</p>
   </div>;
@@ -285,7 +285,7 @@ export function SavedEventAnalysis({plan,selectedEvent,date,today,currency,local
     <div>
       <p className="text-[0.9375rem] font-semibold text-accent-text">{t("savedInsight")}{plan.importance?" · "+t("importance"+plan.importance.charAt(0).toUpperCase()+plan.importance.slice(1)):""}</p>
       {selectedEvent&&(!plan.eventIds||plan.eventIds.length===0)&&<p className="mt-1 text-[0.9375rem] text-ink-muted">{t("dayWideInsight",{date:dateLabel(date,locale,"long")})}</p>}
-      <p className="mt-2 break-words font-headline text-[1.25rem] font-semibold leading-snug" dir="auto">{plan.summary}</p>
+      <p className="mt-2 wrap-break-word font-headline text-[1.25rem] font-semibold leading-snug" dir="auto">{plan.summary}</p>
     </div>
     <div className="rounded-xl bg-surface2 p-3 text-[0.9375rem]" aria-label={t("outlookUncertainty")}>
       <h4 className="font-semibold">{t("outlookUncertainty")}</h4>
@@ -363,7 +363,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
     // Search can intentionally recheck the same saved filter.
     setRetry(v=>v+1);
   };
-  const button="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-[1.0625rem] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-40";
+  const button="min-h-12 rounded-xl border border-line bg-surface2 px-3 text-[1.0625rem] font-semibold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-40";
   const checked=(value:string|null|undefined)=>value&&/^\d{4}-\d{2}-\d{2}/.test(value)?
     dateLabel(value.slice(0,10),locale,"long"):t("researchUnknown");
   const status=(item:CityCatalogPage["items"][number])=>item.status==="cancelled"?
@@ -379,7 +379,7 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
         {selected.datePrecision==="unknown_end"?" · "+({en,es,ar}[locale].SchedulingAvailability.end)+" "+t("reportUnknown"):""}
         {selected.startTime?" · "+selected.startTime:""}
       </p>
-      <h4 className="break-words font-headline text-[1.375rem] font-bold" dir="auto">{selected.name}</h4>
+      <h4 className="wrap-break-word font-headline text-[1.375rem] font-bold" dir="auto">{selected.name}</h4>
       <p>{t("category")}: {cityKindLabel(selected.kind,t)}</p>
       <p className="text-ink-muted">{selected.venue??t("venueUnknown")}</p>
       <VenueMapLink address={selected.venueAddress} t={t}/>
@@ -452,13 +452,13 @@ export function CityCatalogView({today,locale,t,chatDisabled,onAsk}:{
         {catalog.items.length===0&&<p className="rounded-xl bg-surface2 p-4">{t("cityNoResults")}</p>}
         <ul className="space-y-3">{catalog.items.map(item=><li key={item.id}>
           <button type="button" onClick={()=>setSelected(item)}
-            className="w-full min-h-20 rounded-2xl border border-line bg-card p-4 text-start focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            className="w-full min-h-20 rounded-2xl border border-line bg-card p-4 text-start focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
             <p className="text-[0.9375rem] font-semibold text-accent-text">
               {dateLabel(item.startDate,locale,"long")}{item.endDate!==item.startDate?" – "+dateLabel(item.endDate,locale,"long"):""} · {cityKindLabel(item.kind,t)}
               {item.datePrecision==="unknown_end"?" · "+({en,es,ar}[locale].SchedulingAvailability.end)+" "+t("reportUnknown"):""}
             </p>
-            <h5 className="mt-1 break-words text-[1.1875rem] font-bold" dir="auto">{item.name}</h5>
-            <p className="mt-1 break-words text-[1rem] text-ink-muted" dir="auto">
+            <h5 className="mt-1 wrap-break-word text-[1.1875rem] font-bold" dir="auto">{item.name}</h5>
+            <p className="mt-1 wrap-break-word text-[1rem] text-ink-muted" dir="auto">
               {item.venue??t("venueUnknown")}
             </p>
             <p className="text-[0.9375rem] text-ink-muted">{status(item)} · {t("researchedOn",{date:checked(item.checkedAt)})}</p>
@@ -544,7 +544,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
   const monthLength=new Date(Number(calendarMonth.slice(0,4)),Number(calendarMonth.slice(5,7)),0).getDate();
   const calendarDays=Array.from({length:weekday+monthLength},(_,i)=>i<weekday?null:
     calendarMonth+"-"+String(i-weekday+1).padStart(2,"0"));
-  const button="min-h-12 rounded-xl px-4 text-[1.0625rem] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
+  const button="min-h-12 rounded-xl px-4 text-[1.0625rem] font-semibold focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50";
   const chat=(date:string,event?:CafeEvent)=>{
     if(chatDisabled)return;
     const target=eventChatTarget(date,event,event?eventPlanFor(timeline.plans,event.id,date):planOn(timeline.plans,date));
@@ -565,7 +565,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
     <section data-testid="coming-up" aria-label={t("title")}
       className="min-w-0 rounded-2xl border border-line bg-card p-3">
       <button type="button" onClick={()=>openEvents()}
-        className="flex min-h-12 w-full items-center gap-2 text-start font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        className="flex min-h-12 w-full items-center gap-2 text-start font-semibold text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <CalendarDays size={20} aria-hidden="true"/><span className="flex-1 text-[1.0625rem]">{t("title")}</span>
         <span className="text-[0.9375rem] text-accent-text">{t("seeAll")}</span>
       </button>
@@ -573,14 +573,14 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
       {!compact&&(lead?<button type="button" onClick={()=>openDay(lead.date)}
         className="mb-3 w-full min-w-0 rounded-2xl bg-surface2 p-3 text-start disabled:opacity-60">
         <p className="text-[0.9375rem] font-semibold text-accent-text">{dateLabel(lead.date,locale,"long")} · {lead.date===today?t("now"):t("upcoming")}</p>
-        <h3 className="mt-1 break-words font-headline text-[1.25rem] font-bold leading-snug text-ink" dir="auto">
+        <h3 className="mt-1 wrap-break-word font-headline text-[1.25rem] font-bold leading-snug text-ink" dir="auto">
           {lead.events.map(e=>e.name).join(" · ")||t("savedInsight")}
         </h3>
         {lead.events.filter(e=>e.status!=="found").map(e=><p key={e.id} role="alert"
           className="mt-2 rounded-lg bg-card p-2 font-semibold text-warn-text">
           {e.name}: {e.status==="cancelled"?t("cancelled"):t("moved")}
         </p>)}
-        {lead.events[0]?.venue&&<p className="mt-1 break-words text-[0.9375rem] text-ink-muted" dir="auto">{lead.events[0].venue}</p>}
+        {lead.events[0]?.venue&&<p className="mt-1 wrap-break-word text-[0.9375rem] text-ink-muted" dir="auto">{lead.events[0].venue}</p>}
         {lead.plan?.summary&&<p className="mt-2 line-clamp-3 text-[1.0625rem] leading-relaxed text-ink" dir="auto">{lead.plan.summary}</p>}
         {lead.date===today&&lead.events.some(e=>e.status==="found")&&liveEventHeadline(lead.plan,today,t)&&<p className="mt-2 rounded-xl bg-card p-2 text-[1.0625rem]">{liveEventHeadline(lead.plan,today,t)}</p>}
         <span className="mt-2 inline-flex min-h-12 items-center font-semibold text-accent-text">{t("readInsights")} <ChevronRight size={19} className="ms-1 rtl:rotate-180" aria-hidden="true"/></span>
@@ -592,7 +592,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
           const name=dateLabel(date,locale);
           return <button key={date} type="button" onClick={()=>openDay(date)}
             aria-label={name+" · "+(dayPlan?.summary??events.map(e=>e.name).join(", ")??"")}
-            className="flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-surface2 px-0.5 text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+            className="flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 rounded-xl bg-surface2 px-0.5 text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
             <span className="text-[0.8125rem]">{new Intl.DateTimeFormat(locale,{weekday:"short",timeZone:"UTC"}).format(new Date(date+"T00:00:00Z"))}</span>
             <span className="text-[1.0625rem] font-bold">{date.slice(8)}</span>
             <span aria-hidden="true" className={"h-2 w-2 rounded-full "+(dayPlan?"bg-accent":events.length?"bg-warn-text":"bg-line")}/>
@@ -608,7 +608,7 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
         <header className="flex shrink-0 items-center gap-2 border-b border-line p-3">
           {panel==="day"&&<button type="button" onClick={()=>openEvents(tab)} aria-label={t("back")}
             className={button}><ChevronLeft size={20} className="rtl:rotate-180" aria-hidden="true"/></button>}
-          <h3 className="min-w-0 flex-1 break-words font-headline text-[1.25rem] font-bold">{view==="city"?t("allCityEvents"):panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
+          <h3 className="min-w-0 flex-1 wrap-break-word font-headline text-[1.25rem] font-bold">{view==="city"?t("allCityEvents"):panel==="day"?(selectedEvent?.name??dateLabel(chosen,locale,"long")):t("title")}</h3>
           <button type="button" onClick={()=>setPanel(null)} aria-label={t("close")} className={button}>
             <X size={22} aria-hidden="true"/></button>
         </header>
@@ -672,11 +672,11 @@ export default function SavedEventsCard({locale,chatDisabled,compact=false,onCha
           </>:<>
             {dayEvents.map(event=><article key={event.id} className="space-y-2 rounded-2xl border border-line bg-card p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <h4 className="min-w-0 flex-1 break-words font-headline text-[1.375rem] font-bold leading-snug" dir="auto">{event.name}</h4>
+                <h4 className="min-w-0 flex-1 wrap-break-word font-headline text-[1.375rem] font-bold leading-snug" dir="auto">{event.name}</h4>
                 <span role="status" className={"rounded-lg bg-surface2 px-2 py-1 text-[0.9375rem] font-semibold "+(event.status==="found"?"text-ink-muted":"text-warn-text")}>{lifecycleLabel(event,today,locale,t)}</span>
               </div>
               <p className="font-semibold text-accent-text"><CalendarDays size={18} className="me-2 inline" aria-hidden="true"/>{dateLabel(event.startDate,locale,"long")}{event.endDate!==event.startDate?" – "+dateLabel(event.endDate,locale,"long"):""}{event.startTime?" · "+event.startTime:""}</p>
-              {(event.venue||event.areaLabel)&&<p className="break-words text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
+              {(event.venue||event.areaLabel)&&<p className="wrap-break-word text-ink-muted" dir="auto">{event.venue??event.areaLabel}</p>}
               {event.verificationFailedAt&&(!event.lastVerifiedAt||event.verificationFailedAt>event.lastVerifiedAt)&&
                 <p className="text-[0.9375rem] text-ink-muted">{t("verificationPending")}</p>}
               {event.lastVerifiedAt&&<p className="text-[0.9375rem] text-ink-muted">{t("verifiedOn",{date:event.lastVerifiedAt.slice(0,10)})}</p>}

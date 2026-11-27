@@ -1,6 +1,7 @@
 import {z} from "zod";
 import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
+import {upstreamComponents,nativeChartDefinition,validNativeSpec,recoverNativeDisplaySpec,safeNativeJSON,safeStatePath,safeKey,localActionNames} from "@/lib/ai/conversations/nativePresentation";
 import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
 import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
@@ -34,28 +35,33 @@ function normalizeAuthoredTable(value:unknown):unknown{
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
  tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
- Stack:{props:z.object({}),slots:["default"],description:"Group views in their displayed order.",example:{}},
+ ...upstreamComponents,
+ LunaChart:nativeChartDefinition,
  DataView:{props:envelope,slots:[],description:"Metrics, charts, tables, calculators, report and authenticated attachments. For rows use ref, x, y or columns. For individual values, including across sources, use points with label and value:{ref,path:[exact field names and array indices]}; for text use value:{ref,quote:exact numeric token including currency symbol if present}. For dated or numeric category labels use labelField:{ref,path}. A calculate result can supply an editable calculator, or author calculator inputs, steps and editable input names directly with a title; direct inputs are hypothetical unless explained otherwise. You can also author a panel directly with kind, title, unit, basis (calculated, estimate or scenario), explanation and points [{label,value}]. Use cents for money in minor units; null means unknown, not zero. You can also author tables directly using tables:[{title,basis,explanation,columns:[label],rows:[[value]]}]. Basis and explanation are optional descriptions authored by Luna. The renderer does not judge the answer.",example:{layout:"grid",panels:[{ref:"q1",kind:"bar",x:"category",y:"amount_cents"}]}},
 };
-// The upstream default template advertises Card, demo data, repeat, /state
-// and mutable actions. Our data-bound registry does not execute those. Use
-// JSON Render's documented promptTemplate hook and its own schema formatter
-// so Luna receives exactly the available components and valid native syntax.
-const catalog=defineCatalog(defineSchema(()=>schema.definition,{promptTemplate:({options,formatZodType})=>[
- options.system,
- "Write normal Markdown. To insert a visual at the current position, emit a spec fenced block containing native RFC 6902 JSONL patches; then continue the answer. A text-only answer is appropriate when no visual improves it.",
- "Example of native syntax (references and field names must come from your actual evidence):",
- String.fromCharCode(96).repeat(3)+"spec",
- JSON.stringify({op:"add",path:"/root",value:"view"}),
- JSON.stringify({op:"add",path:"/elements/view",value:{type:"DataView",props:components.DataView.example,children:[]}}),
- String.fromCharCode(96).repeat(3),
- "Each independent view starts its own spec fence. Only /root and /elements are supported. Stack can contain DataView children; DataView is a leaf. No repeat, executable actions or arbitrary client code. Model-authored calculations, forecasts and explicitly labeled hypothetical scenarios are supported.",
- ...Object.entries(components).map(([name,c])=>name+": "+formatZodType(c.props)+" — "+c.description),
- ...(options.customRules??[]),
-].filter(Boolean).join("\n")}),{components,actions:{}});
-export const INLINE_PRESENTATION_HINT=catalog.prompt({mode:"inline",
- system:"You are composing the actual owner-facing answer. Use natural Markdown together with the available visual and interactive components whenever they make the answer clearer. Choose the representation yourself; the information source does not determine the layout. Prefer a visual over a Markdown table whenever the answer has figures across several periods or items, a ranking, a comparison or headline numbers: a chart for trends, a table for records, metric cards for the key figures, with a short sentence of prose around it. Use direct model-authored panels for calculations, forecasts and scenarios when helpful; distinguish actual records from assumptions and estimates. Choose prose or visuals independently of the retrieval method.",
- customRules:["Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. Use the presentationRef from admitted tool results or the text references described in the turn context. Bind existing values when convenient, or author panels and tables directly for any answer. Use any relevant numbers, including derived, hypothetical and estimated figures. The application does not assign confidence or require matching database values. Explain the basis and do not represent assumptions as actual business records. Historical messages are prior claims, not fresh business evidence. No generic executable actions."]});
+// Generate the vocabulary from the installed catalog, without demo-data instructions.
+// Use the library's generated grammar, catalog schemas, events and default
+// interaction documentation. Compatible upstream additions flow through the
+// installed package without a hand-maintained prompt or widget inventory.
+const catalog=defineCatalog(defineSchema(()=>schema.definition,{
+ builtInActions:(schema.builtInActions??[]).filter(a=>localActionNames.has(a.name)),
+ defaultRules:schema.defaultRules,
+}),{components,actions:{}});
+const generatedHint=catalog.prompt({mode:"inline",
+ system:"You compose the actual owner-facing answer. Choose natural Markdown and native visuals independently of retrieval method. A text-only answer is always appropriate if useful. Use native state and the full web component catalog for interactive reports and scenario tools. Use actual records or clearly identified model assumptions, never fabricate missing data.",
+ customRules:[
+  "Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. DataView resolves already returned SQL, owner-provided data or authored financial analysis, and LunaChart accepts native state-bound points.",
+  "Example DataView node: "+JSON.stringify({type:"DataView",props:components.DataView.example,children:[]}),
+  "A state field is only needed when using state-dependent expressions or interactions, not for direct values. All local interactions and acyclic watches are supported. Use the actual listed local actions only; no remote API calls or business actions from widgets.",
+  "Use any relevant numbers including derived, hypothetical and estimated figures. The application does not grade the analysis or require matching database values. Explain assumptions when useful. Do not invent data for empty results.",
+  "For a state-derived calculation, use "+JSON.stringify({$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:{$state:"/sales"}},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}],format:"number"}})+". Omit format for numeric output. Format supports number, currency or percent; for currency supply the actual business currency. The format computed function accepts {value,currency?}. Chart points can use these expressions, too.",
+  "Images and avatars support embedded raster images; private files use existing authenticated attachments. HTTPS links require a user click. No executable JavaScript, arbitrary network actions, or access to other message/application state.",
+ ]});
+// The general-purpose demo instructions in the upstream prompt are unsuitable
+// for live business records. Remove only those and the example remote action;
+// the remaining native UI grammar is supplied by the installed library.
+export const INLINE_PRESENTATION_HINT=generatedHint.split("\n").filter(line=>!/realistic.*sample data|never leave arrays empty|loadCities|side effects \(loading data/i.test(line)).join("\n");
+
 type Selection=z.infer<typeof selection>;
 export type PresentationContext={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
 type Context=PresentationContext;
@@ -75,7 +81,7 @@ function table(s:Selection,rows:Row[],ctx:Context,e:PresentationEvidence):Record
  const columns=keys.map(k=>({label:name(k),unit:unit(k)==="cents"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"cents":unit(k)==="count"&&rows.every(r=>r[k]==null||typeof r[k]==="number")?"count":"stored"}));
  const result=recordTableSchema.safeParse({title:title(s,"Query results"),view:e.kind==="sql"?"tool_sql_research":"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
   currency:ctx.currency??null,coverage:"stored",
-  scope:e.source+"; see the answer for period and coverage",
+  scope:e.source,
   columns,rows:rows.map(r=>keys.map(k=>rawCell(r[k])?r[k]:null))});
  return result.success?result.data:null;
 }
@@ -237,7 +243,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    const a=direct.data;
    const heading=descriptiveGroupTitle(a.title)??"Luna analysis";
    const coverage=a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":undefined;
-   const detail=[a.basis,a.explanation,...a.points.flatMap(p=>p.basis?[p.label+": "+p.basis]:[])].filter(Boolean).join(": ")||"Luna analysis";
+   const detail=[a.basis,a.explanation,...a.points.flatMap(p=>p.basis?[p.label+": "+p.basis]:[])].filter(Boolean).join(": ");
    const authoredPoints=a.points.map(p=>{
     const rawUnit=p.unit??a.unit;
     const supported=presentationPanelSchema.shape.unit.safeParse(rawUnit);
@@ -262,7 +268,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
    const displayUnit=first.unit,measurement=first.measurement;
    const currency=["cents","cents/hour"].includes(displayUnit)?ctx.currency??null:null;
    const modelPanel=presentationPanelSchema.safeParse({kind:presentationPanelSchema.shape.kind.safeParse(a.kind).success?a.kind:"table",title:heading,unit:displayUnit,currency,from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,
-     source:"response_evidence",sourceDetail:detail,coverage,...(measurement?{measurement}:{}),points});
+     source:"response_evidence",...(detail?{sourceDetail:detail}:{}),coverage,...(measurement?{measurement}:{}),points});
    if(modelPanel.success)panels.push(modelPanel.data);
    else{
     const numeric=points.every(p=>p.value===null||typeof p.value==="number");
@@ -316,7 +322,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   const a=t.data, width=a.rows.reduce((n,r)=>Math.max(n,r.length),a.columns.length);
   const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
   const result=recordTableSchema.safeParse({title:descriptiveGroupTitle(a.title)??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
-   coverage:a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":"authored",scope:[a.basis,a.explanation].filter(Boolean).join(": ")||"Luna analysis",
+   coverage:a.basis==="estimate"?"estimate":a.basis==="partial"?"partial":a.basis==="unverified"?"unverified":"authored",scope:[a.basis,a.explanation].filter(Boolean).join(": "),
    columns,rows:a.rows.map(row=>Array.from({length:width},(_,i)=>row[i]??null))});
   if(result.success)tables.push(result.data);
  }
@@ -334,32 +340,48 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
 }
 
 /** Apply only data-only element tree patches, using the installed library's
- * compiler. Never execute model-supplied actions, state bindings or unsafe paths.
+ * compiler. Native interactions are isolated to local widget state.
  * Resolve each view independently so a malformed sibling cannot erase prose. */
 export function resolveResearchSpec(patches:readonly unknown[],queries:PresentationEvidenceMap,ctx?:Context,onDeliveryLoss?:()=>void):RichPresentation[]{
  const compiler=createSpecStreamCompiler();
- const safeKey=(s:string)=>/^[a-zA-Z0-9_-]+$/u.test(s)&&!["__proto__","constructor","prototype"].includes(s);
- const safeValue=(v:unknown):boolean=>Array.isArray(v)?v.every(safeValue):!obj(v)||Object.entries(v).every(([k,x])=>!["__proto__","constructor","prototype"].includes(k)&&safeValue(x));
  for(const value of patches){
-  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||!safeValue(value.value)){onDeliveryLoss?.();continue;}
+  if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||(value.op!=="remove"&&!safeNativeJSON(value.value))){onDeliveryLoss?.();continue;}
   const parts=value.path.split("/").slice(1);
-  if(value.path!=="/root"&&(parts[0]!=="elements"||parts.slice(1).some(k=>!safeKey(k)))){onDeliveryLoss?.();continue;}
+  if(value.path!=="/root"&&(!["elements","state"].includes(parts[0])||!safeStatePath(value.path)||parts.slice(1).some(k=>!safeKey(k)))){onDeliveryLoss?.();continue;}
   try{compiler.push(JSON.stringify(value as unknown as SpecStreamLine)+"\n");}catch{onDeliveryLoss?.();}
  }
  let spec:ReturnType<typeof compiler.getResult>;
  try{spec=compiler.getResult();}catch{onDeliveryLoss?.();return [];}
  if(!obj(spec.elements))return [];
+ // Native widgets and DataView snapshots share a single persisted element tree.
+ // Old DataView-only fences retain their established wire representation.
+ const native=Boolean(spec.state)||Object.values(spec.elements).some(e=>obj(e)&&(e.type!=="DataView"&&e.type!=="Stack"||e.type==="Stack"&&obj(e.props)&&Object.keys(e.props).length>0||e.on||e.watch||e.visible||e.repeat||e.slots));
+ if(native&&ctx&&typeof spec.root==="string"&&!Object.values(spec.elements).some(e=>obj(e)&&e.type==="LunaSnapshot")){
+  const elements=Object.fromEntries(Object.entries(spec.elements).map(([key,e])=>{
+   if(!obj(e))return [key,e];
+   if(e.type==="LunaChart"&&obj(e.props))return [key,{...e,props:{...e.props,asOf:ctx.asOf}}];
+   if(e.type!=="DataView")return [key,e];
+   const snapshot=resolveResearchView(e.props,queries,ctx,onDeliveryLoss);
+   return [key,{type:"LunaSnapshot",props:{snapshotJSON:JSON.stringify(snapshot??{type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[]})},children:[],...(e.visible!==undefined?{visible:e.visible}:{}),...(e.repeat!==undefined?{repeat:e.repeat}:{})}];
+  }));
+  const candidate:unknown=JSON.parse(JSON.stringify({root:spec.root,elements,...(spec.state?{state:spec.state}:{})}));
+  const display=validNativeSpec(candidate)?candidate:recoverNativeDisplaySpec(candidate);
+  if(display){
+   const view=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],nativeSpec:display});if(view)return [view];
+  }
+ }
+ if(native)onDeliveryLoss?.();
  const visited=new Set<string>(),result:RichPresentation[]=[];
- const walk=(key:string)=>{
-  if(visited.has(key)||!safeKey(key))return;
-  visited.add(key);
-  const element=Object.hasOwn(spec.elements as Row,key)?(spec.elements as Row)[key]:null;
-  if(!obj(element))return;
-  if(element.type==="DataView"){
-   const view=resolveResearchView(element.props,queries,ctx,onDeliveryLoss);if(view)result.push(view);
-  }else if(element.type==="Stack"&&Array.isArray(element.children)){
-   for(const child of element.children)if(typeof child==="string")walk(child);
-  }else onDeliveryLoss?.();
+ const walk=(root:string)=>{
+  const pending=[root];
+  while(pending.length){
+   const key=pending.pop()!;
+   if(visited.has(key)||!safeKey(key))continue;visited.add(key);
+   const element=Object.hasOwn(spec.elements as Row,key)?(spec.elements as Row)[key]:null;
+   if(!obj(element))continue;
+   if(element.type==="DataView"){const view=resolveResearchView(element.props,queries,ctx,onDeliveryLoss);if(view)result.push(view);}
+   else if(Array.isArray(element.children))pending.push(...element.children.filter((v):v is string=>typeof v==="string").reverse());
+  }
  };
  if(typeof spec.root==="string")walk(spec.root);
  // Recover authored data leaves even if a layout parent or root is malformed.

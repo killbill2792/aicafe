@@ -45,7 +45,7 @@ export default function StaffCommunicationHistory({initial}:{
     {e.requestTitle&&<p className="text-xs text-ink-muted">{e.requestTitle}</p>}
     {e.kind==="message"&&e.actor==="employee"&&e.responseCode&&<p className="mt-2 text-sm font-semibold">
      {copy[responseCopyKeys[e.responseCode as keyof typeof responseCopyKeys]??"responseUnknown"]}</p>}
-    {e.text&&<p className="mt-2 whitespace-pre-wrap break-words text-sm">{e.text}</p>}
+    {e.text&&<p className="mt-2 whitespace-pre-wrap wrap-break-word text-sm">{e.text}</p>}
     {e.kind==="request"&&e.status&&<p className="mt-1 text-xs text-ink-muted">
      {copy.requestStatus}: {e.status}</p>}
    </li>)}</ol>}

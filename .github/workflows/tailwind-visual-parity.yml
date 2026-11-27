@@ -1,0 +1,131 @@
+name: Tailwind before-after browser comparison
+on:
+  pull_request:
+    branches: [claude/finish-answers, main]
+    paths:
+      - app/globals.css
+      - package.json
+      - package-lock.json
+      - components/**
+      - app/**
+      - tests/e2e/tailwind-parity.mjs
+      - .github/workflows/tailwind-visual-parity.yml
+permissions:
+  contents: read
+concurrency:
+  group: tailwind-visual-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  capture:
+    if: github.head_ref == 'claude/luna-upstream-ui'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [before, after]
+    env:
+      OPENAI_API_KEY: aicafe-disposable-e2e-no-provider
+      VERCEL_URL: ''
+      NEXT_TELEMETRY_DISABLED: '1'
+      TOAST_SETUP_ENABLED: 'true'
+      TOAST_WEBHOOKS_ENABLED: 'true'
+      TOAST_JOBS_ENABLED: 'true'
+      TOAST_ALLOWED_API_HOSTS: ws-api.toasttab.com
+      TOAST_DEFAULT_API_ORIGIN: https://ws-api.toasttab.com
+      TOAST_PUBLIC_WEBHOOK_ORIGIN: https://example.invalid
+      VISUAL_VARIANT: ${{ matrix.variant }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.variant == 'before' && github.event.pull_request.base.sha || github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Use the identical visual audit on both revisions
+        env:
+          AUDIT_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: git show "$AUDIT_HEAD:tests/e2e/tailwind-parity.mjs" > tests/e2e/tailwind-parity.mjs
+      - run: npm ci
+      - name: Prepare the same disposable seed and auth environment
+        run: |
+          set -euo pipefail
+          node scripts/seed/generateSeedSql.mjs
+          supabase start -x realtime,imgproxy,mailpit,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+          supabase db reset --local --yes
+          supabase status -o json > "$RUNNER_TEMP/status.json"
+          node --input-type=module <<'NODE'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          import {randomBytes} from 'node:crypto';
+          import {TEST_CAFES} from './scripts/seed/cafes.mjs';
+          const s=JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/status.json','utf8'));
+          const anon=s.ANON_KEY??s.anon_key,service=s.SERVICE_ROLE_KEY??s.service_role_key;
+          if(!anon||!service)throw Error('Missing disposable auth');
+          console.log('::add-mask::'+anon);console.log('::add-mask::'+service);
+          appendFileSync(process.env.GITHUB_ENV,'NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321\nNEXT_PUBLIC_SUPABASE_ANON_KEY='+anon+'\nSUPABASE_SERVICE_ROLE_KEY='+service+'\nCRON_SECRET='+randomBytes(32).toString('hex')+'\nTOKEN_ENCRYPTION_KEY='+randomBytes(32).toString('base64')+'\nADMIN_EMAILS='+TEST_CAFES[0].owner.email+'\n');
+          NODE
+      - run: npm run build -- --webpack
+      - name: Start the actual local app
+        run: |
+          set -euo pipefail
+          npm run start -- --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/visual-next.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/visual-next.pid"
+          for attempt in $(seq 1 90); do
+            if curl -fsSL http://127.0.0.1:3000/en/login -o /dev/null; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Capture synthetic owner screens, desktop/mobile and light/dark
+        run: node tests/e2e/tailwind-parity.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tailwind-${{ matrix.variant }}-synthetic-visuals
+          path: test-results/tailwind-visual/
+          if-no-files-found: error
+          retention-days: 7
+      - if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/visual-next.pid" ]; then kill "$(cat "$RUNNER_TEMP/visual-next.pid")" || true; fi
+          supabase stop --no-backup || true
+  compare:
+    needs: capture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tailwind-*-synthetic-visuals
+          path: visual
+      - name: Compare computed styles and screenshots
+        run: |
+          python -m pip install --quiet pillow
+          python <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image, ImageChops
+          b=Path('visual/tailwind-before-synthetic-visuals')
+          a=Path('visual/tailwind-after-synthetic-visuals')
+          old={x['name']:x for x in json.loads((b/'styles.json').read_text())}
+          new={x['name']:x for x in json.loads((a/'styles.json').read_text())}
+          assert old.keys()==new.keys() and len(old)==54, (len(old),len(new))
+          changed=[]
+          for name in old:
+              x,y=old[name],new[name]
+              keys=['body','samples','actualControls']
+              differences=[key for key in keys if x[key]!=y[key]]
+              if y['overflow']>x['overflow']+1: differences.append('overflow')
+              im1=Image.open(b/(name+'.png')).convert('RGB')
+              im2=Image.open(a/(name+'.png')).convert('RGB')
+              assert im1.size==im2.size
+              hist=ImageChops.difference(im1,im2).convert('L').histogram()
+              percent=round(100*(sum(hist[9:])/sum(hist)),2)
+              print('VISUAL_COMPARE '+json.dumps({'screen':name,'pixel_change_percent':percent,'style_differences':differences,'before':{k:x[k] for k in differences if k in x},'after':{k:y[k] for k in differences if k in y}}))
+              if differences or percent>1: changed.append(name)
+          print('Visual comparisons:',len(old),'computed style or screenshot differences over 1%:',len(changed))
+          if changed: raise SystemExit('Review style or screenshot differences: '+', '.join(changed))
+          PY

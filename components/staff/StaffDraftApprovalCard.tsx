@@ -146,19 +146,19 @@ export default function StaffDraftApprovalCard({week,locale,data,onClose,onAppli
     {!proposal&&<button type="button" disabled={busy} onClick={()=>void draft()}
       className="mt-3 min-h-12 rounded-xl bg-accent px-4 text-on-accent disabled:opacity-50">
       {busy?t("draftWorking"):t("draftThisWeek")}</button>}
-    {busy&&<p role="status" className="mt-2 text-muted">{t(proposal?"draftApplying":"draftWorking")}</p>}
+    {busy&&<p role="status" className="mt-2 text-ink-muted">{t(proposal?"draftApplying":"draftWorking")}</p>}
     {proposal&&<>
       {!preview&&<p role="alert" className="mt-3 text-neg">{t("draftInvalidShift")}</p>}
       {preview&&<p role="status" className="mt-3 font-semibold">{t("draftSummary",{
         shifts:num(preview.totals.shiftCount),hours:num(preview.totals.paidMinutes/60,1),
         cost:preview.totals.unknownCount?t("draftPartialCost",{known:money(preview.totals.knownCostCents),count:num(preview.totals.unknownCount)}):money(preview.totals.knownCostCents),
         issues:num(preview.totals.ruleIssues)})}</p>}
-      {preview&&(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-muted">{t("draftEstimateNote")}</p>}
+      {preview&&(warning||preview.totals.estimatedCount>0)&&<p className="mt-2 text-ink-muted">{t("draftEstimateNote")}</p>}
       {preview&&preview.totals.coverageGaps>0&&<p role="status"
         className="mt-2 rounded-xl bg-warn-soft p-3 text-warn-text">
         {t("draftCoverageGaps",{count:num(preview.totals.coverageGaps)})}</p>}
-      <p className="mt-2 text-muted">{t("draftBaseWageNote")}</p>
-      <p className="mt-2 text-muted">{t("draftNotSaved")}</p>
+      <p className="mt-2 text-ink-muted">{t("draftBaseWageNote")}</p>
+      <p className="mt-2 text-ink-muted">{t("draftNotSaved")}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button disabled={busy||!preview||!["pending","failed"].includes(proposal.state)} onClick={()=>void update("approve")}
           className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent">{proposal.state==="failed"?t("draftRetryApproval"):t("draftApproveAll")}</button>

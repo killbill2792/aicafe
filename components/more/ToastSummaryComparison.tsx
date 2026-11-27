@@ -46,10 +46,10 @@ export default function ToastSummaryComparison({businessId,days,currency,onSaved
   }catch{setMessage(t("summaryNumberError"));}
  }
  return <section className="rounded-card-lg bg-card p-5 text-[1.0625rem]" dir={locale==="ar"?"rtl":"ltr"}>
-  <h2 className="text-xl font-bold">{t("summaryTitle")}</h2><p className="text-muted">{t("summaryOptional")}</p>
+  <h2 className="text-xl font-bold">{t("summaryTitle")}</h2><p className="text-ink-muted">{t("summaryOptional")}</p>
   {days.map(day=><details key={day.restaurantGuid+day.date} className="border-b border-line py-2">
    <summary className="min-h-12 cursor-pointer py-3">{t("summaryCompareDay",{date:day.date})}</summary>
-   <p className="text-muted"><bdi>{locationName(day.restaurantGuid)}</bdi></p>
+   <p className="text-ink-muted"><bdi>{locationName(day.restaurantGuid)}</bdi></p>
    <p>{t("summaryImported",{amount:day.oursCents==null?t("noAmount"):money.format(day.oursCents/100)})}</p>
    <form onSubmit={e=>{e.preventDefault();typed(e.currentTarget,day);}} className="flex flex-col gap-3">
     <label>{t("summaryNet")}<input required name="net" inputMode="decimal" className="min-h-12 w-full rounded-xl border border-line bg-surface p-3"/></label>
@@ -64,7 +64,7 @@ export default function ToastSummaryComparison({businessId,days,currency,onSaved
    <label>{t("summaryReportLocation")}<select className="min-h-12 w-full rounded-xl border border-line bg-surface p-3" value={target} onChange={e=>setTarget(Number(e.target.value))}>
     {days.map((d,i)=><option key={d.restaurantGuid+d.date} value={i}>{d.date} · {locationName(d.restaurantGuid)}</option>)}
    </select></label>
-   <p className="text-muted">{t("summaryFileHint")}</p>
+   <p className="text-ink-muted">{t("summaryFileHint")}</p>
    <label className="min-h-12 rounded-xl border border-line p-3">{t("summaryAddReport")}
     <input type="file" disabled={busy} accept="image/jpeg,image/png,image/webp,.csv" className="mt-2 block w-full" onChange={e=>{void upload(e.target.files?.[0]);e.target.value="";}}/>
    </label>

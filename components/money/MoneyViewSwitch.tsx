@@ -32,7 +32,7 @@ export default function MoneyViewSwitch({
           aria-pressed={current === view}
           onClick={() => setView(view)}
           className={`h-11 flex-1 rounded-3xl text-[1rem] font-semibold ${
-            current === view ? "bg-card font-extrabold text-ink shadow-sm" : "bg-transparent text-muted"
+            current === view ? "bg-card font-extrabold text-ink shadow-xs" : "bg-transparent text-ink-muted"
           }`}
         >
           {view === "recovery" ? recoveryLabel : profitLabel}

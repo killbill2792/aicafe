@@ -254,7 +254,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
       <header className="flex items-center justify-between px-4 py-3">
         <h2 className="font-headline text-[1.1875rem] font-medium tracking-tight text-ink">{copy.title}</h2>
         <button ref={closeButton} type="button" onClick={onClose} aria-label={copy.close}
-          className="flex h-12 w-12 items-center justify-center rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+          className="flex h-12 w-12 items-center justify-center rounded-xl focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
           <X size={22} aria-hidden="true"/>
         </button>
       </header>
@@ -270,7 +270,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
               setTab(id);
             }}
             aria-current={tab===id?"page":undefined}
-            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-full px-2 text-[0.875rem] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink "+
+            className={"flex min-h-12 items-center justify-center gap-1.5 rounded-full px-2 text-[0.875rem] font-medium focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink "+
               (tab===id?"bg-surface2 text-ink":"text-ink-muted hover:bg-surface2")}>
             <Icon size={17} aria-hidden="true"/><span>{label}</span>
           </button>)}
@@ -286,14 +286,14 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
           {filteredThreads.map(thread=><button key={thread.id} type="button" data-library-thread={thread.id}
             disabled={disabled} onClick={()=>{onSelectThread(thread.id,thread);onClose();}}
             aria-current={thread.id===threadId?"page":undefined}
-            className="block min-h-12 w-full rounded-lg px-3 py-2 text-start text-[1.0625rem] font-normal leading-snug text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+            className="block min-h-12 w-full rounded-lg px-3 py-2 text-start text-[1.0625rem] font-normal leading-snug text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
             {thread.title||copy.savedChats}
           </button>)}
           {historyError&&<p role="alert" className="text-sm text-ink-muted">{historyError}</p>}
           {historyOffset!==null&&<button type="button" disabled={historyBusy} onClick={()=>void loadHistory()} className="min-h-12 rounded-lg border border-line px-3 text-[0.9375rem] text-ink">{historyBusy?copy.loading:en.SupervisorExperience.loadOlderChats}</button>}
           {filteredReports.length>0&&onOpenReport&&<section aria-label={en.SupervisorExperience.loadedReports} className="border-t border-line pt-3">
             <h3 className="text-[0.9375rem] font-medium text-ink-muted">{en.SupervisorExperience.loadedReports}</h3>
-            {filteredReports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 break-words text-[1.0625rem]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[0.8125rem] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
+            {filteredReports.map(report=><button key={report.id} type="button" disabled={disabled} data-library-report={report.id} onClick={()=>{onOpenReport(report.id);onClose();}} className="flex min-h-12 w-full items-center gap-2 rounded-lg px-2 text-start hover:bg-surface2 disabled:opacity-50"><BookOpen size={18} className="shrink-0" aria-hidden="true"/><span className="min-w-0 wrap-break-word text-[1.0625rem]">{report.title??en.SupervisorExperience.savedReport}<span className="block text-[0.8125rem] text-ink-muted">{humanTime(report.createdAt)}</span></span></button>)}
           </section>}
           {files&&files.threadId===threadId&&filteredFiles.length>0&&<section aria-label={en.SupervisorExperience.conversationFiles} className="border-t border-line pt-3">
             <h3 className="text-[0.9375rem] font-medium text-ink-muted">{en.SupervisorExperience.conversationFiles}</h3>
@@ -333,7 +333,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
                 </div>
                 <details className="shrink-0">
                   <summary aria-label={routineCopy.actions+": "+r.title}
-                    className="flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center rounded-lg hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+                    className="flex min-h-11 min-w-11 cursor-pointer list-none items-center justify-center rounded-lg hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
                     <Ellipsis size={20} aria-hidden="true"/>
                   </summary>
                   <div className="mt-1 flex flex-col gap-1" role="group" aria-label={routineCopy.actions}>
@@ -452,7 +452,7 @@ export default function SupervisorMandatePanel({threadId,threads,approvals,onSel
       </div>
       <div className="shrink-0 border-t border-line px-3">
         <Link href={threadId?"/more/supervisor-access?thread="+encodeURIComponent(threadId):"/more/supervisor-access"}
-          className="flex min-h-12 items-center gap-2 rounded-lg px-2 text-[0.9375rem] font-medium text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ShieldCheck size={18} aria-hidden="true"/>{en.SupervisorAccess.title}</Link>
+          className="flex min-h-12 items-center gap-2 rounded-lg px-2 text-[0.9375rem] font-medium text-ink hover:bg-surface2 focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><ShieldCheck size={18} aria-hidden="true"/>{en.SupervisorAccess.title}</Link>
       </div>
       {languageSwitch}
   </dialog>;

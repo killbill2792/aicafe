@@ -41,7 +41,7 @@ export default function InfoPopover({
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        className="flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-paper focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
       >
         <Info aria-hidden="true" size={18} />
       </button>

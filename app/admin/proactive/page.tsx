@@ -16,9 +16,9 @@ export default async function ProactivePage({searchParams}:{searchParams:Promise
   return <div className="space-y-6"><header><h1 className="text-2xl font-bold">Proactive alerts and suggestions</h1>
     <p className="text-sm text-slate-600">In-app updates are created by the app (not necessarily pushed). Opening is inferred from the update status. WhatsApp “sent” means provider acceptance only; opens and attributable actions are not tracked.</p></header>
     <form className="flex flex-wrap items-end gap-3 rounded-xl border bg-white p-3" method="get">
-      <label className="flex flex-col text-sm">Cafe UUID<input className="rounded border p-2" name="cafe" type="text" defaultValue={cafe??""}/></label>
+      <label className="flex flex-col text-sm">Cafe UUID<input className="rounded-sm border p-2" name="cafe" type="text" defaultValue={cafe??""}/></label>
       <button className="min-h-12 rounded-lg bg-slate-900 px-4 text-white">Filter</button>
-      <Link href="/admin/proactive" className="rounded border p-3">Clear</Link>
+      <Link href="/admin/proactive" className="rounded-sm border p-3">Clear</Link>
     </form>
     <section><h2 className="mb-3 text-xl font-semibold">Per cafe · all-time counts</h2>
       <div className="overflow-x-auto rounded-xl border bg-white"><table className="w-full text-left text-sm">
@@ -32,7 +32,7 @@ export default async function ProactivePage({searchParams}:{searchParams:Promise
       <div className="space-y-2">{all.map(e=><article key={e.channel+e.id} className="rounded-lg border bg-white p-4">
         <div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{e.channel} · {e.kind}</span><time className="text-sm">{e.created_at}</time></div>
         <p className="text-sm text-slate-600">Cafe {e.business_id}</p>
-        <p className="my-2 break-words">{e.description}</p><p className="text-sm">State: {e.sent} · Open: {e.opened} · Action: {e.acted}</p>
+        <p className="my-2 wrap-break-word">{e.description}</p><p className="text-sm">State: {e.sent} · Open: {e.opened} · Action: {e.acted}</p>
       </article>)}{!all.length&&<p>No proactive activity recorded.</p>}</div>
     </section>
   </div>;

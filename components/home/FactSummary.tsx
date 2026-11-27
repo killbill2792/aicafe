@@ -21,8 +21,8 @@ export default function FactSummary({blocks,locale,sourceText,cafeCurrency=null}
     <div data-testid={many?"supervisor-fact-grid":"supervisor-fact-single"}
       className={many?"grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2":"block"}>
       {blocks.map((block,i)=> <div key={i} className="min-w-0">
-        <p className="break-words text-[0.875rem] font-semibold leading-snug text-ink-muted">{block.label}</p>
-        <p className="mt-1 break-words font-headline text-[1.75rem] font-medium leading-tight tracking-tight tabular-nums text-ink">
+        <p className="wrap-break-word text-[0.875rem] font-semibold leading-snug text-ink-muted">{block.label}</p>
+        <p className="mt-1 wrap-break-word font-headline text-[1.75rem] font-medium leading-tight tracking-tight tabular-nums text-ink">
           {factValueText(block,locale,cafeCurrency)}
         </p>
 

@@ -1,8 +1,152 @@
-@import "./themes.generated.css";
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "./themes.generated.css" layer(base);
+@source ".";
+@source "../components";
+@source "../lib";
+@source "../node_modules/@json-render/shadcn/dist";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@custom-variant dark (&:is([data-mode="dark"] *));
+
+@theme inline {
+  --color-bg: rgb(var(--c-bg));
+  --color-surface: rgb(var(--c-surface));
+  --color-surface2: rgb(var(--c-surface2));
+  --color-line: rgb(var(--c-line));
+  --color-text: rgb(var(--c-text));
+  --color-muted: rgb(var(--c-surface2));
+  --color-accent: rgb(var(--c-accent));
+  --color-accent-soft: rgb(var(--c-accent-soft));
+  --color-accent2: rgb(var(--c-accent2));
+  --color-pos: rgb(var(--c-pos));
+  --color-neg: rgb(var(--c-neg));
+  --color-warn: rgb(var(--c-warn-text));
+  --color-on-accent: rgb(var(--c-on-accent));
+  --color-on-pos: rgb(var(--c-on-pos));
+  --color-on-neg: rgb(var(--c-on-neg));
+  --color-on-warn: rgb(var(--c-on-warn));
+  --color-accent-text: rgb(var(--c-accent-text));
+  --color-warn-text: rgb(var(--c-warn-text));
+  --color-focus: rgb(var(--c-focus));
+  --color-pos-soft: rgb(var(--c-pos-soft));
+  --color-neg-soft: rgb(var(--c-neg-soft));
+  --color-warn-soft: rgb(var(--c-warn-soft));
+  --color-persona-alex: rgb(var(--c-persona-alex));
+  --color-persona-alex-soft: rgb(var(--c-persona-alex-soft));
+  --color-persona-alex-border: rgb(var(--c-persona-alex-border));
+  --color-persona-olivia: rgb(var(--c-persona-olivia));
+  --color-persona-olivia-soft: rgb(var(--c-persona-olivia-soft));
+  --color-persona-olivia-border: rgb(var(--c-persona-olivia-border));
+  --color-persona-maya: rgb(var(--c-persona-maya));
+  --color-persona-maya-soft: rgb(var(--c-persona-maya-soft));
+  --color-persona-maya-border: rgb(var(--c-persona-maya-border));
+  --color-persona-leo: rgb(var(--c-persona-leo));
+  --color-persona-leo-soft: rgb(var(--c-persona-leo-soft));
+  --color-persona-leo-border: rgb(var(--c-persona-leo-border));
+  --color-chart-staff: rgb(var(--c-chart-staff));
+  --color-chart-ingredients: rgb(var(--c-chart-ingredients));
+  --color-chart-running: rgb(var(--c-chart-running));
+  --color-chart-fees: rgb(var(--c-chart-fees));
+  --color-on-chart-staff: rgb(var(--c-on-chart-staff));
+  --color-on-chart-ingredients: rgb(var(--c-on-chart-ingredients));
+  --color-on-chart-running: rgb(var(--c-on-chart-running));
+  --color-on-chart-fees: rgb(var(--c-on-chart-fees));
+  --color-fg: rgb(var(--c-text));
+  --color-nav: rgb(var(--c-surface));
+  --color-paper: rgb(var(--c-bg));
+  --color-card: rgb(var(--c-surface));
+  --color-ink: rgb(var(--c-text));
+  --color-ink-muted: rgb(var(--c-muted));
+  --color-good: rgb(var(--c-pos));
+  --color-good-tint: rgb(var(--c-pos-soft));
+  --color-warn-tint: rgb(var(--c-warn-soft));
+  --color-staff: rgb(var(--c-chart-staff));
+  --color-ingredients: rgb(var(--c-chart-ingredients));
+  --color-running: rgb(var(--c-chart-running));
+  --color-fees: rgb(var(--c-chart-fees));
+
+  --font-headline:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji';
+  --font-body:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji';
+  --font-arabic:
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji';
+
+  --text-money-lg: 80px;
+  --text-money-lg--line-height: 1.1;
+  --text-money-md: 56px;
+  --text-money-md--line-height: 1.1;
+  --text-money-sm: 44px;
+  --text-money-sm--line-height: 1.15;
+
+  --radius-card: 20px;
+  --radius-card-lg: 24px;
+  --radius-chip: 999px;
+
+
+  --container-app: 480px;
+  --container-app-content: 840px;
+  --container-app-wide: 1280px;
+
+  --spacing-sidenav: 240px;
+}
+
+
+/* Preserve the original theme's shadow without a self-reference. */
+@utility shadow-card { box-shadow: var(--shadow-card); }
+
+/* Map upstream semantic tokens to the existing owner-selected café theme.
+   Includes Radix portals, which may mount outside the message element. */
+@theme inline {
+  --color-background: rgb(var(--c-bg));
+  --color-foreground: rgb(var(--c-text));
+  --color-card-foreground: rgb(var(--c-text));
+  --color-popover: rgb(var(--c-surface));
+  --color-popover-foreground: rgb(var(--c-text));
+  --color-primary: rgb(var(--c-accent));
+  --color-primary-foreground: rgb(var(--c-on-accent));
+  --color-secondary: rgb(var(--c-surface2));
+  --color-secondary-foreground: rgb(var(--c-text));
+  --color-muted-foreground: rgb(var(--c-muted));
+  --color-accent-foreground: rgb(var(--c-on-accent));
+  --color-destructive: rgb(var(--c-neg));
+  --color-border: rgb(var(--c-line));
+  --color-input: rgb(var(--c-line));
+  --color-ring: rgb(var(--c-focus));
+}
+/* Preserve legacy default border/placeholder colors and accessible cursors. */
+@layer base {
+  *, ::before, ::after, ::backdrop, ::file-selector-button { border-color: var(--color-gray-200, currentColor); }
+  input::placeholder, textarea::placeholder { color: var(--color-gray-400); }
+  /* v3 left ordinary inputs to the browser's color-scheme-aware field fill.
+     Restore that default; explicit background utilities (including widget
+     backgrounds) still take precedence over this base-layer declaration. */
+  input:where(:not([type="button"], [type="reset"], [type="submit"])) { background-color: revert-layer; }
+  /* v4 also removes native date-field padding. Preserve the old control
+     geometry while leaving explicit field heights and utilities intact. */
+  input::-webkit-datetime-edit { display: revert-layer; padding-block: revert-layer; }
+  input::-webkit-datetime-edit-fields-wrapper { padding: revert-layer; }
+  input::-webkit-datetime-edit-year-field,
+  input::-webkit-datetime-edit-month-field,
+  input::-webkit-datetime-edit-day-field,
+  input::-webkit-datetime-edit-hour-field,
+  input::-webkit-datetime-edit-minute-field,
+  input::-webkit-datetime-edit-second-field,
+  input::-webkit-datetime-edit-millisecond-field,
+  input::-webkit-datetime-edit-meridiem-field { padding-block: revert-layer; }
+  input::-webkit-calendar-picker-indicator { line-height: revert-layer; }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+}
+@theme {
+  --default-ring-width: 3px;
+  --default-ring-color: var(--color-blue-500);
+}
 
 @layer base {
   html {
@@ -20,7 +164,7 @@
   }
 
   :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-fg;
+    @apply outline-solid outline-2 outline-offset-2 outline-fg;
   }
 }
 

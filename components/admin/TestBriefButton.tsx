@@ -38,7 +38,7 @@ export default function TestBriefButton({cafes,defaultCafeId}:{cafes:{id:string;
       <p className={report.verdict.sent?"font-semibold text-green-700":"font-semibold text-red-700"}>
         {report.verdict.sent?"Sent: Meta accepted the brief.":
           `Blocked at step "${report.verdict.step}": ${report.verdict.reason}`}</p>
-      {report.verdict.details&&<pre className="whitespace-pre-wrap rounded bg-slate-100 p-2 text-xs">
+      {report.verdict.details&&<pre className="whitespace-pre-wrap rounded-sm bg-slate-100 p-2 text-xs">
         {JSON.stringify(report.verdict.details,null,2)}</pre>}
       <ul className="list-disc pl-5">
         {report.settings.map(s=><li key={s.name}>{s.name}: {s.on?"on":"OFF"}</li>)}

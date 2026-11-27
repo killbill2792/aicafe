@@ -61,9 +61,9 @@ export default function SupervisorWorkStatus({ items, unavailable, loading=false
           <strong className="text-[0.875rem] text-ink">{statusCopy[item.status]}</strong>
           <span className="text-[0.8125rem] text-ink-muted">{item.title}</span>
         </div>
-        {item.threadTitle && <p className="break-words text-[0.9375rem] font-semibold text-ink">{item.threadTitle}</p>}
-        <p className="break-words text-[1.0625rem] leading-relaxed text-ink">{item.detail}</p>
-        <p className="break-words text-[0.9375rem] leading-relaxed text-ink-muted">{item.nextStep}</p>
+        {item.threadTitle && <p className="wrap-break-word text-[0.9375rem] font-semibold text-ink">{item.threadTitle}</p>}
+        <p className="wrap-break-word text-[1.0625rem] leading-relaxed text-ink">{item.detail}</p>
+        <p className="wrap-break-word text-[0.9375rem] leading-relaxed text-ink-muted">{item.nextStep}</p>
         {Number.isFinite(Date.parse(item.updatedAt))&&<p className="text-[0.8125rem] text-ink-muted">{en.SupervisorExperience.savedUpdate} <time dateTime={item.updatedAt}>{new Date(item.updatedAt).toLocaleString()}</time></p>}
         {item.proof && <p className="break-all text-[0.8125rem] text-ink-muted">
           {item.proof.kind === "verified_effect"
@@ -79,14 +79,14 @@ export default function SupervisorWorkStatus({ items, unavailable, loading=false
         </p>}
         {onOpen && item.threadId && <button type="button" disabled={disabled || unavailable}
           aria-label={en.SupervisorChat.taskOpen+": "+(item.threadTitle??item.title)}
-          onClick={()=>onOpen(item)} className="min-h-12 rounded-lg border border-line px-3 text-sm font-semibold text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+          onClick={()=>onOpen(item)} className="min-h-12 rounded-lg border border-line px-3 text-sm font-semibold text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
           {en.SupervisorChat.taskOpen}
         </button>}
       </article>)}
       </section>)}
     </div>
     {active.length > shown && <button type="button" onClick={() => setShown(n => n + 5)}
-      className="min-h-12 rounded-lg border border-line px-3 py-2 text-[0.875rem] font-medium text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+      className="min-h-12 rounded-lg border border-line px-3 py-2 text-[0.875rem] font-medium text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
       {en.SupervisorWork.more}
     </button>}
     {recent.length>shownRecent&&<button type="button" onClick={()=>setShownRecent(n=>n+5)} className="min-h-12 rounded-lg border border-line px-3 text-[0.9375rem] text-ink">{en.SupervisorExperience.moreRecent}</button>}
