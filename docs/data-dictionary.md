@@ -52,7 +52,7 @@ Individual sold items
 
 ## cv_payments
 
-Sanitized Toast payments
+Toast payments from committed orders and retained historical evidence
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
@@ -156,7 +156,7 @@ Application shifts and provider-planned shifts
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
-| data | Shift timing and scheduling details. Provider rows are planned and have paid=false. | JSON | app | Show the source detail. |
+| data | Shift timing and scheduling details. Provider rows have paid=false and identify a completed observation or a retained historical projection. | JSON | app | Show the source detail. |
 
 ## cv_menu
 

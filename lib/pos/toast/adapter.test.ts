@@ -148,7 +148,7 @@ describe("Toast permitted labor source-field handoff",()=>{
    });
    request.mockResolvedValueOnce([]).mockResolvedValueOnce([archivedShift]);
    const db={from:()=>query,rpc} as unknown as SupabaseClient;
-   const capture=createToastAdapter({db,businessId:restaurant,restaurantGuid:restaurant,captureSources:true});
+   const capture=createToastAdapter({db,businessId:restaurant,restaurantGuid:restaurant,locationId:employee,captureSources:true});
    const result=await capture.fetchScheduledShifts(range);
    expect(result.map(row=>row.externalShiftId)).toEqual([shift]);
    const [previous,requested]=request.mock.calls.map(([path])=>new URL(path,"https://fixture.invalid").searchParams);
@@ -161,8 +161,19 @@ describe("Toast permitted labor source-field handoff",()=>{
        {namespace:"labor/v1/shifts",value:shift,selector:{path:[]}},
        {namespace:"labor/v1/employees",value:employee,relationship:"employee",selector:{path:["employeeReference"]}},
      ]}),
-   ]}));
+   ],p_next:expect.objectContaining({scope:expect.objectContaining({locationId:employee,
+     from:range.since.toISOString(),until:range.until.toISOString()})})}));
    expect(current).toMatchObject([{payload:{"new vendor field":{unknown:[true,null]}}}]);
    expect(JSON.stringify(current)).not.toContain("remove-me");
+ });
+ it("refuses to certify a schedule page containing a shift outside its exact window",async()=>{
+   request.mockResolvedValue([{guid:shift,employeeReference:{guid:employee},
+     inDate:"2026-10-10T09:00:00Z",outDate:"2026-10-11T00:00:00Z"}]);
+   const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:null,error:null})};
+   const rpc=vi.fn().mockResolvedValue({data:null,error:null});
+   const db={from:()=>q,rpc} as unknown as SupabaseClient;
+   const capture=createToastAdapter({db,businessId:restaurant,restaurantGuid:restaurant,locationId:employee,captureSources:true});
+   await expect(capture.fetchScheduledShifts(range)).rejects.toMatchObject({category:"invalid_response"});
+   expect(rpc).not.toHaveBeenCalledWith("external_commit_page",expect.anything());
  });
 });

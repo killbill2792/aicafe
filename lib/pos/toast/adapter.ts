@@ -256,19 +256,20 @@ export type ToastAdapter=PosAdapter&{
 };
 /** Read-only adapter. DO NOT use its modified-order scan as proof of closed-date coverage.
  * Automatic canonical import stays disabled until CSV overlap/reconciliation is solved. */
-export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string;deadlineAt?:number;captureSources?:boolean}):ToastAdapter {
+export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string;locationId?:string;deadlineAt?:number;captureSources?:boolean}):ToastAdapter {
   if(!params)throw new PosNotConnectedError("toast");
   const {db,businessId,restaurantGuid,captureSources,deadlineAt}=params;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema,{deadlineAt:params.deadlineAt});
-  async function laborCollection<T>(path:string,schema:z.ZodType<T[]>,streamKey="current"):Promise<T[]> {
+  async function laborCollection<T>(path:string,schema:z.ZodType<T[]>,streamKey="current",
+    scheduleScope?:{locationId:string;from:string;until:string}):Promise<T[]> {
     if(!captureSources)return request(path,schema);
     const [endpoint,query=""]=path.split("?",2);
     const resource=endpoint.slice(1);
     const source={businessId,provider:"toast",account:restaurantGuid};
     const records=await synchronizeSource(db,source,{
-      capability:{resource,permission:"labor"},stream:streamKey,scope:{query},readCompleted:true,
+      capability:{resource,permission:"labor"},stream:streamKey,scope:{query,...scheduleScope},readCompleted:true,
       mode:streamKey==="modified"?"incremental":query?"window":"snapshot",
       authorize:()=>client.assertSourceAccess(restaurantGuid,"labor"),
       observe:async (cursor,scope)=>{
@@ -287,6 +288,10 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
           if(!key.success)throw new ToastApiError("invalid_response");
           if(row.restaurantGuid!=null && String(row.restaurantGuid).toLowerCase()!==restaurantGuid.toLowerCase())
             throw new ToastApiError("unauthorized_location");
+          if(scope.locationId){
+            const start=timestamp(String(row.inDate)),end=timestamp(String(row.outDate));
+            if(start<scope.from||end>=scope.until||end<=start)throw new ToastApiError("invalid_response");
+          }
           const identifiers:SourceIdentifier[]=[{namespace:resource,value:key.data,selector:{path:[]}}];
           for(const [field,namespace,relationship] of [
             ["employeeReference","labor/v1/employees","employee"],
@@ -642,7 +647,9 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       });
     },
     async fetchScheduledShifts(range):Promise<ToastScheduledShift[]> {
-      const rows=await laborCollection("/labor/v1/shifts?"+query(range),shiftsSchema,"range");
+      const filters=query(range);
+      const scope=params.locationId?{locationId:params.locationId,from:range.since.toISOString(),until:range.until.toISOString()}:undefined;
+      const rows=await laborCollection("/labor/v1/shifts?"+filters,shiftsSchema,"range",scope);
       return rows.map(r=>({externalShiftId:r.guid,
         externalEmployeeId:r.employeeReference.guid,externalLocationId:restaurantGuid,
         scheduledStart:timestamp(r.inDate),scheduledEnd:timestamp(r.outDate),

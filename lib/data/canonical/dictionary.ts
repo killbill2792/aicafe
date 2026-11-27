@@ -203,7 +203,7 @@ export const canonicalDictionary = {
     }
   },
   "cv_payments": {
-    "meaning": "Sanitized Toast payments",
+    "meaning": "Toast payments from committed orders and retained historical evidence",
     "columns": {
       "payment_type": {
         "meaning": "Toast payment method (card/cash/gift), when supplied.",
@@ -584,7 +584,7 @@ export const canonicalDictionary = {
         "example": "What happened last week?"
       },
       "data": {
-        "meaning": "Shift timing and scheduling details. Provider rows are planned and have paid=false.",
+        "meaning": "Shift timing and scheduling details. Provider rows have paid=false and identify a completed observation or a retained historical projection.",
         "unit": "JSON",
         "source": "app",
         "example": "Show the source detail."
