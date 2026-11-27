@@ -138,7 +138,7 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
   {table.view!=="tool_response_evidence"&&<p id={evidenceId} className="wrap-break-word text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>}
   <p id={scopeId} className="wrap-break-word text-[0.8125rem] text-ink-muted">{table.scope}</p>
   <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
-   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-fixed text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
+   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-auto text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
     <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-bottom font-medium wrap-anywhere">{c.label}<span className="block text-[0.8125rem] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
     <tbody role="rowgroup">{table.rows.map((row,i)=><tr role="row" key={i}>{row.map((v,j)=>{
      const rowHeader=j===0&&["label","local date"].includes(table.columns[j].unit);
@@ -272,7 +272,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
    LunaChart:({props})=>{
     const p=nativeChartProps.safeParse(props);if(!p.success)return <AuthoredValues value={props}/>;
     const {description,measurement,asOf,...values}=p.data;
-    if(!asOf)return <AuthoredValues value={props}/>;
+    if(!asOf)return <AuthoredValues value={{title:values.title,description,points:values.points}}/>;
     const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
     if(panel.success)return <Panel panel={panel.data} locale={locale}/>;
     const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});
@@ -290,6 +290,8 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
     const component=<PresentationBoundary fallback={<div className="min-w-0"><AuthoredValues value={input.element.props}/>{input.children}</div>}><Component {...input} element={{...input.element,props:parsed.data}}/></PresentationBoundary>;
     const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
     const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
+    if(name==="Grid")return <div className="luna-responsive-grid min-w-0" data-columns={String("columns" in parsed.data?parsed.data.columns??1:1)}>{component}</div>;
+    if(name==="Table")return <div className="luna-responsive-table min-w-0 max-w-full overflow-x-auto">{component}</div>;
     return role?<NamedNativeControl role={role} label={label}>{component}</NamedNativeControl>:component;
    };
   }
@@ -305,7 +307,7 @@ export default function SupervisorRichPresentation({block,locale,onSuggest=()=>{
    if(element.props.layout==="details"&&title)return <details data-supervisor-layout="details" className="min-w-0 space-y-2"><summary className="min-h-12 cursor-pointer wrap-break-word py-3 text-[1.0625rem] font-medium text-ink focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">{title}</summary>{children}</details>;
    return <div data-supervisor-layout={element.props.layout==="grid"?"grid":"stack"} className="min-w-0 space-y-2">
     {title&&<h3 className="wrap-break-word text-[1.0625rem] font-medium text-ink">{title}</h3>}
-    <div className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,22rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>
+    <div className={element.props.layout==="grid"?"grid min-w-0 gap-3 grid-cols-[repeat(auto-fit,minmax(min(100%,9rem),1fr))]":"min-w-0 space-y-3"}>{children}</div>
    </div>;
   },
   Panel:({element})=>{const p=presentationPanelSchema.safeParse(element.props.panel);return p.success?<Panel panel={p.data} locale={locale}/>:null;},
