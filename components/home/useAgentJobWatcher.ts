@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createBrowserSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 import { AGENT_JOB_STALE_MS, type AgentJob } from "@/lib/ai/agent/jobState";
 
@@ -24,7 +24,7 @@ async function fetchLatestJob(threadId: string, signal: AbortSignal): Promise<Ag
  * heartbeat is rechecked even with a healthy socket; errors use bounded polling.
  * `onSettled` fires once per terminal job/attempt, including an initial terminal read.
  */
-export function useAgentJobWatcher(threadId: string | null, active: boolean, onSettled: (job: AgentJob) => void) {
+export function useAgentJobWatcher(threadId: string | null, active: boolean, onSettled: (job: AgentJob) => void, durableActive = false) {
   const [seen, setSeen] = useState<{ threadId: string; job: AgentJob | null } | null>(null);
   const [version, setVersion] = useState(0);
   const settled = useRef(onSettled);
@@ -68,15 +68,19 @@ export function useAgentJobWatcher(threadId: string | null, active: boolean, onS
       try {
         const latest = await fetchLatestJob(threadId, controller.signal);
         if (controller.signal.aborted || finished) return undefined;
-        setSeen({ threadId, job: latest });
-        if (latest?.status === "running") {
-          lastRunning = latest;
-          scheduleWatchdog(latest);
+        const visible = durableActive && !latest?.durableRunId ? null : latest;
+        setSeen({ threadId, job: visible });
+        if (visible?.status === "running") {
+          lastRunning = visible;
+          if (visible.durableRunId || durableActive) startPolling();
+          else scheduleWatchdog(visible);
+        } else if (durableActive) {
+          startPolling();
         } else {
           stop();
-          if (latest) notifyOnce(latest);
+          if (visible) notifyOnce(visible);
         }
-        return latest;
+        return visible;
       } catch {
         // Realtime reads and stale-deadline reads need the same bounded retry
         // as the initial lookup. One network failure must not silence recovery.
@@ -104,6 +108,7 @@ export function useAgentJobWatcher(threadId: string | null, active: boolean, onS
     // retryable locally instead of leaving the owner stuck forever.
     limit = setTimeout(() => {
       if (finished) return;
+      if (durableActive || lastRunning?.durableRunId) { startPolling(); return; }
       if (lastRunning) {
         const timedOut: AgentJob = { ...lastRunning, status: "failed", errorCode: "timeout" };
         setSeen({ threadId, job: timedOut });
@@ -115,7 +120,7 @@ export function useAgentJobWatcher(threadId: string | null, active: boolean, onS
     void read().then((latest) => {
       if (finished) return;
       if (latest === undefined) { startPolling(); return; }
-      if (latest?.status !== "running") return;
+      if (latest?.status !== "running" && !durableActive) return;
       if (isSupabaseConfigured()) {
         try {
           const client = createBrowserSupabaseClient();
@@ -139,9 +144,10 @@ export function useAgentJobWatcher(threadId: string | null, active: boolean, onS
       grace = setTimeout(() => { if (!subscribed) startPolling(); }, JOB_REALTIME_GRACE_MS);
     });
     return stop;
-  }, [threadId, active, version]);
+  }, [threadId, active, version, durableActive]);
 
   // Derived, not reset in the effect: an inactive watcher or another thread shows nothing.
   const job = active && threadId && seen?.threadId === threadId ? seen.job : null;
-  return { job, recheck: () => setVersion((v) => v + 1) };
+  const recheck = useCallback(() => setVersion((v) => v + 1), []);
+  return { job, recheck };
 }
