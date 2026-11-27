@@ -84,6 +84,9 @@ describe('Luna repository boundary',()=>{
     ["export { compileFunction } from 'node:vm';", 'Node runtime loader'],
     ["export { Worker } from 'node:worker_threads';", 'Node runtime loader'],
     ["export { spawn } from 'child_process';", 'Node runtime loader'],
+    ["export { fork } from 'node:cluster';", 'Node runtime loader'],
+    ["export { start } from 'node:repl';", 'Node runtime loader'],
+    ["export { Session } from 'node:inspector/promises';", 'Node runtime loader'],
   ])('rejects unverifiable module loader references (%s)', (source, diagnostic)=>{
     put('lib/luna/runtime/index.ts',"export * from '../../adapter';");
     put('lib/adapter.ts',source);

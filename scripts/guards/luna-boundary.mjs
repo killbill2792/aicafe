@@ -25,7 +25,10 @@ const protectedPath = p => [
 const legacyDependency = p => protectedPath(p) || /^lib\/ai\/agent\/(?!tools\/)/.test(p);
 const controls = p => /^scripts\/(?:guards\/(?:luna-boundary[^/]*|run-all\.mjs)|db\/(?:luna-engine-race\.mjs|run-all\.sh)|acceptance\/owner-gate\.mjs)$/.test(p) ||
   p === '.github/workflows/ai-cafe-pr-baseline.yml';
-const opaqueNodeModules = new Set(['module', 'vm', 'process', 'worker_threads', 'child_process']);
+const opaqueNodeModules = new Set([
+  'module', 'process', 'vm', 'repl', 'inspector', 'inspector/promises',
+  'worker_threads', 'child_process', 'cluster',
+]);
 const git = (...args) => execFileSync('git', args, {encoding:'utf8', maxBuffer:64*1024*1024});
 
 function snapshot(ref) {
