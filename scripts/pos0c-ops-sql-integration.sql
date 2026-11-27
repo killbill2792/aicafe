@@ -129,8 +129,9 @@ BEGIN
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.toast_raw_records
   WHERE business_id=b AND entity='stock/v1/inventory'),'empty result does not infer stock zero');
  PERFORM pg_temp.assert_true(
-  (SELECT count(*)>=1 FROM public.cv_inventory WHERE business_id=b AND business_date='2026-11-09'),
-  'canonical SQL sees current dated inventory');
+  (SELECT count(*)=1 AND bool_and(quantity is null) FROM public.cv_inventory
+    WHERE business_id=b AND data->>'observed_business_date'='2026-11-09'),
+  'canonical SQL keeps the last observed date after an empty observation');
 
  BEGIN
   PERFORM public.toast_stage_operational_batch(b,r,'stock/v1/inventory',null,

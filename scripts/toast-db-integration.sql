@@ -940,13 +940,17 @@ BEGIN
   'canonical SQL groups current channel sales without excluded rows');
 
  -- POS0e operational fixtures come from the existing retained-current archive.
+ perform public.external_commit_page(b,'toast',r,'stock/v1/inventory','fixture',0,null,true,
+   jsonb_build_array(
+     jsonb_build_object('key','stock-a','restaurant_guid',r,'business_date','2026-10-26',
+       'payload','{"guid":"stock-a","status":"QUANTITY","quantity":3.5}'::jsonb),
+     jsonb_build_object('key','stock-b','restaurant_guid',r,'business_date','2026-10-26',
+       'payload','{"guid":"stock-b","status":"OUT_OF_STOCK","quantity":null}'::jsonb)));
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,business_date,
   payload,payload_sha256,capture_key)
  select b,r::uuid,x.kind,'2026-10-26',x.payload,repeat('a',64),
   'pos0e:optional:'||md5(x.kind||x.payload::text)
  from (values
-  ('stock/v1/inventory','{"guid":"stock-a","status":"QUANTITY","quantity":3.5}'::jsonb),
-  ('stock/v1/inventory','{"guid":"stock-b","status":"OUT_OF_STOCK","quantity":null}'::jsonb),
   ('cashmgmt/v1/entries','{"guid":"entry-a","type":"CASH_IN","amount":12.50,
     "cashDrawer":{"guid":"drawer-a"},"employee1":{"guid":"employee-a"}}'::jsonb),
   ('cashmgmt/v1/deposits','{"guid":"deposit-a","amount":19.75,

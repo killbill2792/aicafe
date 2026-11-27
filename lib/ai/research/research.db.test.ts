@@ -165,10 +165,9 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
       expect(ids.filter(id=>id!==cafeA)).toEqual([]);
       const other=await sql(scope(cafeA),"select count(*)::int as n from public.toast_records_for('"+otherCafe+"',null,null)");
       expect(other.ok?(other.rows as {n:number}[])[0].n:0).toBe(0);
-      const receipts=await sql(scope(cafeA),"select * from public.toast_stock_source_receipts('"+otherCafe+"')");
-      expect(receipts.ok).toBe(false);
-      expect(String(receipts.error)).toContain("stock_source_scope_denied");
-      expect((await sql(scope(cafeA),"select * from public.toast_stock_source_receipts('"+cafeA+"')")).ok).toBe(true);
+      const inventory=await sql(scope(cafeA),"select * from public.inventory_evidence_for('"+otherCafe+"',current_date,current_date)");
+      expect(inventory).toMatchObject({ok:true,rows:[]});
+      expect((await sql(scope(cafeA),"select * from public.inventory_evidence_for('"+cafeA+"',current_date,current_date)")).ok).toBe(true);
     }finally{
       await admin.query("delete from public.toast_raw_records where business_id = any($1)",[[cafeA,otherCafe]]);
     }
