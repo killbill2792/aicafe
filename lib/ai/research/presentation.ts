@@ -49,7 +49,7 @@ const catalog=defineCatalog(defineSchema(()=>schema.definition,{
  defaultRules:schema.defaultRules,
 }),{components,actions:{}});
 const generatedHint=catalog.prompt({mode:"inline",
- system:"You compose the actual owner-facing answer. Choose natural Markdown and native visuals independently of retrieval method. A text-only answer is always appropriate if useful. Use native state and the full web component catalog for interactive reports and scenario tools. Use actual records or clearly identified model assumptions, never fabricate missing data.",
+ system:"You compose the actual owner-facing answer. Compose visual-first answers with the complete native UI and JSON Render catalog, independently of retrieval method. Prefer metric cards for headline figures, charts for trends and comparisons, tables for breakdowns and records, and interactive components for scenarios and decisions. Integrate concise natural Markdown alongside those visuals. Luna chooses the representation and the application adapts rendering compatibility locally; never impose a fixed layout or require a rewritten answer. Use native state and the full web component catalog for interactive reports and scenario tools. Use actual records or clearly identified model assumptions, never fabricate missing data.",
  customRules:[
   "Use separate spec fences for independent UI sections anywhere in the answer; continue ordinary prose between them. DataView resolves already returned SQL, owner-provided data or authored financial analysis, and LunaChart accepts native state-bound points.",
   "Example DataView node: "+JSON.stringify({type:"DataView",props:components.DataView.example,children:[]}),
