@@ -46,32 +46,46 @@ function snapshot(ref) {
 function imports(file, source) {
   const out = [];
   const opaqueGlobals = new Set(['require', 'eval', 'Function']);
-  const nodeLoaderProperties = new Set(['getBuiltinModule', 'createRequire', 'mainModule']);
+  const nodeProcessLoaders = new Set(['getBuiltinModule', 'mainModule']);
   function directLoader(call) {
     return ts.isCallExpression(call) &&
       ['require', 'module.require', 'import'].includes(call.expression.getText());
   }
-  function requiresInspection(node) {
-    // These properties expose module loaders regardless of how the receiver
-    // was obtained. Inspect member names and bindings instead of a receiver name.
-    if (ts.isIdentifier(node) && nodeLoaderProperties.has(node.text)) return true;
-    if (ts.isStringLiteralLike(node) && nodeLoaderProperties.has(node.text) &&
-        (node.parent.propertyName === node || node.parent.name === node ||
-          (ts.isElementAccessExpression(node.parent) && node.parent.argumentExpression === node))) return true;
-    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
-      const receiver = node.expression.getText();
-      const property = ts.isPropertyAccessExpression(node) ? node.name : node.argumentExpression;
-      if ((receiver === 'globalThis' || receiver === 'global') && opaqueGlobals.has(property.text)) return true;
-    }
+  const isMemberAccess = node => ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node);
+  const isGlobalObject = node => ts.isIdentifier(node) && (node.text === 'globalThis' || node.text === 'global');
+  function memberName(node) {
+    if (ts.isPropertyAccessExpression(node)) return node.name.text;
+    if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression))
+      return node.argumentExpression.text;
+    return null;
+  }
+  function isIdentifierReference(node) {
     if (!ts.isIdentifier(node)) return false;
     const parent = node.parent;
+    if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
+    return parent.name !== node || ts.isShorthandPropertyAssignment(parent);
+  }
+  function opaqueRuntimeObjectAccess(object, forbidden) {
+    const access = object.parent;
+    // A reference to the whole object can be rebound or destructured. A named
+    // member access can be checked here without rejecting unrelated names.
+    if (ts.isTypeOfExpression(access)) return false;
+    if (!isMemberAccess(access) || access.expression !== object) return true;
+    const name = memberName(access);
+    return name === null || forbidden.has(name);
+  }
+  function requiresInspection(node) {
+    if (isMemberAccess(node) && isGlobalObject(node.expression) && memberName(node) === 'process')
+      return opaqueRuntimeObjectAccess(node, nodeProcessLoaders);
+    if (!isIdentifierReference(node)) return false;
+    const parent = node.parent;
+    if (isGlobalObject(node)) return opaqueRuntimeObjectAccess(node, opaqueGlobals);
+    if (node.text === 'process') return opaqueRuntimeObjectAccess(node, nodeProcessLoaders);
     if (node.text === 'module' && ts.isPropertyAccessExpression(parent) && parent.expression === node) {
       if (parent.name.text === 'exports') return false;
       if (parent.parent.expression === parent && directLoader(parent.parent)) return false;
     }
     if (node.text !== 'module' && !opaqueGlobals.has(node.text)) return false;
-    if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
-    if (parent.name === node && !ts.isShorthandPropertyAssignment(parent)) return false;
     return parent.expression !== node || !directLoader(parent);
   }
   function visit(n) {
@@ -127,7 +141,7 @@ export function graphErrors(tree, seeds) {
     const result = [];
     for (const spec of imports(file,tree.read(file))) {
       if (spec === null) { result.push({error:'computed module loading prevents dependency verification'}); continue; }
-      if (['node:module', 'module', 'node:vm', 'vm'].includes(spec)) {
+      if (['node:module', 'module', 'node:vm', 'vm', 'node:process', 'process'].includes(spec)) {
         result.push({error:'Node runtime loader or evaluator prevents dependency verification'});
         continue;
       }

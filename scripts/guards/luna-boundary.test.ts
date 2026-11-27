@@ -53,6 +53,18 @@ describe('Luna repository boundary',()=>{
     `);
     expect(run()).toEqual({status:0,errors:''});
   });
+  it('accepts the same member and binding names on ordinary business data',()=>{
+    put('lib/luna/runtime/index.ts',"export * from '../../adapter';");
+    put('lib/adapter.ts', `
+      const metrics = { mainModule: 'sales', getBuiltinModule: 'orders', createRequire: false };
+      export const mainModule = metrics.mainModule;
+      export const { getBuiltinModule } = metrics;
+      export const available = metrics['createRequire'];
+      export const enabled = process.env.ENABLED;
+      export const uuid = globalThis.crypto.randomUUID;
+    `);
+    expect(run()).toEqual({status:0,errors:''});
+  });
   it.each([
     ["const loader = require; export { loader };", 'computed module loading'],
     ["const loader = module.require; export { loader };", 'computed module loading'],
@@ -64,6 +76,8 @@ describe('Luna repository boundary',()=>{
     ["const { getBuiltinModule } = process; export { getBuiltinModule };", 'computed module loading'],
     ["const { 'getBuiltinModule': lookup } = process; export { lookup };", 'computed module loading'],
     ["const runtime = process; export const lookup = runtime['getBuiltinModule'];", 'computed module loading'],
+    ["export const lookup = globalThis.process.getBuiltinModule;", 'computed module loading'],
+    ["export { getBuiltinModule as lookup } from 'node:process';", 'Node runtime loader'],
     ["export const evaluate = eval;", 'computed module loading'],
     ["export const evaluate = new Function('return 1');", 'computed module loading'],
     ["export const evaluate = globalThis['eval'];", 'computed module loading'],
