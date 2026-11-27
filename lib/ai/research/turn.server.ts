@@ -54,7 +54,7 @@ type ResearchSnapshot={
   text:string;presentations:AgentToolResult[];invocations:{name:string;result:AgentToolResult}[];
   evidence:string[];queries:[string,PresentationEvidence][];privateValues:string[];nextResultRef:number;
   diagnostics:{requestedSections:number;decodedSections:number;decodedPatches:number;rejectedSections:number;acceptedViews:number;rolledBackViews:number};
-  sourceVersions:Record<string,string>;finished:boolean;
+  sourceVersions:Record<string,string>;finished:boolean;followUpIds?:string[];
 };
 function checkedSnapshot(value:unknown):ResearchSnapshot{
   const v=value as ResearchSnapshot;
@@ -66,6 +66,7 @@ function checkedSnapshot(value:unknown):ResearchSnapshot{
     throw Error("checkpoint_research_invalid");
   if(v.pending.some(c=>c.type!=="function_call"||typeof c.name!=="string"||typeof c.call_id!=="string"||typeof c.arguments!=="string"))
     throw Error("checkpoint_research_invalid");
+  if(v.followUpIds!==undefined&&(!Array.isArray(v.followUpIds)||v.followUpIds.some(id=>typeof id!=="string")))throw Error("checkpoint_research_invalid");
   return v;
 }
 export async function runResearchTurn(args:{
@@ -84,6 +85,8 @@ export async function runResearchTurn(args:{
   presentationContext?:PresentationContext;
   /** Luna's own summary of its thinking, streamed as it works (the part so far). */
   onThinking?:(text:string)=>void;
+  readFollowUps?:()=>Promise<{id:string;text:string}[]>;
+  onFollowUp?:()=>void;
   /** Authenticated café facts: name, currency, time zone, local date. */
   cafeContext:string;
   provider?:AgentProvider;
@@ -122,7 +125,7 @@ export async function runResearchTurn(args:{
   // Preserve the original objective and instructions separately from the growing transcript.
   // Provider-native context management can drop older context; the durable snapshot retains admitted evidence.
   const broker=process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"&&process.env.AICAFE_SHARED_LUNA_CANDIDATE==="1";
-  const instructions=RESEARCH_INSTRUCTIONS+" "+INLINE_PRESENTATION_HINT;
+  const instructions=RESEARCH_INSTRUCTIONS+" "+INLINE_PRESENTATION_HINT+(args.readFollowUps?" New owner messages may arrive while you work. Address them together with the ongoing investigation; if an answer has already begun, continue it naturally. Do not infer additional approval for actions.":"");
   const originalObjective=createHash("sha256").update(JSON.stringify([args.continuationIdentity??args.ownerText,args.matchedOwnerAnswers??[]])).digest("hex");
   const presentationContext=args.presentationContext??args.actions?.context;
   const presentationDiagnostics={requestedSections:0,decodedSections:0,decodedPatches:0,rejectedSections:0,acceptedViews:0,rolledBackViews:0};
@@ -158,6 +161,7 @@ export async function runResearchTurn(args:{
     const ref="q"+(++nextResultRef);queries.set(ref,{source,data,kind});return ref;
   };
   const presentations:AgentToolResult[]=[];
+  const followUpIds=new Set<string>();
   let text="",endReason:EndReason="complete",pending:FunctionCall[]=[],finished=false;
   const statePort=args.continuation??args.checkpoint?.research;
   const restored=await statePort?.load();
@@ -169,6 +173,7 @@ export async function runResearchTurn(args:{
       await args.restoreSourceVersions?.(saved.sourceVersions);
       await args.beforeAcceptResult?.();
       input.push(...saved.transcript);pending=saved.pending;text=saved.text;finished=saved.finished;
+      for(const id of saved.followUpIds??[])followUpIds.add(id);
       presentations.push(...saved.presentations);invocations.push(...saved.invocations);evidence.push(...saved.evidence);
       for(const [ref,value] of saved.queries)queries.set(ref,value);
       for(const value of saved.privateValues)privateValues.add(value);
@@ -183,7 +188,7 @@ export async function runResearchTurn(args:{
     await args.beforeAcceptResult?.();
     const snapshot:ResearchSnapshot={version:1,objective:originalObjective,model,transcript:input.slice(prefixLength),pending,text,
       presentations,invocations,evidence,queries:[...queries].filter(([ref])=>/^q\d+$/u.test(ref)),privateValues:[...privateValues],nextResultRef,
-      diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished};
+      diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished,followUpIds:[...followUpIds]};
     await statePort.save(snapshot);
   };
   const appendText=(part:string,continuing=false)=>{
@@ -360,9 +365,17 @@ export async function runResearchTurn(args:{
 
   try{
     let recoveredTransport=false;
-    researchLoop: while(!finished){
-      if(timeToYield()){endReason="timeout";break;}
+    researchLoop: while(true){
+      if(timeToYield()){if(!finished)endReason="timeout";break;}
       if(!pending.length){
+        if(args.readFollowUps&&!invocations.some(i=>i.name==="ask_owner"&&!i.result.missing.length&&typeof i.result.question==="string")){
+          const fresh=(await args.readFollowUps()).filter(m=>!followUpIds.has(m.id));
+          if(fresh.length){
+            for(const m of fresh){followUpIds.add(m.id);input.push({role:"user",content:m.text});}
+            finished=false;args.onFollowUp?.();await save();
+          }
+        }
+        if(finished)break;
         try{pending=(await call()).calls;}
         catch(error){
           if(error instanceof Error&&/durable|checkpoint|reservation|access_revoked|access_changed|authorization_revoked|permission/u.test(error.message))throw error;
@@ -377,7 +390,7 @@ export async function runResearchTurn(args:{
           finished=true;
         }
         await save();
-        if(finished)break;
+        if(finished)continue;
       }
       while(pending.length){
         if(timeToYield()){endReason="timeout";break researchLoop;}
@@ -435,5 +448,6 @@ export async function runResearchTurn(args:{
     // Do not use verbatim-number matching as an answer or presentation gate.
     unverified:[],
     results:[...(await args.checkpoint?.restoredResults?.()??[]),...invocations.map(i=>i.result),...presentations],toolInvocations:invocations,tools,
-    agentIds:tools.length?["alex"]:[],usage,presentationDiagnostics};
+    agentIds:tools.length?["alex"]:[],usage,presentationDiagnostics,
+    ...(endReason==="complete"&&!invocations.some(i=>i.name==="ask_owner"&&!i.result.missing.length)&&followUpIds.size?{absorbedOwnerMessageIds:[...followUpIds]}:{})};
 }
