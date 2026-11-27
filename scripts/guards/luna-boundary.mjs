@@ -46,16 +46,22 @@ function snapshot(ref) {
 function imports(file, source) {
   const out = [];
   const opaqueGlobals = new Set(['require', 'eval', 'Function']);
+  const nodeLoaderProperties = new Set(['getBuiltinModule', 'createRequire', 'mainModule']);
   function directLoader(call) {
     return ts.isCallExpression(call) &&
       ['require', 'module.require', 'import'].includes(call.expression.getText());
   }
   function requiresInspection(node) {
+    // These properties expose module loaders regardless of how the receiver
+    // was obtained. Inspect member names and bindings instead of a receiver name.
+    if (ts.isIdentifier(node) && nodeLoaderProperties.has(node.text)) return true;
+    if (ts.isStringLiteralLike(node) && nodeLoaderProperties.has(node.text) &&
+        (node.parent.propertyName === node || node.parent.name === node ||
+          (ts.isElementAccessExpression(node.parent) && node.parent.argumentExpression === node))) return true;
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const receiver = node.expression.getText();
       const property = ts.isPropertyAccessExpression(node) ? node.name : node.argumentExpression;
       if ((receiver === 'globalThis' || receiver === 'global') && opaqueGlobals.has(property.text)) return true;
-      if (receiver === 'process' && property.text === 'getBuiltinModule') return true;
     }
     if (!ts.isIdentifier(node)) return false;
     const parent = node.parent;
@@ -75,7 +81,8 @@ function imports(file, source) {
       const members = clause?.namedBindings?.elements || clause?.elements;
       const erased = n.isTypeOnly || clause?.isTypeOnly ||
         (!clause?.name && members?.length && members.every(member=>member.isTypeOnly));
-      if (n.moduleSpecifier && !erased) out.push(n.moduleSpecifier.text);
+      if (erased) return;
+      if (n.moduleSpecifier) out.push(n.moduleSpecifier.text);
     } else if (ts.isExternalModuleReference(n) && !n.parent.isTypeOnly) {
       out.push(ts.isStringLiteralLike(n.expression) ? n.expression.text : null);
     } else if (directLoader(n)) {
@@ -84,6 +91,7 @@ function imports(file, source) {
     } else if (requiresInspection(n)) {
       out.push(null);
     }
+    if ((ts.isImportSpecifier(n) || ts.isExportSpecifier(n)) && n.isTypeOnly) return;
     ts.forEachChild(n,visit);
   }
   visit(ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true));
