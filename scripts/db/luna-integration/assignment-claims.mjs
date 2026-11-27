@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
+import { verifySteering } from './assignment-inputs.mjs';
 
 const connectionString = process.env.SUPERVISOR_RUN_DB_URL;
 const target = new URL(connectionString);
@@ -105,6 +106,10 @@ try {
     assert.equal(first.step.step_key, 'authorize_owner');
     assert.deepEqual(await claim(a, engine, cafe.scope, run), { kind: 'busy' });
   }
+
+  const steering = await fixture();
+  await a.query('insert into public.luna_rollouts(business_id,enabled) values ($1,true)', [steering.scope[0]]);
+  await verifySteering({ admin, a, b, scope: steering.scope, run: await admit(a, steering), otherScope: legacy.scope });
 
   const run = await admit(a, replacement);
   await a.query('update public.luna_rollouts set enabled=false where business_id=$1', [replacement.scope[0]]);
