@@ -1,6 +1,6 @@
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {describe,expect,it,vi} from "vitest";
-import {synchronizeSource} from "./archive.server";
+import {SourceRetryDeferred,synchronizeSource} from "./archive.server";
 
 vi.mock("server-only",()=>({}));
 
@@ -9,11 +9,11 @@ const capability={resource:"local finding aids",permission:"read public catalogu
 const first={key:"accession-7",payload:{"Shelf notes":[null,{"décor / condition":"intact"}]}};
 const second={key:"accession-8",payload:{"Additional leaf":[{"minutes":32},false]}};
 
-function database() {
+function database(retryAt?:string) {
   let revision=0;
   let cursor_state: unknown = null;
   let members: Array<{record_id:string;payload:unknown}> = [];
-  const checkpoint={select:()=>checkpoint,eq:()=>checkpoint,maybeSingle:async()=>({data:{revision,cursor_state}})};
+  const checkpoint={select:()=>checkpoint,eq:()=>checkpoint,maybeSingle:async()=>({data:{revision,cursor_state,retry_at:retryAt}})};
   const rpc=vi.fn(async(name:string,args:Record<string,unknown>)=>{
     if(name==="external_commit_page"){
       expect(args.p_revision).toBe(revision);
@@ -59,5 +59,12 @@ describe("shared external observation",()=>{
       observe:async()=>({records:[first],next:null}),failure:()=>({status:"permission_required"})}))
       .rejects.toThrow("grant changed");
     expect(rpc.mock.calls.map(([name])=>name)).toEqual(["external_discover_resources","external_note_availability"]);
+  });
+
+  it("honors a persisted provider retry deadline before fetching any page",async()=>{
+    const {db}=database(new Date(Date.now()+60_000).toISOString());
+    const observe=vi.fn();
+    await expect(synchronizeSource(db,source,{...defaults,scope:{},observe})).rejects.toBeInstanceOf(SourceRetryDeferred);
+    expect(observe).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
-import { squarePaginated, squareRequest, type SquarePageReader } from "./client";
+import { squarePaginated, squareRequest } from "./client";
+import type {squareArchive} from "./sourceArchive.server";
 import type { PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
 
 type SquareMoney = { amount?: number; currency?: string };
@@ -72,12 +73,13 @@ function classifySquarePaymentFee(payment: SquarePayment): { applicable: boolean
  * Labor reports before trusting a real sync.
  */
 export function createSquareAdapter(params: { accessToken: string; locationId: string;
-  archive?: (resource: string, permission: string) => SquarePageReader
+  archive?: ReturnType<typeof squareArchive>
 }): PosAdapter {
   const { accessToken, locationId } = params;
 
   return {
     provider: "square",
+    bindCatalogSources:params.archive?.bindCatalogSources,
 
     async fetchOrders({ since, until }) {
       const orders = await squarePaginated<SquareOrder>(
@@ -207,13 +209,19 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
             required:(info.min_selected_modifiers??0)>0,options}];
         });
         const variations=object.item_data?.variations??[];
-        for(const variation of variations){
-          const v=variation.id?byId.get(variation.id)?.item_variation_data??variation.item_variation_data:
-            variation.item_variation_data;
+        for(const [index,variation] of variations.entries()){
           if(!variation.id)continue;
+          const separate=byId.get(variation.id)?.item_variation_data;
+          const v=separate??variation.item_variation_data;
+          const override=v?.location_overrides?.findIndex(row=>row.location_id===locationId&&row.price_overrides)??-1;
+          const overrideAmount=v?.location_overrides?.[override]?.price_money?.amount;
+          const priceCents=overrideAmount??v?.price_money?.amount??null;
+          const basePath=separate?["item_variation_data"]:["item_data","variations",String(index),"item_variation_data"];
+          const path=overrideAmount==null?[...basePath,"price_money","amount"]:
+            [...basePath,"location_overrides",String(override),"price_money","amount"];
           const size=v?.name??null;
           items.push({posItemId:variation.id,name:base,baseName:base,sizeLabel:size,
-            priceCents:v?.location_overrides?.find(row=>row.location_id===locationId&&row.price_overrides)?.price_money?.amount??v?.price_money?.amount??null,
+            priceCents,priceSource:priceCents===null?null:{recordKey:separate?variation.id:object.id,path},
             category:categories.get(object.item_data?.category_id??"")??null,
             description:object.item_data?.description??null,
             pricingStrategy:v?.pricing_type??null,
@@ -221,7 +229,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         }
         if(!variations.length)items.push({
           posItemId:object.id,name:base,baseName:base,sizeLabel:null,
-          priceCents:null,category:categories.get(object.item_data?.category_id??"")??null,
+          priceCents:null,priceSource:null,category:categories.get(object.item_data?.category_id??"")??null,
           description:object.item_data?.description??null,modifierGroups
         });
       }

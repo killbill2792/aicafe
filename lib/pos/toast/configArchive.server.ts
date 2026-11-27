@@ -1,7 +1,7 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {z} from "zod";
-import {synchronizeSource,type Source} from "@/lib/externalData/archive.server";
+import {SourceRetryDeferred,synchronizeSource,type Source} from "@/lib/externalData/archive.server";
 import {createToastClient,GUID,ToastApiError} from "./client";
 import {TOAST_READ_ENDPOINTS} from "./readOperations";
 
@@ -58,6 +58,7 @@ export async function refreshToastConfiguration(db:SupabaseClient,source:Source,
         },
       });
     }catch(error){
+      if(error instanceof SourceRetryDeferred)continue;
       const failure=error instanceof ToastApiError ? error : null;
       if(!failure||failure.status===429||failure.status===401)throw error;
     }

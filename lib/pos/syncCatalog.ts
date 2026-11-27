@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import type {PosAdapter,PosCatalogItem} from "./types";
+import type {CatalogSourceBinding,PosAdapter,PosCatalogItem} from "./types";
 import {matchCatalogItem,type CanonicalMenuCandidate} from "./catalogMatching";
 import {recordInitialMenuPrice,setCanonicalMenuPrice} from "@/lib/menu/priceHistory";
 import {readAllPosRows} from "./pagedReads";
@@ -51,6 +51,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
  })));
  let matched=0,needsReview=0,created=0,changed=0;
  const seen=new Set<string>();
+ const bindings:CatalogSourceBinding[]=[];
 
  for(const item of imported){
   if(seen.has(item.posItemId))continue;
@@ -125,6 +126,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     businessId,menuItemId:itemId,priceCents:item.priceCents,sourceProvider:adapter.provider
    });
   }
+  if(adapter.bindCatalogSources)bindings.push({native_id:itemId,source_id:item.posItemId,price_source:item.priceSource});
   if(row&&item.priceCents===null&&row.price_cents!==null){
    // Toast OPEN_PRICE means unknown, not a stale historical fixed price.
    const {error:clearPriceError}=await db.from("menu_items").update({
@@ -229,6 +231,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
    p_business_id:businessId,p_restaurant_guid:restaurantGuid
   });resultError(relinkError);
  }
+ await adapter.bindCatalogSources?.(bindings);
  return {imported:imported.length,matched,needsReview,created,changed};
 }
 

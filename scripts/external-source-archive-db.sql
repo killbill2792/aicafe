@@ -4,6 +4,7 @@ begin;
 do $$
 declare cafe uuid; other uuid; owner_id uuid; rec uuid; before_rev bigint;
   merchant uuid:=gen_random_uuid(); native_id uuid:=gen_random_uuid(); menu_id uuid:=gen_random_uuid();
+  square_item uuid:=gen_random_uuid();
   today date; status text; candidate record;
   publication text:=to_char(clock_timestamp() at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"');
 begin
@@ -135,6 +136,15 @@ begin
          "path":["items","0"],"itemGuid":"menu-example","sizeOptionGuid":"regular","sizeOptionPath":["options","regular"]}}]'::jsonb)));
   perform public.external_bind_native_identities(cafe,'toast',merchant::text,'menus/v2/menus','pos_item_id',
     'public.menu_items',jsonb_build_array(jsonb_build_object('native_id',menu_id,'source_id','menu-example')));
+  insert into public.menu_items(id,business_id,pos_item_id,name,base_name,price_cents,catalog_source)
+    values(square_item,cafe,'square-variation','Owner label','Owner label',999,'square');
+  perform public.external_commit_page(cafe,'square','merchant:6','catalog','location:6',0,null,true,
+    '[{"key":"square-item","payload":{"item_data":{"name":"Provider label"}},"identifiers":[
+     {"namespace":"pos_item_id","value":"square-variation","selector":{"path":["item_data"]}}]},
+      {"key":"square-variation","payload":{"item_variation_data":{"price_money":{"amount":625}}}}]');
+  perform public.external_bind_native_identities(cafe,'square','merchant:6','catalog','pos_item_id',
+    'public.menu_items',jsonb_build_array(jsonb_build_object('native_id',square_item,'source_id','square-variation',
+     'price_source','{"recordKey":"square-variation","path":["item_variation_data","price_money","amount"]}'::jsonb)));
   perform set_config('request.jwt.claim.sub',owner_id::text,true);
   perform set_config('app.supervisor_research_business_id',cafe::text,true);
   set local role authenticated;
@@ -148,6 +158,10 @@ begin
     and c.name='Provider item' and c.description='Seasonal' and c.size_label='Regular' and c.prep_seconds=41)
     or exists(select from public.menu_catalog_for(other) c where c.id=menu_id) then
     raise exception 'Scoped Menu did not combine certified source values and native recipe identity'; end if;
+  if not exists(select from public.menu_catalog_for(cafe) c where c.id=square_item and c.price_cents=625
+     and c.name='Owner label') or exists(select from public.menu_catalog_for(other) c where c.id=square_item)
+     or not exists(select from public.cv_menu c where c.id=square_item and c.data->>'price_cents'='625') then
+    raise exception 'Menu used a copied or foreign price instead of the exact archived Square value'; end if;
   if has_function_privilege('authenticated','public.external_commit_page(uuid,text,text,text,text,bigint,jsonb,boolean,jsonb)','execute') then
     raise exception 'Owner has archive write privilege'; end if;
 end $$;

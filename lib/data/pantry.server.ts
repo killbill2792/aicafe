@@ -196,12 +196,13 @@ export async function previewPriceImpact(input: z.infer<typeof packInput>): Prom
   const itemIds = [...new Set(usage.map((row) => row.menu_item_id))];
   if (!itemIds.length) return { ok: true, costPerBaseMicros: proposed, affectedItems: [] };
   const [itemsResult, linesResult, fallbackResult] = await Promise.all([
-    scope.db.from("menu_items").select("id, name, price_cents", { count: "exact" }).eq("business_id", scope.businessId).in("id", itemIds),
+    scope.db.rpc("menu_catalog_for",{p_business_id:scope.businessId},{count:"exact"})
+      .select("id,name,price_cents").in("id",itemIds),
     scope.db.from("recipe_lines").select("menu_item_id, ingredient_id, quantity", { count: "exact" }).in("menu_item_id", itemIds),
     scope.db.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status", { count: "exact" }).eq("business_id", scope.businessId).in("menu_item_id", itemIds),
   ]);
   if (itemsResult.error || linesResult.error || fallbackResult.error
-      || !itemsResult.data || !linesResult.data || !fallbackResult.data
+      || !Array.isArray(itemsResult.data) || !linesResult.data || !fallbackResult.data
       || itemsResult.count === null || itemsResult.count !== itemsResult.data.length
       || linesResult.count === null || linesResult.count !== linesResult.data.length
       || fallbackResult.count === null || fallbackResult.count !== fallbackResult.data.length)

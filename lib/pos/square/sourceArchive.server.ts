@@ -2,6 +2,7 @@ import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {synchronizeSource,type SourceIdentifier} from "@/lib/externalData/archive.server";
 import {SquareRequestError,type SquarePageReader} from "./client";
+import type {CatalogSourceBinding} from "../types";
 
 /** Remote IDs belong to the merchant, even when the API filters by location.
  * Keep independent location cursors while sharing one record per merchant ID. */
@@ -9,13 +10,14 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
   if (!merchant || !location) throw new Error("Missing Square source identity");
   const source={businessId,provider:"square",account:merchant};
   async function authorize() {
-    const {data,error}=await db.from("pos_connections").select("merchant_id")
+    const {data,error}=await db.from("pos_connections").select("merchant_id,token_expires_at")
       .eq("business_id",businessId).eq("provider","square").eq("merchant_id",merchant)
       .eq("status","active").maybeSingle();
     if(error)throw error;
     if(!data)throw new SquareRequestError(401);
+    return data.token_expires_at??data.merchant_id;
   }
-  return (resource: string, permission: string): SquarePageReader => async (query, fetchPage) => {
+  const openCollection=(resource: string, permission: string): SquarePageReader => async (query, fetchPage) => {
     const recordsFrom = (rows: readonly unknown[]) => rows.map(row => {
       if (!row || typeof row !== "object" || !("id" in row) || typeof row.id !== "string" || !row.id) {
         throw new Error("Missing Square object ID");
@@ -59,4 +61,14 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
     });
     return records as Awaited<ReturnType<typeof fetchPage>>["items"];
   };
+  return Object.assign(openCollection,{
+    async bindCatalogSources(bindings:CatalogSourceBinding[]) {
+      await authorize();
+      const {error}=await db.rpc("external_bind_native_identities",{
+        p_business:businessId,p_provider:source.provider,p_account:merchant,p_resource:"catalog",
+        p_namespace:"pos_item_id",p_native_table:"public.menu_items",p_bindings:bindings,
+      });
+      if(error)throw error;
+    },
+  });
 }

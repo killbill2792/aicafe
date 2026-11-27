@@ -41,7 +41,8 @@ begin
     context := coalesce(item->'context','{}'::jsonb) ||
       jsonb_build_object('observation_mode',case when point then 'point' else 'collection' end);
     identity_key := coalesce(item->>'archive_key','external:'||encode(sha256(convert_to(jsonb_build_array(p_account,p_resource,object_key)::text,'UTF8')),'hex'));
-    perform pg_advisory_xact_lock(hashtextextended(jsonb_build_array(p_business_id,p_provider,identity_key)::text,0));
+    -- The resource row above serializes all writers for this identity scope.
+    -- The unique capture key protects against any older writer racing a cutover.
     select * into previous from public.external_records
       where business_id=p_business_id and provider=p_provider and capture_key=identity_key for update;
     hash := encode(sha256(convert_to(body::text,'UTF8')),'hex');
@@ -90,17 +91,34 @@ begin
     last_complete_observation_id=case when p_complete then receipt else last_complete_observation_id end
     where business_id=p_business_id and provider=p_provider and source_account=p_account
       and resource=p_resource and stream=p_stream;
-  if not point then
-  update public.external_resources set status=case when p_complete then 'current' else 'syncing' end,
-    last_attempt_at=clock_timestamp(),
-    last_complete_at=case when p_complete then clock_timestamp() else last_complete_at end,
-    last_complete_commit=case when p_complete then receipt else last_complete_commit end,
-    last_complete_scope=case when p_complete then jsonb_build_object('stream',p_stream) ||
-      coalesce(p_next->'scope','{}'::jsonb) else last_complete_scope end
-    where business_id=p_business_id and provider=p_provider and source_account=p_account and resource=p_resource;
+  if point then
+    update public.external_resources set permission_granted=true
+      where business_id=p_business_id and provider=p_provider and source_account=p_account and resource=p_resource;
+  else
+    update public.external_resources set status=case when p_complete then 'current' else 'syncing' end,
+      permission_granted=case when p_complete or p_next is not null then true else permission_granted end,
+      last_attempt_at=clock_timestamp(),
+      last_complete_at=case when p_complete then clock_timestamp() else last_complete_at end,
+      last_complete_commit=case when p_complete then receipt else last_complete_commit end,
+      last_complete_scope=case when p_complete then jsonb_build_object('stream',p_stream) ||
+        coalesce(p_next->'scope','{}'::jsonb) else last_complete_scope end
+      where business_id=p_business_id and provider=p_provider and source_account=p_account and resource=p_resource;
   end if;
   return state.revision+1;
 end $$;
+
+create or replace function public.external_note_availability(p_business_id uuid,p_provider text,p_account text,
+ p_resource text,p_status text,p_attempt timestamptz,p_retry timestamptz)
+returns void language sql security invoker set search_path=pg_catalog,public as $$
+ insert into public.external_resources as current
+   (business_id,provider,source_account,resource,status,last_attempt_at,retry_at,permission_granted)
+ values(p_business_id,p_provider,p_account,p_resource,p_status,p_attempt,p_retry,
+   case when p_status='permission_required' then false end)
+ on conflict(business_id,provider,source_account,resource) do update
+ set status=excluded.status,last_attempt_at=excluded.last_attempt_at,retry_at=excluded.retry_at,
+   permission_granted=coalesce(excluded.permission_granted,current.permission_granted)
+ where current.last_attempt_at is null or excluded.last_attempt_at >= current.last_attempt_at
+$$;
 
 -- Owner SQL may verify membership of records already admitted by archive RLS.
 grant select on public.external_observation_members to authenticated;

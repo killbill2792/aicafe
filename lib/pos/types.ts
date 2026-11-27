@@ -70,6 +70,8 @@ export type PosCatalogModifierGroup = {
   posMetadata?: Record<string,unknown>;
   options: PosCatalogModifierOption[];
 };
+export type CatalogPriceSource = {recordKey:string;path:string[]};
+export type CatalogSourceBinding = {native_id:string;source_id:string;price_source?:CatalogPriceSource|null};
 export type PosCatalogItem = {
   /** Location of this item inside the validated original publication. */
   sourcePath?: string[];
@@ -78,6 +80,8 @@ export type PosCatalogItem = {
   baseName?: string;
   sizeLabel?: string | null;
   priceCents: number | null;
+  /** Exact source location of an admitted minor-unit price, or a verified open price. */
+  priceSource?: CatalogPriceSource | null;
   category: string | null;
   menuGroup?: string | null;
   description?: string | null;
@@ -118,6 +122,7 @@ export type PosAdapter = {
   /** Orders closed within [since, until), including their line items. */
   fetchOrders(range: { since: Date; until: Date }): Promise<PosOrder[]>;
   fetchCatalogItems(): Promise<PosCatalogItem[]>;
+  bindCatalogSources?: (bindings: CatalogSourceBinding[]) => Promise<void>;
   fetchEmployees(): Promise<PosEmployee[]>;
   fetchTimecards(range: { since: Date; until: Date }): Promise<PosTimecard[]>;
   /** Scheduled shifts never count as paid attendance. */

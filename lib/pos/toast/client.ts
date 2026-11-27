@@ -155,6 +155,7 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     const {data:mapping,error}=await db.from("toast_location_mappings")
       .select("verified_at").eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).maybeSingle();
     if(error||!mapping||(!allowUnverified&&!mapping.verified_at))throw new ToastApiError("unauthorized_location");
+    return typeof mapping.verified_at==="string"?mapping.verified_at:undefined;
   }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
      opts:{allowUnverified?:boolean;deadlineAt?:number;stockSearchGuids?:string[];onResponse?:(meta:{status:number;nextPageToken:string|null})=>void}={}):Promise<T> {

@@ -51,13 +51,17 @@ export type Availability = "pending" | "permission_required" | "incomplete" | "u
 
 export type ResourceCapability = {resource: string; permission?: string; granted?: boolean | null};
 
+export class SourceRetryDeferred extends Error {
+  constructor(readonly retryAt:string) {super("External source retry is deferred");}
+}
+
 type ObservationScope = Readonly<Record<string, string>>;
 type CursorState = {cursor: string; scope: ObservationScope};
 type SourceSync = {
   capability: ResourceCapability;
   stream: string;
   scope: ObservationScope;
-  authorize: () => Promise<void>;
+  authorize: () => Promise<string | number | void>;
   observe: (cursor: string | null, scope: ObservationScope) => Promise<{records: SourceRecord[]; next: string | null}>;
   failure: (error: unknown) => {status: Availability; retryAt?: string; resetCursor?: boolean};
   readCompleted?: boolean;
@@ -79,6 +83,11 @@ function pendingObservation(value: unknown): CursorState | null {
 export async function synchronizeSource(db: SupabaseClient, source: Source, plan: SourceSync): Promise<unknown[]> {
   const {resource} = plan.capability;
   await discoverSourceResources(db, source, [plan.capability], new Date().toISOString());
+  const {data: schedule,error:scheduleError}=await db.from("external_resources").select("retry_at")
+    .eq("business_id",source.businessId).eq("provider",source.provider).eq("source_account",source.account)
+    .eq("resource",resource).maybeSingle();
+  if(scheduleError)throw scheduleError;
+  if(schedule?.retry_at&&Date.parse(schedule.retry_at)>Date.now())throw new SourceRetryDeferred(schedule.retry_at);
   const stream = await openSourceStream(db, source, resource, plan.stream);
   const pending = pendingObservation(stream.cursor);
   let cursor = pending?.cursor ?? null;
@@ -104,7 +113,9 @@ export async function synchronizeSource(db: SupabaseClient, source: Source, plan
     if (error && typeof error === "object" && "code" in error && error.code === "40001") throw error;
     const failure = plan.failure(error);
     if (cursor && failure.resetCursor) await stream.commit([], null, false);
-    await noteAvailability(db, source, resource, failure.status, new Date().toISOString(), failure.retryAt);
+    const failedAt=new Date();
+    await noteAvailability(db,source,resource,failure.status,failedAt.toISOString(),failure.retryAt??
+      (failure.status==="unavailable"||failure.status==="incomplete" ? new Date(failedAt.getTime()+60_000).toISOString() : undefined));
     throw error;
   }
 }
