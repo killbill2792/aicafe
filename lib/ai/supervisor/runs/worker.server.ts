@@ -22,7 +22,7 @@ import { withWorkerBudget, usageStopReason, currentWorkerUsage, workerBudgetExha
   { key: "owner_turn", retry: "reconcile" as const }, { key: "verify_report", retry: "idempotent" as const },
 ]; const rowSchema = z.object({ id: z.uuid(), business_id: z.uuid(), owner_user_id: z.uuid(),
   thread_id: z.uuid(), request_key: z.uuid(), status: z.enum(["pending", "running", "blocked", "completed"]),
-  execution_version:z.number().int().min(1).max(2).default(1),input_locale:z.string().nullable().optional(),
+  engine:z.enum(["legacy","replacement"]), execution_version:z.number().int().min(1).max(2).default(1),input_locale:z.string().nullable().optional(),
   input_attachment_ids:z.array(z.uuid()).max(3).optional(),owner_answer_ids:z.array(z.uuid()).max(20).optional(),
   awaiting_question_id:z.uuid().nullable().optional(),
 });
@@ -248,9 +248,11 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
   const executionDeadline=Math.min(parentDeadline??Infinity,Date.now()+110_000); // 120s worker platform window; leave time for durable writes and lease acknowledgement
   const id = uuid.parse(runId), db = createAdminSupabaseClient();
   const { data, error } = await db.from("supervisor_runs")
-    .select("id,business_id,owner_user_id,thread_id,request_key,status,execution_version,input_locale,input_attachment_ids,owner_answer_ids,awaiting_question_id")
+    .select("id,business_id,owner_user_id,thread_id,request_key,status,engine,execution_version,input_locale,input_attachment_ids,owner_answer_ids,awaiting_question_id")
     .eq("id", id).single(); if (error || !data) throw new Error("supervisor_run_unavailable");
-  const row = rowSchema.parse(data); if (row.status === "completed") return "completed";
+  const row = rowSchema.parse(data);
+  if (row.engine !== "legacy") return "busy";
+  if (row.status === "completed") return "completed";
   const version2=row.execution_version===2;
   if(version2&&!durableChatEnabled())return "busy";
   const selected=version2?ownerRunInputSchema.parse({locale:row.input_locale,attachmentIds:row.input_attachment_ids}):null;
