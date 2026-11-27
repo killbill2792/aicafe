@@ -62,6 +62,7 @@ export default function SalesCsvImporter({
   const menuT = useTranslations("Menu");
   const [headers, setHeaders] = useState<string[] | null>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [source, setSource] = useState("");
   const [mapping, setMapping] = useState<Partial<SalesColumnMapping>>(initialMapping ?? {});
   const [isPending, startTransition] = useTransition();
   const [stage, setStage] = useState<Stage>("idle");
@@ -77,6 +78,7 @@ export default function SalesCsvImporter({
     const { headers: h, rows: r } = detectCsvColumns(text);
     setHeaders(h);
     setRows(r);
+    setSource(text);
     setStage("idle");
     setSummary(null);
     setCompletedJobId(null);
@@ -90,7 +92,7 @@ export default function SalesCsvImporter({
 
   const complete = FIELDS.filter((f) => f.required).every((f) => mapping[f.key]);
   const parsed = useMemo(() => (complete ? parseSalesCsv(rows, mapping as SalesColumnMapping) : { valid: [], rejected: [] }), [complete, rows, mapping]);
-  const groups = useMemo(() => aggregateSalesRows(parsed.valid), [parsed.valid]);
+  const groupCount = useMemo(() => aggregateSalesRows(parsed.valid).length, [parsed.valid]);
 
   async function runFinalize(jobId: string, attempt = 1) {
     setStatusMessage(labels.statusFinalizing);
@@ -119,7 +121,8 @@ export default function SalesCsvImporter({
       await saveMapping("sales", mapping as SalesColumnMapping, "Sales / product mix export");
       setStage("working");
       setStatusMessage(labels.statusStarting);
-      const started = await startSalesImportJob(groups, rows.length, parsed.rejected);
+      const started = await startSalesImportJob(source, mapping as SalesColumnMapping)
+        .catch((): Awaited<ReturnType<typeof startSalesImportJob>> => ({ ok: false, errorCode: "staging_failed" }));
       if (started.ok) setCompletedJobId(started.jobId ?? null);
       if (!started.ok) {
         setStage("error");
@@ -193,7 +196,7 @@ export default function SalesCsvImporter({
       {complete && stage === "idle" && (
         <section className="flex flex-col gap-1.5 rounded-card-lg bg-card p-4">
           <p className="text-[1.0625rem] text-ink-muted">{labels.reviewRowsInFile.replace("{count}", String(rows.length))}</p>
-          <p className="text-[1.0625rem] text-ink-muted">{labels.preview.replace("{count}", String(groups.length))}</p>
+          <p className="text-[1.0625rem] text-ink-muted">{labels.preview.replace("{count}", String(groupCount))}</p>
           {parsed.rejected.length > 0 && (
             <div className="mt-1 flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-[1.0625rem] font-bold text-warn">{labels.rejectedTitle}</span>

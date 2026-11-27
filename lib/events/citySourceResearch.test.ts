@@ -22,6 +22,13 @@ const input=(window:{from:string;to:string;reason:"initial"|"weekly"|"new_day"},
 const now=()=>new Date("2026-11-03T16:00:00Z");
 
 describe("LDI B city research contract",()=>{
+  it("retains the admitted report for its exact source window before projecting events",async()=>{
+    const listing={...event("Civic preview"),publicExtras:{admission:0,details:null}};
+    const result=await createCitySourceResearch({fetch:vi.fn(async()=>completed([listing])),apiKey:"test",now})(
+      input({from:"2026-11-04",to:"2026-11-04",reason:"new_day"},[venue]));
+    expect(result.events).toEqual([event("Civic preview")]);
+    expect(result.sources[0]).toMatchObject({from:"2026-11-04",to:"2026-11-04",sourceReport:{events:[listing]}});
+  });
   it("reuses the existing three-field strict JSON response and 1200-token ceiling",()=>{
     const item=cityResearchJsonSchema.properties.events.items;
     expect(item.required).toEqual(["name","startDate","sourceUrl"]);

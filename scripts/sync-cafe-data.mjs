@@ -115,6 +115,7 @@ function t(table, opts = {}) {
     // Day-mirror tables only: SQL condition on alias "t" choosing which rows of a day are mirrored
     // (the same condition is used for both cafés, so their fingerprints compare like for like).
     sourceFilter: opts.sourceFilter ?? null,
+    sourceDayReproducible: opts.sourceDayReproducible ?? null,
     deleteFilter: opts.deleteFilter ?? null,
     fingerprintIgnore: opts.fingerprintIgnore ?? [], // copied, but bookkeeping that changes without the data changing
     // Text ids of the form "toast:<restaurant guid>:<id>": the guid is remapped like restaurant_guid,
@@ -230,8 +231,8 @@ export const REFRESH_WINDOW_TABLES = [
   // sync-cafe-data.test.ts). A named ON CONFLICT target would error outright on a database built
   // fresh from migrations. Plain insert is safe here because every day being copied is deleted from
   // the destination earlier in the same transaction.
-  t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain" }),
-  t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain" }),
+  t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain", sourceDayReproducible: "employee_sales_snapshot_matches_accepted" }),
+  t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain", sourceDayReproducible: "hourly_sales_snapshot_matches_accepted" }),
   t("daily_rollups", { pk: ["business_id", "business_date"] }),
   t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in", localDay: true, toastGuidIn: ["pos_timecard_id"] }),
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
@@ -456,8 +457,19 @@ export function dayFingerprintSql(cfg, side = "dest") {
     return `select ${businessDaySql(cfg, "p")}::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t join ${cfg.joinScope} p on t.${cfg.joinCol} = p.id where p.business_id = $1 group by 1`;
   }
   const row = `((to_jsonb(t) - $2::text[])${links})::text`;
-  const filter = cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : "";
+  const filter = `${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}${side === "source" ? historicalSalesFilter(cfg) : ""}`;
   return `select ${businessDaySql(cfg, "t")}::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t where t.business_id = $1${filter} group by 1`;
+}
+
+function historicalSalesFilter(cfg, selectedDays = false) {
+  // Destination fingerprints include all saved rows so an older redundant
+  // mirror is removed on refresh. Compare source buckets once per day.
+  if (!cfg.sourceDayReproducible) return "";
+  return ` and t.business_date not in (
+    with saved_days as materialized (select distinct business_date from ${cfg.table} where business_id = $1
+      ${selectedDays ? "and business_date = any($2::date[])" : ""})
+    select business_date from saved_days where public.${cfg.sourceDayReproducible}($1,business_date)
+  )`;
 }
 
 // remapId in SQL: the same name-based UUID (version 5) the copy gives each row, using pgcrypto's sha1.
@@ -506,7 +518,7 @@ async function copySourceDays(client, cfg, days) {
   const { table, pk, joinScope, joinCol, conflictMode } = cfg;
   const selectSql = joinScope
     ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(businessDaySql(cfg, "p"))}`
-    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}`;
+    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}${historicalSalesFilter(cfg, true)}`;
   const { rows } = await client.query(selectSql, dayParams(SOURCE_BUSINESS_ID, days));
   if (rows.length === 0) return 0;
   return chunkedInsert(client, table, rows.map((row) => remapRow(table, row, cfg)), pk, conflictMode);

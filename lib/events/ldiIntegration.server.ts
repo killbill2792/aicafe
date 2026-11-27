@@ -281,7 +281,8 @@ async function studyOne(db:Db,scope:CityScope,source:CityResearchSource,
     // reconciles these child records and must require successful fact writes.
     const persistedStatus=coverageRejected?"partial":coverage.outcome;
     await recordCitySourceCoverage(db,{...scope,sourceKey:key,from:coverage.from,to:coverage.to,
-      checkedAt:coverage.checkedAt,status:persistedStatus});
+      checkedAt:coverage.checkedAt,status:persistedStatus,
+      ...(coverageRejected||coverage.sourceReport===undefined?{}:{sourceReport:coverage.sourceReport})});
     if(coverageRejected){
       const marked=await db.from("city_source_coverage").update({
         failure_category:"invalid_source_url",

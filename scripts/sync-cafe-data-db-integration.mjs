@@ -157,6 +157,28 @@ try {
   const second = await run();
   check(Object.keys(replacedDays(second)).length === 0, `an unchanged second run replaces nothing ${JSON.stringify(replacedDays(second))}`);
 
+  // An older copy may still have saved buckets. Remove it only when accepted
+  // orders reproduce the entire source snapshot, and retain divergent history.
+  await q("update orders set employee_id=$1 where id=$2", [ids.emp, ids.order]);
+  await q(`insert into daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,
+    ingredients_cents,staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents)
+    values($1,$2,500,1,1,0,0,0,0,0)`, [S, day]);
+  await q(`insert into hourly_sales_rollup(business_id,business_date,location_id,hour_local,net_sales_cents,orders_count)
+    select $1,$2,location_id,hour_local,net_sales_cents,orders_count from accepted_sales_hours_for_day($1,$2)`, [S, day]);
+  await q(`insert into hourly_sales_rollup(business_id,business_date,location_id,hour_local,net_sales_cents,orders_count)
+    select $1,$2,$3,hour_local,net_sales_cents,orders_count from hourly_sales_rollup where business_id=$4 and business_date=$2`,
+    [D, day, remapId("locations", ids.loc), S]);
+  await q(`insert into employee_sales_rollup(business_id,business_date,employee_id,net_sales_cents,orders_count)
+    values($1,$2,$3,490,1)`, [S, day, ids.emp]);
+  await run();
+  check((await one("select count(*)::int n from hourly_sales_rollup where business_id=$1 and business_date=$2", [D, day])).n === 0 &&
+    (await one("select count(*)::int n from hourly_sales_rollup where business_id=$1 and business_date=$2", [S, day])).n === 1,
+    "mirror removes its reproducible hourly copy and leaves source history untouched");
+  check((await one("select net_sales_cents::int from sales_hours_for_day($1,$2)", [D, day])).net_sales_cents === 500 &&
+    (await one("select net_sales_cents::int from employee_sales_for_day($1,$2)", [D, day])).net_sales_cents === 490,
+    "mirror derives the same hourly cents and preserves divergent employee history");
+  check(Object.keys(replacedDays(await run())).length === 0, "reproducible source snapshots do not trigger repeated mirror writes");
+
   await q("update employee_pay_period_facts set gross_cents=15136, employer_tax_cents=987, net_cents=13000 where id=$1", [payFactId]);
   await run();
   const copiedPay = await one(`select gross_cents::int,employer_tax_cents::int,net_cents::int

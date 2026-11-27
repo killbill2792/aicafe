@@ -985,6 +985,50 @@ test("@money owner confirms a bank export and stores exact archived movements", 
   }
 });
 
+test("@money owner imports sales and retains unrecognized original CSV cells", async ({page})=>{
+  test.setTimeout(90_000);
+  const own=seededCafe(1),day="2025-01-03",opaque=randomUUID();
+  const item=own.menu[0].name;
+  const csv=`Date,Item,Quantity,Total,Unknown source field,CVV\n${day},"${item.replaceAll('"','""')}",2,12.34,${opaque},123\n`;
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const args=[own.businessId,opaque];
+  await db.connect();
+  try {
+    await login(page,own);
+    await openOwnedPage(page,own,"more/uploads/sales");
+    await page.locator('input[type="file"]').setInputFiles({name:"sales.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+    for(const [label,column] of [["Date","Date"],["Item name","Item"],["Quantity sold","Quantity"],["Net sales","Total"]]){
+      await page.getByRole("combobox",{name:label,exact:true}).selectOption(column);
+    }
+    await page.getByRole("button",{name:"Import",exact:true}).click();
+    await expect(page.getByRole("button",{name:"Imported (1)",exact:true})).toBeVisible();
+    const evidence=await db.query(`select r.payload from public.external_records r join public.external_record_links l
+      on (l.business_id,l.provider,l.record_id)=(r.business_id,r.provider,r.id)
+      join public.csv_import_jobs j on j.business_id=r.business_id and j.id::text=l.native_key->>'id'
+      where r.business_id=$1 and r.entity='sales_csv' and r.payload#>>'{rows,0,4}'=$2 and j.upload_id is not null`,args);
+    expect(evidence.rows).toEqual([{payload:{headers:["Date","Item","Quantity","Total","Unknown source field"],
+      rows:[[day,item,"2","12.34",opaque]]}}]);
+    const sales=await db.query(`select net_sales_cents::int as cents from public.cv_orders
+      where business_id=$1 and business_date=$2 and pos_order_id like 'csv-%'`,[own.businessId,day]);
+    expect(sales.rows).toEqual([{cents:1234}]);
+  }finally{
+    const jobs=await db.query(`select r.id as record_id,r.source_key,j.id as job_id,j.upload_id from public.external_records r
+      join public.external_record_links l on (l.business_id,l.provider,l.record_id)=(r.business_id,r.provider,r.id)
+      join public.csv_import_jobs j on j.business_id=r.business_id and j.id::text=l.native_key->>'id'
+      where r.business_id=$1 and r.entity='sales_csv' and r.payload#>>'{rows,0,4}'=$2`,args);
+    for(const job of jobs.rows){
+      await db.query("delete from public.external_sync_checkpoints where business_id=$1 and provider='owner_upload' and resource='sales_csv' and stream=$2",[own.businessId,job.source_key]);
+      await db.query("delete from public.external_records where business_id=$1 and provider='owner_upload' and id=$2",[own.businessId,job.record_id]);
+      await db.query("delete from public.csv_import_jobs where business_id=$1 and id=$2",[own.businessId,job.job_id]);
+      if(job.upload_id)await db.query("delete from public.uploads where business_id=$1 and id=$2",[own.businessId,job.upload_id]);
+    }
+    await db.query("delete from public.orders where business_id=$1 and business_date=$2 and pos_order_id like 'csv-%'",[own.businessId,day]);
+    await db.query("delete from public.daily_rollups where business_id=$1 and business_date=$2",[own.businessId,day]);
+    await db.end();
+  }
+});
+
 test("@gmail seeded owner sees Gmail entry, connection status and revocation UX without external Google calls",async({page})=>{
   const own=seededCafe(0);
   let connected=false,disconnects=0;

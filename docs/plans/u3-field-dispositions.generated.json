@@ -4,7 +4,7 @@
   "modelAuthorization": false,
   "productionRowsIncluded": false,
   "physicalTables": 230,
-  "physicalFields": 2641,
+  "physicalFields": 2644,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -20,7 +20,7 @@
     "protected_operational_archive": 152,
     "restricted_secret_or_auth": 81,
     "scope_only": 36,
-    "specialist_or_review_pending": 421,
+    "specialist_or_review_pending": 424,
     "unreviewed_not_admitted": 190
   },
   "relations": [
@@ -2777,6 +2777,27 @@
           "field": "source_key",
           "type": "text",
           "notNull": true,
+          "status": "specialist_or_review_pending",
+          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+        },
+        {
+          "field": "source_report",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "specialist_or_review_pending",
+          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+        },
+        {
+          "field": "source_report_changes",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "specialist_or_review_pending",
+          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+        },
+        {
+          "field": "source_report_observed_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
           "status": "specialist_or_review_pending",
           "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
         },

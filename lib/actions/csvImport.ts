@@ -6,6 +6,7 @@ import { z } from "zod";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { rebuildSalesFactRollups } from "@/lib/pos/salesFactRollups";
@@ -18,8 +19,9 @@ import { hasOpenAlert } from "@/lib/alerts/generate";
 import { resolveUnmatchedAlertsIfClear } from "@/lib/data/resolveUnmatchedAlerts.server";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 import { toCents } from "@/lib/pos/csv/csvUtils";
-import type { AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
-import type { SalesColumnMapping, SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
+import { aggregateSalesRows, type AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
+import { parseSalesCsv, type SalesColumnMapping, type SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
+import { readSalesCsvForImport, retainSalesCsv } from "@/lib/pos/csv/retainSalesCsv.server";
 import type { NormalizedLaborRow, LaborColumnMapping, LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
 import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@/lib/pos/csv/parseIngredientCostsCsv";
 import { processingFeeTotalsByDate, type NormalizedProcessingFeeRow, type ProcessingFeeColumnMapping } from "@/lib/pos/csv/parseProcessingFeesCsv";
@@ -89,6 +91,11 @@ const processingFeeRowsSchema = z.array(z.object({
   actualProcessingFeeCents: z.number().int().nonnegative(),
 })).max(10_000);
 
+const salesMappingSchema = z.object({
+  date: z.string().min(1), item: z.string().min(1), quantity: z.string().min(1), netSales: z.string().min(1),
+  category: z.string().optional(), processingFee: z.string().optional(), voided: z.string().optional(),
+});
+
 function dateRange(dates: string[]): { dateFrom: string | null; dateTo: string | null } {
   if (dates.length === 0) return { dateFrom: null, dateTo: null };
   const sorted = [...dates].sort();
@@ -120,7 +127,7 @@ async function context() {
   } = await supabase.auth.getUser();
   if (!user) return null;
   const businessId = await getActiveBusinessId(user.id);
-  return { supabase, businessId };
+  return { supabase, businessId, userId: user.id };
 }
 
 export async function getSavedMapping(kind: Kind): Promise<AnyMapping | null> {
@@ -324,37 +331,50 @@ async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, bus
   return updatedSummary;
 }
 
-/** Starts a sales import job: acquires the one-active-job lock, THEN resolves menu items over the
- * deduped item set (so a losing concurrent call never mutates the catalog), then stages the bounded
- * group list. Takes already-aggregated groups (lib/pos/csv/aggregateSalesRows.ts, run client-side
- * BEFORE this call) rather than raw per-selection rows — the point of aggregating client-side is to
- * keep this request's payload bounded by distinct (date, item, category) groups, not by a
- * potentially-thousands-of-rows source file; aggregating again server-side from the full row array
- * would defeat that and risk the request body limit on a large file. Returns a jobId for
- * `finalizeSalesImportJob` to promote atomically — split from this step so neither call does
- * unbounded row-by-row DB work. */
+/** Derive sales groups on the server. Preserve the permitted original cells before
+ * resolving the catalog. The existing grouped fingerprint still owns sales deduplication. */
 export async function startSalesImportJob(
-  groups: AggregatedSalesRow[],
-  rowsInFile: number,
-  rejectedRows: RejectedRowSummary<SalesRejectReason>[],
+  source: string,
+  mapping: SalesColumnMapping,
 ): Promise<{ ok: boolean; jobId?: string; duplicate?: boolean; summary?: SalesImportSummary } & Partial<ActionError>> {
   const ctx = await context();
   if (!ctx) return err("not_signed_in");
-  const { supabase, businessId } = ctx;
+  const { supabase, businessId, userId } = ctx;
+  const columnMapping = salesMappingSchema.safeParse(mapping);
+  if (typeof source !== "string" || !columnMapping.success) return err("no_valid_rows");
 
+  const { fields, rows } = readSalesCsvForImport(source);
+  if (Object.values(columnMapping.data).some(field => field && !fields.has(field))) return err("no_valid_rows");
+  const rowsInFile = rows.length;
   if (rowsInFile > MAX_SOURCE_ROWS) return err("row_limit_source", { count: rowsInFile, limit: MAX_SOURCE_ROWS });
+  const { valid, rejected: rejectedRows } = parseSalesCsv(rows, columnMapping.data);
+  const groups = aggregateSalesRows(valid);
   if (groups.length > MAX_SALES_GROUPS) return err("row_limit_groups", { count: groups.length, limit: MAX_SALES_GROUPS });
   if (groups.length === 0) return err("no_valid_rows");
+
+  const payload = retainSalesCsv(source);
+  const archive = async (jobId: string) => {
+    const { error } = await createAdminSupabaseClient().rpc("archive_sales_csv_evidence", {
+      p_business: businessId, p_uploader: userId, p_job: jobId, p_payload: payload, p_mapping: columnMapping.data,
+    });
+    if (error) throw error;
+  };
+  const duplicate = async (existingJob: NonNullable<Awaited<ReturnType<typeof findDuplicateJob>>>) => {
+    if (existingJob.status === "processing") return err("already_processing_duplicate");
+    try {
+      await archive(existingJob.id);
+    } catch {
+      return err("staging_failed");
+    }
+    const reconciled = existingJob.status === "needs_review" ? await reconcileUnresolvedSalesItems(supabase, businessId, existingJob) : (existingJob.summary as SalesImportSummary | null);
+    return { ok: true, duplicate: true, jobId: existingJob.id, summary: reconciled ? { ...reconciled, duplicate: true } : undefined };
+  };
 
   // Rejected-row content is part of the job's identity: a corrected re-upload that fixes malformed
   // rows but keeps the same valid sales groups must not be treated as the exact same prior upload.
   const fingerprint = contentFingerprint("sales", { groups, rowsInFile, rejectedRows });
   const existingJob = await findDuplicateJob(supabase, businessId, "sales", fingerprint);
-  if (existingJob) {
-    if (existingJob.status === "processing") return err("already_processing_duplicate");
-    const reconciled = existingJob.status === "needs_review" ? await reconcileUnresolvedSalesItems(supabase, businessId, existingJob) : (existingJob.summary as SalesImportSummary | null);
-    return { ok: true, duplicate: true, jobId: existingJob.id, summary: reconciled ? { ...reconciled, duplicate: true } : undefined };
-  }
+  if (existingJob) return duplicate(existingJob);
 
   const seedSummary: SalesImportSummary = { rowsInFile, imported: 0, dateFrom: null, dateTo: null, unmatchedItems: [], rejectedRows, skippedToastConflictDates: [] };
   const { dateFrom, dateTo } = dateRange(groups.map((g) => g.date));
@@ -380,7 +400,7 @@ export async function startSalesImportJob(
     }
     if (jobError?.code === "23505") {
       const retry = await findDuplicateJob(supabase, businessId, "sales", fingerprint);
-      if (retry) return { ok: true, duplicate: true, jobId: retry.id, summary: retry.summary as SalesImportSummary };
+      if (retry) return duplicate(retry);
     }
     return err("create_job_failed");
   }
@@ -390,6 +410,7 @@ export async function startSalesImportJob(
   let menuItemIdByName: Map<string, string>;
   let unmatchedItems: { name: string; rows: number }[];
   try {
+    await archive(job.id);
     ({ menuItemIdByName, unmatchedItems } = await resolveMenuItemIds(supabase, businessId, groups));
   } catch {
     // Release the active-job lock on error; a retry must not remain stuck.

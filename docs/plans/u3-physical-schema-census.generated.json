@@ -2360,6 +2360,21 @@
      "failure_category",
      "text",
      false
+    ],
+    [
+     "source_report",
+     "jsonb",
+     false
+    ],
+    [
+     "source_report_observed_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "source_report_changes",
+     "jsonb",
+     false
     ]
    ],
    "relation": "city_source_coverage",
