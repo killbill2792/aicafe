@@ -8,6 +8,7 @@ import {validateScenario,readScenario,selectLunaScenarios,nativeResearchScenario
 import {nativeResearchScenarios as brokerNativeResearch,MAX_RESERVATION_MICROS,MAX_CALLS,MAX_BODY_BYTES,MAX_OUTPUT_TOKENS,MAX_FINAL_OUTPUT_TOKENS} from "./task14b-broker.mjs";
 import {TEST_CAFES} from "../seed/cafes.mjs";
 import {buildSeedSql,latestClosedDate} from "../seed/seedSql.mjs";
+import {seedExternalArchiveCase} from "../../evals/acceptance/live/external-archive-research.mjs";
 const good={
   id:"future-case",mode:"generic",engine:"vitest",
   entrypoint:"lib/ai/supervisor/routines/futureCase.live.test.ts",
@@ -162,6 +163,48 @@ test("trusted generic host checks provider receipts and independently executes s
     const fail=execute();
     assert.notEqual(fail.status,0);
     assert.match(fail.stderr,/Provider identity or bounded paid receipt unverified/);
+  }finally{rmSync(dir,{recursive:true,force:true})}
+});
+
+test("the external archive fixture reaches every trusted host readback offline",async()=>{
+  const id="external-archive-research";
+  const manifest=readScenario(join(import.meta.dirname,"../.."),id);
+  const [{businessId},{businessId:otherCafeId}]=TEST_CAFES;
+  const account="acceptance-fixture";
+  const queries=[];
+  await seedExternalArchiveCase({
+    query:async(_sql,params)=>{queries.push(params);}
+  },businessId,otherCafeId,account);
+  const [, , resource, , records]=queries[0];
+  const [{key:sourceKey}]=JSON.parse(records);
+  const dir=mkdtempSync(join(tmpdir(),"luna-archive-attest-"));
+  try{
+    const proofDir=join(dir,"luna-candidate-proof"),bin=join(dir,"bin");
+    mkdirSync(proofDir);mkdirSync(bin);
+    const write=(file,data)=>writeFileSync(file,JSON.stringify(data));
+    const head="a".repeat(40);
+    write(join(dir,"luna-locked-manifest.json"),manifest);
+    write(join(dir,"luna-host-audit.json"),{
+      head,attempts:1,reservedMicros:1000,
+      receipts:[{terminal:"completed",model:"gpt-6-luna",actualInputTokens:10,actualOutputTokens:5,
+        toolNames:manifest.expectedTools}]
+    });
+    write(join(proofDir,manifest.proof),{head_sha:head,observed_model:"gpt-6-luna",status:"passed"});
+    write(join(proofDir,manifest.scope),{businessId,otherCafeId,account,resource,sourceKey,
+      sourceRecordId:"source-1",foreignRecordId:"source-2",threadId:"thread-1",
+      replyId:"reply-1",expectedProviderCalls:1});
+    const psql=join(bin,"psql");
+    writeFileSync(psql,'#!/usr/bin/env node\nconst sql=process.argv.at(-1);'+
+      'console.log(/public\\.(ai_threads|supervisor_proposals) /.test(sql)?0:1);\n');
+    chmodSync(psql,0o755);
+    const result=spawnSync(process.execPath,[join(import.meta.dirname,"shared-luna.mjs"),"attest"],{
+      encoding:"utf8",cwd:dir,
+      env:{...process.env,PATH:bin+":"+process.env.PATH,HEAD_SHA:head,
+        SCENARIO:id,RUNNER_TEMP:dir,GITHUB_RUN_ATTEMPT:"1"}});
+    assert.equal(result.status,0,result.stderr);
+    const verdict=JSON.parse(readFileSync(join(dir,"luna-sanitized-result.json"),"utf8"));
+    assert.deepEqual(verdict.independentDatabaseReadbacks.map(({name})=>name),
+      manifest.assertions.map(({name})=>name));
   }finally{rmSync(dir,{recursive:true,force:true})}
 });
 

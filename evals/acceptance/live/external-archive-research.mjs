@@ -11,7 +11,7 @@ import {resolveProofPaths} from "./sql-research.mjs";
 import {login,matchedCount,observedProviderCalls,ownerTurn} from "./u3-canonical-research.mjs";
 
 const id="external-archive-research";
-const resource="inventory/items";
+const resource="items";
 const sourceKey="damson-roast";
 const fail=reason=>{throw Error("external_archive_research:"+reason);};
 const rows=async(db,sql,params=[])=>(await db.query(sql,params)).rows;
