@@ -39,6 +39,48 @@ async function claim(db, engine, scope, run) {
   return result.rows[0].claim;
 }
 
+async function verifyFleetDispatch(a, b) {
+  const hot = await fixture();
+  const cold = await fixture();
+  const legacy = await fixture();
+  await a.query('insert into public.luna_rollouts(business_id,enabled) values ($1,true),($2,true)',
+    [hot.scope[0], cold.scope[0]]);
+  const enqueue = async cafe => (await a.query(`select public.supervisor_run_start(
+    $1,$2,$3,$4,$5,'[{"key":"read","retry":"idempotent"}]') as run`,
+    [...cafe.scope, randomUUID(), 'c'.repeat(64)])).rows[0].run;
+  const oldest = await enqueue(hot);
+  const backlog = await enqueue(hot);
+  const coldRun = await enqueue(cold);
+  const legacyRun = await enqueue(legacy);
+  const take = async db => (await db.query('select public.luna_claim_next_assignment($1,60) as work',
+    [randomUUID()])).rows[0].work;
+  const [first, old] = await Promise.all([take(a), b.query('select public.supervisor_select_next_durable_run() as work')]);
+  assert.deepEqual(old.rows[0].work, { run_id: legacyRun.id, recovery: false });
+  assert.equal(first.run_id, oldest.id);
+  assert.equal(first.claim.kind, 'claimed');
+  const second = await take(b);
+  assert.equal(second.run_id, coldRun.id);
+  assert.equal(second.business_id, cold.scope[0]);
+  assert.equal(second.claim.kind, 'claimed');
+  // Revocation must commit its blocked state and let the poller move on.
+  await admin.query('delete from public.memberships where business_id=$1 and user_id=$2', hot.scope.slice(0, 2));
+  const revoked = await take(a);
+  assert.equal(revoked.run_id, backlog.id);
+  assert.deepEqual(revoked.claim, { kind: 'blocked' });
+  const stored = await admin.query('select status,error_code from public.supervisor_run_steps where run_id=$1', [backlog.id]);
+  assert.deepEqual(stored.rows, [{ status: 'blocked', error_code: 'authorization_revoked' }]);
+  assert.equal(await take(a), null);
+  // Simulate a crash after the atomic claim. No dispatch hold may hide an
+  // expired lease. Both connections compete without replaying an active step.
+  await admin.query("update public.supervisor_run_steps set lease_until=clock_timestamp() where run_id=$1", [coldRun.id]);
+  const raced = (await Promise.all([take(a), take(b)])).filter(Boolean);
+  assert.equal(raced.length, 1);
+  assert.equal(raced[0].run_id, coldRun.id);
+  assert.equal(raced[0].claim.step.attempts, 2);
+  assert.notEqual(raced[0].claim.step.claim_token, second.claim.step.claim_token);
+  console.log('Verified engine-scoped fair dispatch, revoked-work disposition and atomic lease recovery.');
+}
+
 try {
   await admin.connect();
   for (const db of workers) {
@@ -46,6 +88,7 @@ try {
     await db.query("set role service_role; set request.jwt.claim.role = 'service_role'");
   }
   const [a, b] = workers;
+  await verifyFleetDispatch(a, b);
   const legacy = await fixture();
   const replacement = await fixture();
   await a.query('insert into public.luna_rollouts(business_id,enabled) values ($1,true)', [replacement.scope[0]]);
