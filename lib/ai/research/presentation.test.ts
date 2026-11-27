@@ -392,3 +392,9 @@ it("retains a chart and normalizes an authored accounting table locally",async()
  const views=agentReplyPayload(result).reply.blocks.filter(b=>b.type==="rich_presentation");
  expect(views).toHaveLength(1);expect(views[0].panels[0].points[0].value).toBe(7);expect(views[0].tables?.[0].rows).toEqual([["Wages",'{"amount":12}'],["Supplies",0],["Unknown",null]]);
 });
+
+it("aligns named table rows by key and preserves extra values without guessing a column",()=>{
+ const block=resolveResearchView({tables:[{title:"Named ledger",columns:["Account","Amount"],rows:[{Amount:25,Account:"Sales",Memo:"Recorded"},{Account:"Supplies",Amount:0}]}]},queries,ctx);
+ expect(block?.tables?.[0].columns.map(c=>c.label)).toEqual(["Account","Amount","Memo"]);
+ expect(block?.tables?.[0].rows).toEqual([["Sales",25,"Recorded"],["Supplies",0,null]]);
+});
