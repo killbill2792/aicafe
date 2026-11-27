@@ -579,7 +579,7 @@ describe("Task 6/15C exact matched owner clarification and final reply",()=>{
    expect(await call(a,"supervisor_collect_owner_followups_v2",[...scope,partial.id,turn.step.claim_token,partialJob.id])).toEqual([{id:followId,text:"Compare this month too"}]);
    await expect(call(a,"supervisor_collect_owner_followups_v2",[businessId,ownerId,randomUUID(),partial.id,turn.step.claim_token,partialJob.id])).rejects.toThrow("durable_followup_lease_lost");
    const seq=Number((await admin.query("select checkpoint_seq from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'",[partial.id])).rows[0].checkpoint_seq);
-   await call(a,"supervisor_research_checkpoint_v2",[...scope,partial.id,turn.step.claim_token,seq,true,JSON.stringify({text:"Owner-facing answer",presentations:[],transcript:["private checkpoint"]})]);
+   await call(a,"supervisor_research_checkpoint_v2",[...scope,partial.id,turn.step.claim_token,seq,true,JSON.stringify({text:"Owner-facing answer",presentations:[],followUpIds:[followId],transcript:["private checkpoint"]})]);
    const progress=(await admin.query("select progress from public.ai_agent_jobs where id=$1",[partialJob.id])).rows[0].progress;
    expect(progress).toContainEqual({kind:"live_view",text:"Owner-facing answer",presentations:[]});
    expect(JSON.stringify(progress)).not.toContain("private checkpoint");
