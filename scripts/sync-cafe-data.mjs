@@ -265,7 +265,7 @@ export const REFRESH_WINDOW_TABLES = [
 ];
 
 // Copy order: parents before children. Delete order is the reverse.
-export const DAY_MIRROR_ORDER = ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts", "toast_payment_facts", "toast_labor_entries", "toast_void_facts", "toast_refund_facts", "toast_raw_records", "toast_raw_samples"];
+export const DAY_MIRROR_ORDER = REFRESH_WINDOW_TABLES.map(({ table }) => table);
 
 const TOAST_GUID_PREFIX = /^toast:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):/i;
 export function remapToastGuidPrefix(value) {
