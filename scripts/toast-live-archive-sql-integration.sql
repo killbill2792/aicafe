@@ -14,7 +14,7 @@ DECLARE
  payment uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeee0014';
  o1 jsonb; o1_tip jsonb; o1_old jsonb; o2 jsonb; o2_import jsonb;
  payment_body jsonb; payment_scope jsonb; payment_revision bigint;
- n integer; row_id uuid; run_i uuid; refused boolean;
+ n integer; row_id uuid; run_i uuid; app_order uuid; app_item uuid; refused boolean;
 BEGIN
  insert into public.businesses(id,name,is_demo) values(b,'Live archive test café',false);
  insert into public.locations(id,business_id,name) values(loc,b,'Live archive test location');
@@ -25,14 +25,16 @@ BEGIN
  -- A finished order with a student discount on one drink.
  o1:=jsonb_build_object('guid',ord,'modifiedDate','2026-11-03T21:00:00.000+0000',
   'closedDate','2026-11-03T21:00:00.000+0000',
+  'numberOfGuests',3,'source','POS','diningOption',jsonb_build_object('name','Dine In'),
   'checks',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0011',
-   'paymentStatus','CLOSED',
+   'paymentStatus','CLOSED','amount',12.65,'appliedServiceCharges',jsonb_build_array(
+    jsonb_build_object('serviceChargeCategory','FUNDRAISING_CAMPAIGN','chargeAmount',1)),
    'selections',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0012',
-    'displayName','Strawberry Matcha','quantity',1,'price',7.65,'preDiscountPrice',8.5,
+    'displayName','Strawberry Matcha','quantity',1,'price',7.65,'preDiscountPrice',8.5,'refundDetails',jsonb_build_object('refundAmount',0.40),
     'appliedDiscounts',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0013',
-     'name','Dental Students & Faculty','discountAmount',0.85)))),
+     'name','Dental Students & Faculty','discountAmount',0.85))),jsonb_build_object('deferred',true,'price',2)),
    'payments',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0014',
-    'type','CREDIT','paymentStatus','CAPTURED','amount',7.65,'tipAmount',1)))));
+    'type','CREDIT','paymentStatus','CAPTURED','amount',7.65,'tipAmount',1,'refund',jsonb_build_object('refundAmount',1.50))))));
  o1_tip:=jsonb_set(jsonb_set(o1,'{checks,0,payments,0,tipAmount}','2'::jsonb),
   '{modifiedDate}','"2026-11-03T22:00:00.000+0000"'::jsonb);
  o1_old:=jsonb_set(o1,'{modifiedDate}','"2026-11-03T20:00:00.000+0000"'::jsonb);
@@ -127,6 +129,24 @@ BEGIN
  perform pg_temp.assert_true((select status='current' and last_complete_scope->>'business_date'=d::text
    from public.external_resources where business_id=b and provider='toast' and resource='order'
     and source_account=r::text),'the verified day publishes its exact archive coverage');
+
+ insert into public.orders(business_id,location_id,pos_order_id,business_date,closed_at,gross_sales_cents,net_sales_cents)
+ values(b,loc,'toast:'||r::text||':'||ord::text,d,now(),9999,9999) returning id into app_order;
+ insert into public.menu_items(business_id,name,base_name,price_cents,category)
+ values(b,'Independent recipe','Independent recipe',750,'drink') returning id into app_item;
+ insert into public.order_lines(order_id,menu_item_id,pos_line_id,name,quantity,net_sales_cents,voided)
+ values(app_order,app_item,'eeeeeeee-1111-4eee-8eee-eeeeeeee0012','Old copied name',9,9999,false);
+ perform pg_temp.assert_true((select net_sales_cents=815 and guest_count=3 and dining_option='Dine In'
+  and data->>'evidence'='committed_order' from public.cv_orders where business_id=b and order_ref=app_order::text),
+  'committed source drives order revenue including fundraising, deferred items and payment refunds');
+ perform pg_temp.assert_true((select net_sales_cents=725 and quantity=1 and data->>'name'='Strawberry Matcha'
+  from public.cv_item_sales where business_id=b and data->>'menu_item_id'=app_item::text),
+  'the exact source selection supplies quantity, name and net sales while preserving the recipe ID');
+ perform pg_temp.assert_true((select quantity=1 and net_sales_cents=725 from public.cv_item_sales_daily
+  where business_id=b and business_date=d and menu_item_id=app_item),
+  'the same selection drives the sold item total');
+ perform pg_temp.assert_true(public.toast_committed_order_net_cents('{"checks":[{}]}') is null,
+  'a missing original check amount cannot certify zero');
 
  -- Capture endpoint evidence can supply a fee missing from the order payload.
  perform set_config('request.jwt.claim.role','service_role',true);

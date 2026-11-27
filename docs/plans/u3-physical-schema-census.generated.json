@@ -4219,6 +4219,31 @@
      "net_sales_cents",
      "bigint",
      false
+    ],
+    [
+     "location_id",
+     "uuid",
+     false
+    ],
+    [
+     "employee_id",
+     "uuid",
+     false
+    ],
+    [
+     "closed_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "pos_order_id",
+     "text",
+     false
+    ],
+    [
+     "processing_fee_provider",
+     "text",
+     false
     ]
    ],
    "relation": "cv_orders",
@@ -4783,6 +4808,26 @@
     [
      "day_loaded_cost_cents",
      "numeric",
+     false
+    ],
+    [
+     "pos_timecard_id",
+     "text",
+     false
+    ],
+    [
+     "wage_source",
+     "text",
+     false
+    ],
+    [
+     "source_proven",
+     "boolean",
+     false
+    ],
+    [
+     "provider_hourly_wage_cents",
+     "bigint",
      false
     ]
    ],
