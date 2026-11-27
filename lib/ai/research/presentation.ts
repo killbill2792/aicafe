@@ -26,6 +26,14 @@ const selection=z.object({
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
 const directCalc=z.object({title:z.string().optional(),inputs:z.array(z.object({name:z.string(),value:z.string(),unit:z.enum(["cents","count","percent","ratio"])})).min(1),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(z.string())})).min(1),editable:z.array(z.string())});
 const authoredTable=z.object({title:z.string().optional(),basis:z.string().optional(),explanation:z.string().optional(),columns:z.array(z.string().min(1)).min(1),rows:z.array(z.array(z.union([z.string(),z.number().finite(),z.boolean(),z.null()]))).min(1)});
+const displayCell=(value:unknown):string|number|boolean|null=>value==null?null:typeof value==="string"||typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value)?value:JSON.stringify(value)??String(value);
+function normalizeAuthoredTable(value:unknown):unknown{
+ if(!obj(value)||!Array.isArray(value.rows))return value;
+ const keys=[...new Set(value.rows.flatMap(row=>obj(row)?Object.keys(row):[]))];
+ const columns=Array.isArray(value.columns)&&value.columns.length?value.columns.map((c,i)=>String(displayCell(c)??"Value "+(i+1))||"Value "+(i+1)):keys.length?keys:["Value"];
+ const rows=value.rows.map(row=>Array.isArray(row)?row.map(displayCell):obj(row)?keys.map(k=>displayCell(row[k])):[displayCell(row)]);
+ return {...value,columns,rows};
+}
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
  tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});
 const components={
@@ -289,7 +297,7 @@ export function resolveResearchView(raw:unknown,queries:PresentationEvidenceMap,
   }
  }
  for(const rawTable of Array.isArray(raw.tables)?raw.tables:[]){
-  const t=authoredTable.safeParse(rawTable);if(!t.success)continue;
+  const t=authoredTable.safeParse(normalizeAuthoredTable(rawTable));if(!t.success)continue;
   const a=t.data, width=a.rows.reduce((n,r)=>Math.max(n,r.length),a.columns.length);
   const columns=Array.from({length:width},(_,i)=>({label:a.columns[i]??"Value "+(i+1),unit:"stored"}));
   const result=recordTableSchema.safeParse({title:descriptiveGroupTitle(a.title)??"Luna analysis",view:"tool_response_evidence",from:ctx.asOf,to:ctx.asOf,asOf:ctx.asOf,currency:ctx.currency??null,
@@ -321,10 +329,10 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
   if(!obj(value)||typeof value.path!=="string"||!["add","replace","remove"].includes(String(value.op))||!safeValue(value.value))continue;
   const parts=value.path.split("/").slice(1);
   if(value.path!=="/root"&&(parts[0]!=="elements"||parts.slice(1).some(k=>!safeKey(k))))continue;
-  try{compiler.push(JSON.stringify(value as unknown as SpecStreamLine)+"\n");}catch{/* Invalid patch is display-only. */}
+  try{compiler.push(JSON.stringify(value as unknown as SpecStreamLine)+"\n");}catch{onDeliveryLoss?.();}
  }
  let spec:ReturnType<typeof compiler.getResult>;
- try{spec=compiler.getResult();}catch{return [];}
+ try{spec=compiler.getResult();}catch{onDeliveryLoss?.();return [];}
  if(!obj(spec.elements))return [];
  const visited=new Set<string>(),result:RichPresentation[]=[];
  const walk=(key:string)=>{
