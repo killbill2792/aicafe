@@ -3,8 +3,8 @@
   "generatedFrom": "migrated pg_catalog physical schema + reviewed U3 SQL manifest",
   "modelAuthorization": false,
   "productionRowsIncluded": false,
-  "physicalTables": 226,
-  "physicalFields": 2544,
+  "physicalTables": 227,
+  "physicalFields": 2547,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -15,13 +15,13 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1321,
+    "internal_or_specialized_service": 1322,
     "not_admitted_from_source": 106,
     "protected_operational_archive": 58,
     "restricted_secret_or_auth": 81,
     "scope_only": 36,
     "specialist_or_review_pending": 422,
-    "unreviewed_not_admitted": 133
+    "unreviewed_not_admitted": 135
   },
   "relations": [
     {
@@ -4741,6 +4741,26 @@
           "notNull": false,
           "status": "admitted_research_field",
           "reason": "Reviewed model-visible field; access still requires signed scope, RLS and query admission"
+        }
+      ]
+    },
+    {
+      "relation": "luna_rollouts",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "enabled",
+          "type": "boolean",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
         }
       ]
     },
@@ -13051,6 +13071,13 @@
           "field": "dispatch_after",
           "type": "timestamp with time zone",
           "notNull": false,
+          "status": "internal_or_specialized_service",
+          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+        },
+        {
+          "field": "engine",
+          "type": "text",
+          "notNull": true,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },

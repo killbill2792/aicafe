@@ -6019,6 +6019,29 @@
      true
     ],
     [
+     "enabled",
+     "boolean",
+     true
+    ]
+   ],
+   "relation": "luna_rollouts",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "luna_rollouts_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
      "id",
      "uuid",
      true
@@ -13345,6 +13368,11 @@
     [
      "owner_answer_ids",
      "uuid[]",
+     true
+    ],
+    [
+     "engine",
+     "text",
      true
     ]
    ],
