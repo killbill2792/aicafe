@@ -345,6 +345,8 @@ export async function processDurableRun(runId: string,emit:(type:string,data:unk
           attachmentIds:selected.attachmentIds,service,emit,job,jobs,externalClient:client,checkpoint,matchedAnswers,executionDeadline,
           durableFence:{runId:run.id,jobId:job.id,claimToken},
           recordDurableStep:step=>jobs.updateDurableAgentJob(identity,job.id,"progress",step).catch(()=>undefined),
+          recordDurableThinking:summary=>jobs.updateDurableAgentJob(identity,job.id,"thinking",summary).catch(()=>undefined),
+          readFollowUps:()=>jobs.collectDurableFollowUps(identity,job.id),
         }));
         if("replyId" in outcome)return outcome.awaitingOwner?"yielded":undefined;
         // No automatic retry after an uncertain effect, cancellation, or
