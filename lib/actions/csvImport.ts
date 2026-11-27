@@ -334,14 +334,17 @@ async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, bus
 /** Derive sales groups on the server. Preserve the permitted original cells before
  * resolving the catalog. The existing grouped fingerprint still owns sales deduplication. */
 export async function startSalesImportJob(
-  source: string,
+  upload: FormData,
   mapping: SalesColumnMapping,
 ): Promise<{ ok: boolean; jobId?: string; duplicate?: boolean; summary?: SalesImportSummary } & Partial<ActionError>> {
   const ctx = await context();
   if (!ctx) return err("not_signed_in");
   const { supabase, businessId, userId } = ctx;
   const columnMapping = salesMappingSchema.safeParse(mapping);
-  if (typeof source !== "string" || !columnMapping.success) return err("no_valid_rows");
+  if (!(upload instanceof FormData) || !columnMapping.success) return err("no_valid_rows");
+  const file = upload.get("source");
+  if (file === null || typeof file === "string") return err("no_valid_rows");
+  const source = await file.text();
 
   const { fields, rows } = readSalesCsvForImport(source);
   if (Object.values(columnMapping.data).some(field => field && !fields.has(field))) return err("no_valid_rows");

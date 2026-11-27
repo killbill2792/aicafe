@@ -125,7 +125,9 @@ export default function SalesCsvImporter({
       await saveMapping("sales", mapping as SalesColumnMapping, "Sales / product mix export");
       setStage("working");
       setStatusMessage(labels.statusStarting);
-      const started = await startSalesImportJob(source, mapping as SalesColumnMapping)
+      const upload = new FormData();
+      upload.set("source", new Blob([source], { type: "text/csv" }), "sales.csv");
+      const started = await startSalesImportJob(upload, mapping as SalesColumnMapping)
         .catch((): Awaited<ReturnType<typeof startSalesImportJob>> => ({ ok: false, errorCode: "staging_failed" }));
       if (started.ok) setCompletedJobId(started.jobId ?? null);
       if (!started.ok) {
