@@ -4,6 +4,7 @@ import {schema} from "@json-render/react/schema";
 import {upstreamComponents,nativeChartDefinition,validNativeSpec,recoverNativeDisplaySpec,safeNativeJSON,safeStatePath,safeKey,localActionNames} from "@/lib/ai/conversations/nativePresentation";
 import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
+import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
 import {presentationPanelSchema,recordTableSchema,recoverRichPresentation,descriptiveGroupTitle,interactiveCalcSchema,evaluatePresentationCalc,type InteractiveCalc,type PresentationPanel,type RecordTable,type RichPresentation} from "@/lib/ai/conversations/presentation";
 
 /** Native inline GenUI vocabulary. Luna may author values directly or refer
@@ -27,15 +28,9 @@ const selection=z.object({
 const calcSelection=z.object({ref:z.string(),editable:z.array(z.string())});
 const directCalc=z.object({title:z.string().optional(),inputs:z.array(z.object({name:z.string(),value:z.string(),unit:z.enum(["cents","count","percent","ratio"])})).min(1),steps:z.array(z.object({id:z.string(),op:z.enum(CALC_OPS as [CalcOp,...CalcOp[]]),args:z.array(z.string())})).min(1),editable:z.array(z.string())});
 const authoredTable=z.object({title:z.string().optional(),basis:z.string().optional(),explanation:z.string().optional(),columns:z.array(z.string().min(1)).min(1),rows:z.array(z.array(z.union([z.string(),z.number().finite(),z.boolean(),z.null()]))).min(1)});
-const displayCell=(value:unknown):string|number|boolean|null=>value==null?null:typeof value==="string"||typeof value==="boolean"||typeof value==="number"&&Number.isFinite(value)?value:JSON.stringify(value)??String(value);
 function normalizeAuthoredTable(value:unknown):unknown{
  if(!obj(value)||!Array.isArray(value.rows))return value;
- const keys=[...new Set(value.rows.flatMap(row=>obj(row)?Object.keys(row):[]))];
- const supplied=Array.isArray(value.columns)?value.columns.map((c,i)=>String(displayCell(c)??"Value "+(i+1))||"Value "+(i+1)):[];
- // Named records must be aligned by their keys, not by insertion order.
- const columns=keys.length?[...new Set([...supplied,...keys])]:supplied.length?supplied:["Value"];
- const rows=value.rows.map(row=>Array.isArray(row)?row.map(displayCell):obj(row)?columns.map(k=>Object.hasOwn(row,k)?displayCell(row[k]):null):[displayCell(row)]);
- return {...value,columns,rows};
+ return {...value,...normalizeTableData(value.columns,value.rows)};
 }
 const envelope=z.object({layout:z.enum(["stack","grid"]).optional(),panels:z.array(z.union([selection,pointPanel,analysisPanel])).optional(),
  tables:z.array(authoredTable).optional(),report:z.boolean().optional(),files:z.boolean().optional(),calculator:z.union([calcSelection,directCalc]).optional()});

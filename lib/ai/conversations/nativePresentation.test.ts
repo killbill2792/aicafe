@@ -3,7 +3,7 @@ import {shadcnComponentDefinitions} from "@json-render/shadcn/catalog";
 import {shadcnComponents} from "@json-render/shadcn";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT} from "@/lib/ai/research/presentation";
 import {recoverRichPresentation,presentationDataLines} from "./presentation";
-import {upstreamComponents,validNativeSpec,createLocalWidgetStore,nativeFunctions,nativeRenderProps,readNativeSnapshot,parseUpstreamProps} from "./nativePresentation";
+import {upstreamComponents,validNativeSpec,recoverNativeDisplaySpec,createLocalWidgetStore,nativeFunctions,nativeRenderProps,readNativeSnapshot,parseUpstreamProps} from "./nativePresentation";
 import {resolveElementProps} from "@json-render/core";
 import manifest from "../../../package.json";
 vi.mock("server-only",()=>({}));
@@ -63,6 +63,7 @@ describe("Installed native Luna catalog",()=>{
   if(!parsed?.success)throw Error("table must render");
   expect(parsed.data).toMatchObject({columns:["Account","Amount","Recorded"],rows:[["Sales","120.25","true"],["Refund","-12.5","false"],["Zero","0","Not recorded"],["Missing","Not recorded","Not recorded"]]});
   expect(parseUpstreamProps("Table",{columns:["Account"],rows:[[{unrenderable:true}]]})).toMatchObject({success:true,data:{rows:[['{"unrenderable":true}']]}});
+  expect(parseUpstreamProps("Table",{columns:["Account","Amount"],rows:[{Amount:25,Account:"Sales",Memo:"Recorded"}]})).toMatchObject({success:true,data:{columns:["Account","Amount","Memo"],rows:[["Sales","25","Recorded"]]}});
   expect(parseUpstreamProps("Text",{text:125})).toMatchObject({success:true,data:{text:"125"}});
   expect(parseUpstreamProps("Slider",{label:"Growth",value:"1.2",min:0,max:2,step:0.1})).toMatchObject({success:true,data:{value:1.2}});
  });
@@ -80,6 +81,13 @@ describe("Installed native Luna catalog",()=>{
   expect(native.elements.text.props.text).toBe("Keep this explanation");
   expect(presentationDataLines(blocks[0]).join("\n")).toContain("1000");
   expect(presentationDataLines(blocks[0])).toContain("Keep this explanation");
+ });
+ it("repairs broken layout links and preserves content of a control without unsafe execution",()=>{
+  const s=make({root:node("Stack",{},["button","missing","root"]),button:{...node("Button",{label:"Read this"}),on:{press:{action:"deleteBusiness"}}},orphan:node("Text",{text:"Disconnected explanation"})});
+  const fixed=recoverNativeDisplaySpec(s)!;expect(validNativeSpec(fixed)).toBe(true);
+  expect(fixed.elements.button.props.label).toBe("Read this");expect(fixed.elements.button.on).toBeUndefined();
+  expect(fixed.elements.orphan.props.text).toBe("Disconnected explanation");
+  expect(fixed.elements[fixed.root].children).toEqual(["root","orphan"]);
  });
  it("retains native text without requiring a data reference or a successful SQL read",()=>{
   const s=make({root:node("Text",{text:"My estimate is $47,608.07"})});

@@ -2,6 +2,7 @@
 import {createContext,useContext,useId,useMemo,useState} from "react";
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
+import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
 import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import {JSONUIProvider,Renderer,defineRegistry,type ComponentRegistry} from "@json-render/react";
 import {defineCatalog} from "@json-render/core";
@@ -232,11 +233,8 @@ function AuthoredValues({value}:{value:unknown}){
   const data=value as Record<string,unknown>;
   const rawRows=Array.isArray(data.rows)?data.rows:Array.isArray(data.points)?data.points:undefined;
   if(rawRows?.length){
-   const keys=[...new Set(rawRows.flatMap(row=>row&&typeof row==="object"&&!Array.isArray(row)?Object.keys(row):[]))];
-   const supplied=Array.isArray(data.columns)?data.columns.map(display):[];
-   const columns=keys.length?[...new Set([...supplied,...keys])]:supplied;
-   const rows=rawRows.map(row=>Array.isArray(row)?row:row&&typeof row==="object"?columns.map(k=>Object.hasOwn(row,k)?(row as Record<string,unknown>)[k]:null):[row]);
-   const width=rows.reduce((n,row)=>Math.max(n,row.length),columns.length);
+   const {columns,rows}=normalizeTableData(data.columns,rawRows);
+   const width=columns.length;
    const rest=Object.fromEntries(Object.entries(data).filter(([k])=>!["rows","points","columns"].includes(k)));
    return <div className="min-w-0 space-y-2"><AuthoredValues value={rest}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{Array.from({length:width},(_,i)=><th key={i} className="border-b border-line p-2 text-start">{columns[i]??"Value "+(i+1)}</th>)}</tr></thead><tbody>{rows.map((row,i)=><tr key={i}>{Array.from({length:width},(_,j)=><td key={j} className="border-b border-line p-2 whitespace-pre-wrap">{display(row[j])}</td>)}</tr>)}</tbody></table></div></div>;
   }

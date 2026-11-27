@@ -2,6 +2,7 @@ import { createStateStore,type Spec,type StateStore } from "@json-render/core";
 import { schema } from "@json-render/react/schema";
 import { shadcnComponentDefinitions } from "@json-render/shadcn/catalog";
 import { z } from "zod";
+import {normalizeTableData} from "./tableFormatting";
 import { CALC_OPS,exactDecimal,runCalculation,type CalcUnit } from "@/lib/metrics/core/calculator";
 
 /** Import the complete installed public web catalog; never maintain a copied
@@ -114,17 +115,55 @@ export const nativeSpecSchema=z.custom<Spec>(validNativeSpec);
  * No action from an unknown component receives execution authority. */
 export function recoverNativeDisplaySpec(raw:unknown):Spec|undefined{
  if(!obj(raw)||!obj(raw.elements)||!safeNativeJSON(raw))return;
- const elements:Record<string,unknown>={};
- for(const [key,element] of Object.entries(raw.elements)){
-  if(!obj(element))return;
-  const type=element.type;
-  if(typeof type==="string"&&(Object.hasOwn(upstreamComponents,type)||["LunaChart","LunaSnapshot","LunaFallback"].includes(type))&&obj(element.props)){
-   elements[key]=element;continue;
+ if(validNativeSpec(raw))return raw;
+ const source=raw.elements,keys=Object.keys(source);
+ if(!keys.length)return;
+ const elements:Record<string,Record<string,unknown>>={};
+ const visited=new Set<string>(),roots:string[]=[];
+ // Traverse each authored node once, preserve its first layout position, and
+ // attach disconnected nodes rather than dropping them with a broken parent.
+ const attach=(value:unknown):string[]=>{
+  if(!Array.isArray(value))return [];
+  return value.filter((key):key is string=>{
+   if(typeof key!=="string"||!Object.hasOwn(source,key)||visited.has(key))return false;
+   visited.add(key);return true;
+  });
+ };
+ for(const root of [raw.root,...keys]){
+  const next=attach([root]);if(!next.length)continue;
+  roots.push(next[0]);const pending=[next[0]];
+  while(pending.length){
+   const key=pending.shift()!,item=source[key],e=obj(item)?item:{props:item};
+   const children=attach(e.children);
+   const slots=obj(e.slots)?Object.fromEntries(Object.entries(e.slots).map(([slot,items])=>[slot,attach(items)])):{};
+   pending.push(...children,...Object.values(slots).flat());
+   const type=e.type;
+   const known=typeof type==="string"&&(Object.hasOwn(upstreamComponents,type)||["LunaChart","LunaSnapshot","LunaFallback"].includes(type))&&obj(e.props);
+   const element:Record<string,unknown>=known?{type,props:e.props}:{type:"LunaFallback",props:{widget:String(type??"Visual"),values:e.props??{}}};
+   element.children=children;
+   if(Object.keys(slots).length)element.slots=slots;
+   if(e.visible!==undefined)element.visible=e.visible;
+   if(obj(e.repeat)&&(safeStatePath(e.repeat.statePath)||obj(e.repeat.statePath)&&safeStatePath(e.repeat.statePath.$item)))element.repeat=e.repeat;
+   // Invalid or unknown controls cannot acquire execution authority, but all
+   // their authored props remain displayable. Safe existing controls survive.
+   if(known&&obj(e.on)){
+    const on=Object.fromEntries(Object.entries(e.on).filter(([,binding])=>allowedBinding(binding)));
+    if(Object.keys(on).length)element.on=on;
+   }
+   if(known&&obj(e.watch)){
+    const watch=Object.fromEntries(Object.entries(e.watch).filter(([path,binding])=>safeStatePath(path)&&path.startsWith("/")&&path!=="/"&&allowedBinding(binding)&&watchTargets(binding)!==null));
+    if(Object.keys(watch).length)element.watch=watch;
+   }
+   elements[key]=element;
   }
-  // Keep layout children but do not execute unfamiliar controls.
-  elements[key]={type:"LunaFallback",props:{widget:String(type??"Visual"),values:element.props??{}},children:element.children??[],...(element.slots!==undefined?{slots:element.slots}:{})};
  }
- const candidate={...raw,elements};
+ let root=roots[0];
+ if(roots.length>1){root="luna-recovered-root";while(Object.hasOwn(elements,root))root+="-";elements[root]={type:"Stack",props:{},children:roots};}
+ const candidate={root,elements,...(obj(raw.state)?{state:raw.state}:{})};
+ if(validNativeSpec(candidate))return candidate;
+ // A cross-node watch cycle may remain. Disable automatic execution rather
+ // than suppressing the authored information or otherwise safe interactions.
+ for(const element of Object.values(elements))delete element.watch;
  return validNativeSpec(candidate)?candidate:undefined;
 }
 /** Opaque snapshots cannot be interpreted as state expressions. */
@@ -166,15 +205,10 @@ export function parseUpstreamProps(name:string,props:Record<string,unknown>){
  // Upstream Table expects display strings. Preserve actual scalar cells,
  // including state-bound numbers, zero, negatives, booleans and unknowns.
  // This is data formatting for the official component, not a widget copy.
- if(name==="Table"&&Array.isArray(values.columns)&&Array.isArray(values.rows)){
-  const display=(value:unknown)=>value==null?"Not recorded":typeof value==="string"?value:typeof value==="object"?JSON.stringify(value):String(value);
-  const columns=values.columns.map(display);
-  const rows=values.rows.map(row=>Array.isArray(row)?row.map(display):[display(row)]);
-  if(columns.every(c=>c!==undefined)&&rows.every(row=>row!==undefined&&row.every(cell=>cell!==undefined))){
-   const width=rows.reduce((n,row)=>Math.max(n,row?.length??0),columns.length);
-   values.columns=Array.from({length:width},(_,i)=>columns[i]??"Value "+(i+1));
-   values.rows=rows.map(row=>Array.from({length:width},(_,i)=>row?.[i]??"Not recorded"));
-  }
+ if(name==="Table"&&Array.isArray(values.rows)){
+  const table=normalizeTableData(values.columns,values.rows);
+  values.columns=table.columns;
+  values.rows=table.rows.map(row=>row.map(value=>value===null?"Not recorded":String(value)));
  }
  const shape=definition.props.shape as Record<string,z.ZodType>;
  for(const [key,field] of Object.entries(shape)){

@@ -1,6 +1,6 @@
 import {scenarioEditorSchema,evaluateScenarioEditor} from "./scenarioPresentation";
 import { z } from "zod";
-import {nativeSpecSchema,nativeFunctions,readNativeSnapshot} from "./nativePresentation";
+import {nativeSpecSchema,nativeFunctions,readNativeSnapshot,recoverNativeDisplaySpec} from "./nativePresentation";
 import {resolveElementProps,splitRepeatVisibility,evaluateVisibility,getByPath,resolveRepeatStatePath,resolveRepeatItemStatePath,type PropResolutionContext} from "@json-render/core";
 import {exactDecimal,exactNumber,runCalculation,CALC_OPS,type CalcOp,type CalcShown} from "@/lib/metrics/core/calculator";
 
@@ -205,11 +205,12 @@ export function recoverRichPresentation(raw:unknown):RichPresentation|undefined{
  if(r.type!=="rich_presentation"||r.version!==1)return;
  const valid=<T>(schema:z.ZodType<T>,value:unknown):T|undefined=>{const v=schema.safeParse(value);return v.success?v.data:undefined;};
  const list=<T>(schema:z.ZodType<T>,value:unknown):T[]=>Array.isArray(value)?value.flatMap(v=>{const p=valid(schema,v);return p===undefined?[]:[p];}):[];
+ const native=valid(nativeSpecSchema,r.nativeSpec)??recoverNativeDisplaySpec(r.nativeSpec);
  const repaired=richPresentationSchema.safeParse({type:"rich_presentation",version:1,layout:r.layout==="grid"?"grid":"stack",
   panels:list(presentationPanelSchema,r.panels),tables:list(recordTableSchema,r.tables),
   suggestions:list(z.string().trim().min(1),r.suggestions),
   ...(r.report===true?{report:true}:{}),
-  ...(valid(nativeSpecSchema,r.nativeSpec)?{nativeSpec:r.nativeSpec}:{}),
+  ...(native?{nativeSpec:native}:{}),
   ...(valid(richPresentationBaseSchema.shape.files,r.files)?{files:r.files}:{}),
   ...(valid(agendaSchema,r.agenda)?{agenda:r.agenda}:{}),
   ...(valid(scenarioComparisonSchema,r.scenario)?{scenario:r.scenario}:{}),
