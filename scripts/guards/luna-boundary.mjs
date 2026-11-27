@@ -159,6 +159,45 @@ function imports(file, source, compilerOptions) {
 
 const packageMetadata = (tree, path = 'package.json') => tree.files.has(path) ? JSON.parse(tree.read(path)) : {};
 
+// Every reachable conditional target has a path of enabled conditions in the
+// package manifest. Probe those paths with the same TypeScript resolver used
+// for the ordinary import instead of maintaining a list of build targets.
+function packageEntry(mapping, key) {
+  if (!mapping || typeof mapping !== 'object') return undefined;
+  if (Object.hasOwn(mapping, key)) return { value:mapping[key], wildcard:'' };
+  const patterns = Object.keys(mapping).filter(pattern => {
+    const [prefix,suffix,extra] = pattern.split('*');
+    return extra === undefined && suffix !== undefined &&
+      key.startsWith(prefix) && key.endsWith(suffix) && key.length >= pattern.length;
+  }).sort((left,right) => right.indexOf('*')-left.indexOf('*') || right.length-left.length);
+  if (!patterns.length) return undefined;
+  const pattern = patterns[0];
+  const star = pattern.indexOf('*');
+  return {value:mapping[pattern],wildcard:key.slice(star,key.length-(pattern.length-star-1))};
+}
+
+function conditionalTargets(entry, mode) {
+  const paths = new Map();
+  const external = new Set();
+  const standard = new Set(['default', 'types', 'import', 'require']);
+  function visit(value, conditions) {
+    if (typeof value === 'string') {
+      paths.set(JSON.stringify(conditions), conditions);
+      if (!value.startsWith('./')) external.add(value.replaceAll('*',entry.wildcard));
+    } else if (Array.isArray(value)) {
+      for (const branch of value) visit(branch, conditions);
+    } else if (value && typeof value === 'object') {
+      for (const [key, branch] of Object.entries(value)) {
+        if (key === 'types' || (key === 'import' && mode === ts.ModuleKind.CommonJS) ||
+            (key === 'require' && mode !== ts.ModuleKind.CommonJS)) continue;
+        visit(branch, standard.has(key) ? conditions : [...conditions,key]);
+      }
+    }
+  }
+  if (entry) visit(entry.value, []);
+  return { paths:[...paths.values()], external };
+}
+
 function declaredPackages(tree) {
   const manifest = packageMetadata(tree);
   const lock = packageMetadata(tree, 'package-lock.json').packages ?? {};
@@ -192,11 +231,27 @@ export function graphErrors(tree, seeds) {
     ...host,
     fileExists: p => !/\.d\.[cm]?ts$/.test(p) && host.fileExists(p),
   };
-  const selfName = packageMetadata(tree).name;
-  const runtimeConditions = ['browser', 'react-server'].map(condition => ({
-    ...options, customConditions: [...(options.customConditions ?? []), condition],
-  }));
+  const scopes = new Map();
+  function packageScope(directory) {
+    if (scopes.has(directory)) return scopes.get(directory);
+    const manifest = posix.join(directory, 'package.json');
+    if (tree.files.has(manifest)) {
+      const scope = packageMetadata(tree, manifest);
+      scopes.set(directory, scope);
+      return scope;
+    }
+    const scope = directory === '.' ? {} : packageScope(posix.dirname(directory));
+    scopes.set(directory, scope);
+    return scope;
+  }
   const edges = new Map(), errorsFound = new Set();
+  function externalError(spec) {
+    if (spec.startsWith('node:') || isBuiltin(spec))
+      return nodeDataModules.has(spec.replace(/^node:/, '')) ? null : 'unapproved Node builtin '+spec;
+    const name = spec.match(/^((?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*)(?:\/[\w.-]+)*$/)?.[1];
+    if (name && packages.has(name) && !spec.split('/').some(part => part === '.' || part === '..')) return null;
+    return 'unresolved local dependency or undeclared package '+spec;
+  }
   function dependencies(file) {
     if (edges.has(file)) return edges.get(file);
     const result = [];
@@ -217,18 +272,31 @@ export function graphErrors(tree, seeds) {
           if (runtime) addRuntimeTarget(posix.relative(root,runtime.resolvedFileName));
           else result.push({error:'no runtime source for '+spec});
         } else addRuntimeTarget(target);
-        if (spec.startsWith('#') || (selfName && (spec === selfName || spec.startsWith(selfName + '/')))) {
-          // Next can choose a different branch for a browser or server build.
-          for (const condition of runtimeConditions) {
-            const runtime = ts.resolveModuleName(spec,root+'/'+file,condition,runtimeHost,undefined,undefined,mode).resolvedModule;
-            if (runtime) addRuntimeTarget(posix.relative(root,runtime.resolvedFileName));
-          }
-        }
-        continue;
       }
-      if (spec.startsWith('node:') || isBuiltin(spec)) {
-        if (!nodeDataModules.has(spec.replace(/^node:/, '')))
-          result.push({error:'unapproved Node builtin '+spec});
+      const scope = packageScope(posix.dirname(file));
+      let entry;
+      if (spec.startsWith('#')) entry = packageEntry(scope.imports, spec);
+      else if (scope.name && (spec === scope.name || spec.startsWith(scope.name + '/'))) {
+        const key = '.' + spec.slice(scope.name.length);
+        const subpaths = scope.exports && typeof scope.exports === 'object' &&
+          Object.keys(scope.exports).some(path => path.startsWith('.'));
+        entry = subpaths ? packageEntry(scope.exports,key) : key === '.' ? {value:scope.exports,wildcard:''} : undefined;
+      }
+      const conditions = conditionalTargets(entry, mode);
+      let hasConditionalTarget = false;
+      for (const path of conditions.paths) {
+        const runtimeOptions = {...options,customConditions:path};
+        const runtime = ts.resolveModuleName(spec,root+'/'+file,runtimeOptions,runtimeHost,undefined,undefined,mode).resolvedModule;
+        if (runtime) {
+          hasConditionalTarget = true;
+          addRuntimeTarget(posix.relative(root,runtime.resolvedFileName));
+        }
+      }
+      for (const target of conditions.external) {
+        const error = externalError(target);
+        if (error) result.push({error});
+      }
+      if (found || hasConditionalTarget || conditions.external.size) {
         continue;
       }
       const asset = spec.startsWith('.') && posix.join(posix.dirname(file),spec);
@@ -236,9 +304,8 @@ export function graphErrors(tree, seeds) {
         if (tree.files.get(asset).mode === '120000') result.push({target:asset});
         continue;
       }
-      const packageName = spec.match(/^((?:@[\w.-]+\/)?[a-zA-Z0-9_][\w.-]*)(?:\/[\w.-]+)*$/)?.[1];
-      if (packageName && packages.has(packageName) && !spec.split('/').some(part => part === '.' || part === '..')) continue;
-      result.push({error:'unresolved local dependency or undeclared package '+spec});
+      const error = externalError(spec);
+      if (error) result.push({error});
     }
     edges.set(file,result);
     return result;

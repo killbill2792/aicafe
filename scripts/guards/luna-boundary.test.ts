@@ -109,6 +109,37 @@ describe('Luna repository boundary',()=>{
     put('package.json',JSON.stringify({browser:{'./lib/metrics/core.ts':'./'+legacy}}));
     expect(run().errors).toContain('package.json:1: missing independently reviewed');
   });
+  it('derives Edge, Node and nested future condition branches from package metadata',()=>{
+    const fallback='./safe.ts';
+    const imports={
+      '#edge': {browser:fallback,'edge-light':'./private.ts',default:fallback},
+      '#nested': {'application-runtime':{'application-worker':'./private.ts',default:fallback},default:fallback},
+      '#node': {node:'./private.ts',default:fallback},
+    };
+    put('tsconfig.json',JSON.stringify({compilerOptions:{
+      moduleResolution:'bundler',customConditions:['browser'],paths:{'@/*':['./*']},
+    }}));
+    put('lib/luna/runtime/index.ts',"export * from '../../conditional/adapter';");
+    put('lib/conditional/package.json',JSON.stringify({name:'nested-test',type:'module',imports}));
+    put('lib/conditional/safe.ts','export const sales=1;');
+    put('lib/conditional/private.ts',"export * from '@/lib/ai/conversations/agentRunner.server';");
+    for (const alias of Object.keys(imports)) {
+      put('lib/conditional/adapter.ts',"export * from '"+alias+"';");
+      expect(run().errors).toContain('forbidden dependency '+legacy);
+    }
+  });
+  it('checks external capabilities reached by a conditional package pattern',()=>{
+    const imports={
+      '#data/*': {'edge-light':'node:*',default:'./lib/metrics/core.ts'},
+      '#data/checked': 'node:crypto',
+    };
+    put('package.json',JSON.stringify({type:'module',imports}));
+    const runtime='lib/luna/runtime/index.ts';
+    put(runtime,"export * from '#data/checked';");
+    expect(run()).toEqual({status:0,errors:''});
+    put(runtime,"export * from '#data/module';");
+    expect(run().errors).toContain('unapproved Node builtin node:module');
+  });
   it('checks the automatic JSX runtime through the same local graph',()=>{
     put('lib/luna/runtime/index.tsx','/** @jsxImportSource ../../component-runtime */\nexport const View = <div />;');
     put('lib/component-runtime/jsx-runtime.ts',"export * from '@/lib/ai/conversations/agentRunner.server';");
