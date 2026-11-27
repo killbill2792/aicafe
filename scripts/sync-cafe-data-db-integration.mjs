@@ -196,10 +196,14 @@ try {
   await q("insert into toast_sync_runs(id, business_id, restaurant_guid, kind, state) values ($1, $3, $4, 'daily', 'completed'), ($2, $3, $4, 'daily', 'running')", [runIds.old, runIds.cur, S, G]);
   await q("insert into toast_day_status(business_id, restaurant_guid, business_date, import_state, last_import_run_id, imported_at) values ($1, $2, $3, 'imported', $4, now())", [S, G, archiveDay, runIds.cur]);
   await q("update toast_sync_runs set state = 'completed' where id = $1", [runIds.cur]);
-  const archive = (run, tip, key) => q(`insert into toast_raw_records(business_id, restaurant_guid, entity, entity_guid, business_date, payload, payload_sha256, run_id, capture_key, source_page, source_index)
-    values ($1, $2, 'order', $3, $4, $5::jsonb, md5($5::text) || md5($5::text), $6, $7, 1, 1)`, [S, G, orderGuid, archiveDay, JSON.stringify(orderPayload(tip)), run, key]);
+  const archive = (run, tip, key) => q(`insert into toast_raw_records(business_id, restaurant_guid, entity, entity_guid, business_date, payload, payload_sha256, run_id, capture_key, source_page, source_index, source_account, source_key)
+    values ($1, $2, 'order', $3, $4, $5::jsonb, md5($5::text) || md5($5::text), $6, $7, 1, 1, $2::uuid::text, $3::uuid::text)`, [S, G, orderGuid, archiveDay, JSON.stringify(orderPayload(tip)), run, key]);
   // One row per order since migration 140: the archive holds only the current version.
   await archive(runIds.cur, 2, "current-version");
+  const sourceOrder = await one(`insert into orders(business_id,location_id,pos_order_id,net_sales_cents,gross_sales_cents,business_date,closed_at)
+    values($1,$2,$3,999,999,$4,$4::date+interval '10 hours') returning id`, [S, ids.loc, `toast:${G}:${orderGuid}`, archiveDay]);
+  await q(`insert into order_lines(order_id,menu_item_id,pos_line_id,name,quantity,net_sales_cents)
+    values($1,$2,$3,'Latte',8,999)`, [sourceOrder.id, ids.m1, orderPayload(2).checks[0].selections[0].guid]);
   await q(`insert into toast_raw_records(business_id, restaurant_guid, entity, business_date, payload, payload_sha256, run_id, capture_key)
     values ($1, $2, 'check', $3, '{}', repeat('a', 64), $4, 'legacy-check-row')`, [S, G, archiveDay, runIds.cur]);
   const capture = (endpoint, date, hoursAgo, items, extra = {}) => q(`insert into toast_raw_samples(business_id, restaurant_guid, endpoint, business_date, fetched_at, http_status, item_count, sample, field_paths, capture_id, error_code)
@@ -243,6 +247,17 @@ try {
   check((await one("select count(*)::int n from external_records r cross join lateral toast_order_details(r.payload) where r.business_id = $1 and r.provider = 'toast' and r.entity = 'order'", [D])).n === 1, "order details derive from the mirrored archive in the test café");
   check((await one(`select count(*)::int n from toast_raw_records r join toast_day_status d on d.business_id = r.business_id and d.restaurant_guid = r.restaurant_guid
     and d.business_date = r.business_date and d.last_import_run_id = r.run_id where r.business_id = $1`, [D])).n === 1, "the copied order names its day's copied run");
+  const mirroredAccount = remapId("toast_restaurant_guid", G);
+  check((await one(`select count(*)::int n from external_records where business_id=$1 and provider='toast'
+    and source_account=$2 and entity='order' and source_key=$3 and payload_origin='historical_provider'
+    and commit_id is null`, [D, mirroredAccount, orderGuid])).n === 1,
+  "the mirror preserves original evidence under its isolated historical account");
+  check((await one(`select count(*)::int n from cv_orders where business_id=$1 and pos_order_id=$2
+    and net_sales_cents=500 and data->>'evidence'='committed_order'`,[D,`toast:${mirroredAccount}:${orderGuid}`])).n === 1,
+  "the test café's sales reader reuses original archived values without requiring live source grants");
+  check((await one(`select count(*)::int n from cv_item_sales where business_id=$1 and business_date=$2
+    and quantity=1 and net_sales_cents=500 and data->>'evidence'='committed_order'`,[D,archiveDay])).n === 1,
+  "the mirrored line reads the original quantity and amount under the copied recipe identity");
 
   const unchanged = await run();
   check(Object.keys(replacedDays(unchanged)).length === 0, `an unchanged run replaces nothing ${JSON.stringify(replacedDays(unchanged))}`);

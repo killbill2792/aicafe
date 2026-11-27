@@ -338,10 +338,14 @@ describe("day mirror", () => {
 describe("test café gets the Toast archive and daily captures (database behavior: sync-cafe-data-db-integration.mjs)", () => {
   it("points a copied archive row at the copied import run", () => {
     const archive = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_records")!;
-    const out = remapRow("toast_raw_records", { id: "a", business_id: SOURCE_BUSINESS_ID, restaurant_guid: "g", run_id: "r", seen_run_id: "r", payload: {} }, archive);
+    const out = remapRow("toast_raw_records", { id: "a", business_id: SOURCE_BUSINESS_ID,
+      restaurant_guid: "g", source_account: "g", run_id: "r", seen_run_id: "r", commit_id: "receipt", payload: {} }, archive);
     expect(out.run_id).toBe(remapId("toast_sync_runs", "r"));
     expect(out.seen_run_id).toBeNull();
     expect(out.business_id).toBe(DEST_BUSINESS_ID);
+    expect(out.source_account).toBe(out.restaurant_guid);
+    expect(out.commit_id).toBeNull();
+    expect(out.payload_origin).toBe("historical_provider");
   });
   it("passes capture field lists to Postgres as a real array", () => {
     expect(toParam("field_paths", ["a", "b"])).toEqual(["a", "b"]);
