@@ -79,7 +79,7 @@ Tested released @assistant-ui/react 0.15.38, @assistant-ui/react-ag-ui 0.1.13 an
 
 ## Capability and acceptance ledger
 
-Carry this ledger forward on branch luna/complete-rebuild. Existing tests listed here are starting points for evidence. A prior implementation's test does not verify its replacement.
+After #594 merges, carry this ledger forward on `luna/operator-rebuild` from updated main. Existing tests listed here are starting points for evidence. A prior implementation's test does not verify its replacement.
 
 | Capability | Existing service or replacement boundary | Required evidence for cutover | State at design review |
 | --- | --- | --- | --- |

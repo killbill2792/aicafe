@@ -76,13 +76,26 @@ describe('Luna repository boundary',()=>{
     put(legacy,'export const run = 3;'); expect(run().status).toBe(1);
   });
   it('recognizes private agent helpers through a new alias, barrel and dynamic import',()=>{
-    put('tsconfig.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{'old/*':['./lib/ai/agent/*']}}}));
+    put('tsconfig.json',JSON.stringify({extends:'./tsconfig.base.json'}));
+    put('tsconfig.base.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{'old/*':['./lib/ai/agent/*']}}}));
     put('lib/ai/agent/jobState.ts','export const state=1;');
     put('lib/luna/runtime/new.ts',"export * from '../../intermediate';");
     put('lib/intermediate.ts',"export const load=()=>import('old/jobState');");
     expect(run('feat/delegated').errors).toContain('lib/ai/agent/jobState.ts');
     put('lib/intermediate.ts',"export * from 'old/missing';");
     expect(run().errors).toContain('unresolved local dependency');
+  });
+  it('allows a standalone shared extraction with an erased legacy type',()=>{
+    rmSync(join(dir,'scripts/db/luna-engine-driver.mjs'));
+    put('lib/luna/shared/amount.ts',"import type {State} from '@/lib/ai/agent/jobState'; export const amount = (s:State)=>s.total;");
+    expect(run('feature/shared')).toEqual({status:0,errors:''});
+  });
+  it('checks JavaScript behind a TypeScript declaration',()=>{
+    put('lib/luna/runtime/index.ts',"export * from '../../port.js';");
+    put('lib/port.d.ts','export declare const value:number;');
+    put('lib/port.js',"export * from './ai/agent/jobState';");
+    put('lib/ai/agent/jobState.ts','export const value=1;');
+    expect(run('feat/worker').errors).toContain('forbidden dependency lib/ai/agent/jobState.ts');
   });
   it('protects the launcher and CI even on a control-only worker branch',()=>{
     put('scripts/guards/run-all.mjs','// changed launcher');
@@ -116,9 +129,9 @@ describe('Luna repository boundary',()=>{
 });
 it('fails when two engines run, a destination receives a duplicate, or the database lacks a verified receipt',()=>{
   const one={pin:'legacy', executions:['legacy'], deliveries:['key'], token:'key',
-    runs:[{engine:'legacy',status:'completed'}],effects:[{state:'verified',receipt_ref:'key'}]};
+    runs:[{engine:'legacy',status:'completed'}],effects:[{state:'verified',receipt_ref:'gmail:key',provider_message_id:'key',provider_state:'verified'}]};
   expect(()=>verifyRace(one)).not.toThrow();
-  for (const change of [{executions:['legacy','replacement']},{deliveries:['key','key']},
+  for (const change of [{executions:['legacy','replacement']},{deliveries:['key','key']},{effects:[{...one.effects[0],provider_message_id:'other'}]},
     {runs:[...one.runs,...one.runs]},{effects:[{state:'uncertain',receipt_ref:null}]}])
     expect(()=>verifyRace({...one,...change})).toThrow();
 });

@@ -47,6 +47,13 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/acceptance/owner-gate.mjs classify
+      - name: Verify the database job is selected for architecture changes
+        if: steps.filter.outputs.code != 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git diff --quiet --no-renames "$BASE_SHA...$HEAD_SHA" -- . ':(exclude)docs/**' ':(exclude)*.md' ':(exclude).github/ISSUE_TEMPLATE/**'
       - name: Select real browser journeys from the PR diff (fail closed)
         id: browser_select
         env:
@@ -213,14 +220,16 @@ jobs:
           cache: npm
       # Run reviewed code against Git objects before installing any candidate dependencies.
       - name: Verify Luna architecture using the approved main policy
-        if: github.event_name == 'pull_request'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           policy=scripts/guards/luna-boundary.mjs
           approved=$(git rev-parse refs/remotes/origin/main^{commit})
+          export BASE_SHA="${BASE_SHA:-$approved}"
+          echo "LUNA_DIFF_BASE=$BASE_SHA" >> "$GITHUB_ENV"
+          echo "LUNA_POLICY_BASE=$approved" >> "$GITHUB_ENV"
           listing=$(git ls-tree "$approved" -- "$policy")
           if [[ -z "$listing" ]]; then
             echo "Base predates the Luna guard. The candidate guard and independent bootstrap review apply."
@@ -237,25 +246,28 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Run reviewed guard cases and pinned legacy regressions
-        if: github.event_name == 'pull_request'
         run: |
           set -euo pipefail
+          run_proof() {
+            local result
+            result=$(mktemp)
+            node_modules/.bin/vitest run --reporter=json --outputFile="$result" "./$1"
+            node --input-type=module -e 'import {validateReport} from "./scripts/acceptance/owner-gate.mjs"; import fs from "node:fs"; validateReport(JSON.parse(fs.readFileSync(process.argv[1])),[process.argv[2]])' "$result" "$1"
+          }
           if [[ -f "$RUNNER_TEMP/luna-reviewed-tests" ]]; then
             suite=$(mktemp scripts/guards/luna-reviewed-XXXXXX.test.ts)
             trap 'rm -f "$suite"' EXIT
             cp "$RUNNER_TEMP/luna-reviewed-tests" "$suite"
-            node_modules/.bin/vitest run "$suite"
+            run_proof "$suite"
           fi
           if [[ -s "$RUNNER_TEMP/luna-regressions" ]]; then
             while IFS= read -r -d '' proof; do
-              result=$(mktemp)
-              node_modules/.bin/vitest run --reporter=json --outputFile="$result" "./$proof"
-              jq -e --arg path "$PWD/$proof" 'any(.testResults[]; .name == $path and any(.assertionResults[]; .status == "passed"))' "$result"
+              run_proof "$proof"
             done < "$RUNNER_TEMP/luna-regressions"
           fi
       - name: Run every repository guard
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          BASE_SHA: ${{ env.LUNA_DIFF_BASE }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
         run: node scripts/guards/run-all.mjs

@@ -8,7 +8,8 @@ const ledger = 'docs/plans/luna-rebuild.md';
 const driver = 'scripts/db/luna-engine-driver.mjs';
 const code = /\.[cm]?[jt]sx?$/;
 const test = /(?:\.(?:test|spec)\.|(?:^|\/)(?:__tests__|__fixtures__)\/)/;
-export const replacement = p => roots.some(root => p.startsWith(root)) && code.test(p) && !test.test(p);
+const lunaSource = p => roots.some(root => p.startsWith(root)) && code.test(p) && !test.test(p);
+export const replacement = p => lunaSource(p) && !p.startsWith('lib/luna/shared/');
 const shared = p => /^lib\/(?:luna\/shared|auth|access|metrics|calc|connectors|data|supabase|inventory|staffCommunication|staffCoordination|purchasing|operating|pos)\//.test(p);
 const protectedPath = p => [
   /^lib\/whatsapp\/supervisor\.server\./,
@@ -46,10 +47,12 @@ function imports(file, source) {
   const out = [];
   function visit(n) {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
-      if (n.moduleSpecifier) out.push(n.moduleSpecifier.text);
-    } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument)) {
-      out.push(n.argument.literal.text);
-    } else if (ts.isExternalModuleReference(n)) {
+      const clause = n.importClause || n.exportClause;
+      const members = clause?.namedBindings?.elements || clause?.elements;
+      const erased = n.isTypeOnly || clause?.isTypeOnly ||
+        (!clause?.name && members?.length && members.every(member=>member.isTypeOnly));
+      if (n.moduleSpecifier && !erased) out.push(n.moduleSpecifier.text);
+    } else if (ts.isExternalModuleReference(n) && !n.parent.isTypeOnly) {
       out.push(ts.isStringLiteralLike(n.expression) ? n.expression.text : null);
     } else if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword ||
         n.expression.getText() === 'require' || n.expression.getText() === 'module.require')) {
@@ -69,10 +72,13 @@ export function graphErrors(tree, seeds) {
     fileExists: p => tree.files.has(posix.relative(root,p)),
     readFile: p => tree.files.has(posix.relative(root,p)) ? tree.read(posix.relative(root,p)) : undefined,
   };
-  const config = ts.parseConfigFileTextToJson('tsconfig.json',tree.read('tsconfig.json'));
-  if (config.error || config.config.extends) throw Error('Unverified TypeScript configuration or inherited module resolution');
-  const {options,errors} = ts.convertCompilerOptionsFromJson(config.config.compilerOptions,root);
-  if (errors.length) throw Error('Invalid TypeScript compiler options');
+  const config = ts.getParsedCommandLineOfConfigFile(root+'/tsconfig.json',{},{
+    ...host, useCaseSensitiveFileNames:true, getCurrentDirectory:()=>root,
+    readDirectory:()=>seeds.map(path=>root+'/'+path),
+    onUnRecoverableConfigFileDiagnostic:diagnostic=>{ throw Error(ts.flattenDiagnosticMessageText(diagnostic.messageText,'\n')); },
+  });
+  if (!config || config.errors.some(e=>e.code!==18003)) throw Error('Invalid TypeScript configuration in Git tree');
+  const {options} = config;
   options.baseUrl ??= root;
   const aliases = Object.keys(options.paths ?? {});
   function localSpecifier(spec) {
@@ -92,6 +98,9 @@ export function graphErrors(tree, seeds) {
       if (found) {
         const target = posix.relative(root,found.resolvedFileName);
         if (code.test(target)) result.push({target});
+        // TypeScript can resolve a declaration in front of its runtime sibling.
+        const runtime = target.replace(/\.d\.(ts|mts|cts)$/,(_,ext)=>({ts:'.js',mts:'.mjs',cts:'.cjs'})[ext]);
+        if (runtime !== target && tree.files.has(runtime)) result.push({target:runtime});
       } else if (localSpecifier(spec) && !/\.(?:css|svg|png|jpe?g|webp)$/.test(spec)) {
         result.push({error:'unresolved local dependency '+spec});
       }
@@ -141,7 +150,7 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   const legacyEdits = changed.filter(p => legacyDependency(p) && !test.test(p));
   const rebuild = branch === 'luna/operator-rebuild' || changed.some(replacement);
   const policy = 'scripts/guards/luna-boundary.mjs';
-  const errors = graphErrors(after,active);
+  const errors = graphErrors(after,[...after.files.keys()].filter(lunaSource));
   // A change in an intermediate helper can break an untouched shared service.
   if (changed.some(p => code.test(p) || p === 'tsconfig.json')) {
     const services = tree => [...tree.files.keys()].filter(p => shared(p) && code.test(p) && !test.test(p));
@@ -156,8 +165,7 @@ export function audit(base, head, branch = '', trustedBase = base, regressions =
   if (trusted.files.has(policy) && changed.includes(dbRunner) &&
       (!after.files.has(dbRunner) || !after.read(dbRunner).includes('node scripts/db/luna-engine-race.mjs')))
     errors.push(dbRunner+':1: retain the registered Luna database oracle');
-  if (rebuild && changed.some(p => controls(p) && p !== dbRunner) ||
-      legacyEdits.length && policyEdits.length)
+  if ((rebuild || legacyEdits.length) && policyEdits.length)
     errors.push(ledger+':1: change enforcement separately from replacement or protected legacy code');
   if (before.files.has(policy) && !after.files.has(policy))
     errors.push(policy+':1: approved boundary guard was removed');

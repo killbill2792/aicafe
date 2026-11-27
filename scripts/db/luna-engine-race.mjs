@@ -9,15 +9,18 @@ import { once } from 'node:events';
 import { pathToFileURL } from 'node:url';
 import { Client } from 'pg';
 
-export function verifyRace({pin, executions, deliveries, runs, effects, token}) {
+export function verifyRace({pin, executions, deliveries, runs, effects}) {
   assert.deepEqual(executions,[pin], 'only the pinned engine may start this single-step assignment');
-  assert.deepEqual(deliveries,[token], 'the independent destination must receive one effect');
+  assert.equal(deliveries.length,1,'the destination must accept exactly one message');
+  assert.ok(deliveries[0],'the destination must issue a message ID');
   assert.equal(runs.length,1,'one durable logical assignment');
   assert.equal(runs[0].status,'completed');
   assert.equal(runs[0].engine,pin);
   assert.equal(effects.length,1,'one effect reservation across both engines');
   assert.equal(effects[0].state,'verified');
-  assert.equal(effects[0].receipt_ref,token);
+  assert.equal(effects[0].provider_message_id,deliveries[0]);
+  assert.equal(effects[0].provider_state,'verified');
+  assert.equal(effects[0].receipt_ref,'gmail:'+deliveries[0]);
 }
 
 async function run(connectionString) {
@@ -28,7 +31,7 @@ async function run(connectionString) {
   try {
     // Check the actual migrated catalogs even before a replacement engine exists.
     const keys=await db.query(`select c.conrelid::regclass::text as relation,
-      array_agg(a.attname::text order by k.ordinality) as columns
+      bool_and(a.attnotnull) as nonnull,array_agg(a.attname::text order by k.ordinality) as columns
       from pg_constraint c cross join lateral unnest(c.conkey) with ordinality k(attnum,ordinality)
       join pg_attribute a on a.attrelid=c.conrelid and a.attnum=k.attnum
       where c.contype in ('p','u') and c.conrelid in
@@ -36,7 +39,7 @@ async function run(connectionString) {
       group by c.oid,c.conrelid`);
     for (const [table,identity] of [['supervisor_runs',['business_id','owner_user_id','request_key']],
       ['supervisor_effect_attempts',['business_id','proposal_id','effect_hash']]]) {
-      assert.ok(keys.rows.some(k => k.relation.split('.').at(-1)===table &&
+      assert.ok(keys.rows.some(k => k.nonnull && k.relation.split('.').at(-1)===table &&
         k.columns.length===identity.length && identity.every(c => k.columns.includes(c))),
         table+' must enforce the shared logical identity');
     }
@@ -49,9 +52,11 @@ async function run(connectionString) {
     for (const pin of ['legacy','replacement']) {
       const requestKey=randomUUID(), token=randomUUID(), executions=[], deliveries=[];
       const server=createServer((req,res) => {
-        deliveries.push(req.method==='POST' && req.url==='/'+token ? token : 'unexpected delivery');
-        res.writeHead(200,{'content-type':'application/json'});
-        res.end(JSON.stringify({receipt:token}));
+        const accepted=req.method==='POST' && req.url==='/'+token;
+        const id=accepted ? randomUUID() : null;
+        deliveries.push(id);
+        res.writeHead(accepted?200:404,{'content-type':'application/json'});
+        res.end(JSON.stringify({id}));
       });
       server.listen(0,'127.0.0.1');
       await once(server,'listening');
@@ -64,9 +69,12 @@ async function run(connectionString) {
         await trial.recover();
         const runs=await db.query('select status, engine from public.supervisor_runs where business_id=$1 and owner_user_id=$2 and request_key=$3',
           [trial.businessId,trial.ownerId,requestKey]);
-        const effects=await db.query('select state, receipt_ref from public.supervisor_effect_attempts where business_id=$1 and proposal_id=$2',
-          [trial.businessId,trial.proposalId]);
-        verifyRace({pin,executions,deliveries,runs:runs.rows,effects:effects.rows,token});
+        const effects=await db.query(`select a.state,a.receipt_ref,r.provider_message_id,r.state as provider_state
+          from public.supervisor_effect_attempts a left join public.connector_provider_receipts r
+            on (r.business_id,r.proposal_id,r.effect_hash)=(a.business_id,a.proposal_id,a.effect_hash)
+            and r.owner_user_id=$3 and r.operation='send' and r.provider_accepted_at is not null
+          where a.business_id=$1 and a.proposal_id=$2`,[trial.businessId,trial.proposalId,trial.ownerId]);
+        verifyRace({pin,executions,deliveries,runs:runs.rows,effects:effects.rows});
       } finally {
         await new Promise((resolve,reject) => server.close(err => err ? reject(err) : resolve()));
       }
