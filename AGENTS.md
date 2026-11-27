@@ -218,6 +218,12 @@ Where an older line in this file conflicts with these rules, these rules win.
     When browser proof is needed, run the app in GitHub Actions with disposable test data and
     targeted Playwright; save execution proof there, without a Vercel deployment.
 
+## Mandatory Luna rebuild instructions
+
+For Luna replacement work, read this file and the current `PROGRESS.md` Now section, then the [approved handoff and development boundaries](docs/plans/luna-rebuild-handoff.md#fresh-session-handoff) and the [capability, ownership and acceptance ledger](docs/plans/luna-rebuild.md#implementation-ownership-and-evidence). Read the live implementation PR, comments, exact head and executable evidence before editing. These two documents govern the rebuild within the standing rules above. #594 delivers architecture and development safeguards. A fresh session opens one separate implementation PR from updated main.
+
+Rule 4 applies to shared business capabilities and to the single executing engine for each logical assignment. Build the replacement in its designated new roots. Keep legacy orchestration readable for comparison and rollback. Preserve business behavior through shared services, original data and parity tests. Record any necessary protected-file edit with its exact scope and test in the existing ledger. Rule 19 applies once per eligible head on the canonical implementation PR. One accountable integrator coordinates any isolated workers through that PR and Muse. Follow the approved ledger through unattended-shift acceptance, including the named owner gates for live effects and release.
+
 ## Universal dispatcher failure/recovery invariant
 
 GitHub's signed queue and private CAS ledger remain the one source of truth. Scope plans may use full GitHub-size multiline JSON and legitimate exact repository paths; **do not add artificial length, count or ASCII filename cutoffs**. Preserve authenticated owner, signed action/source/receipt, exact path safety, and separate approval of each proposed edit scope. Scan all pages of the existing owner issue, persist specific rejection reason codes, and send any correctable rejection to the SAME planning chat. An incomplete GitHub read must never be treated as absence of a plan.

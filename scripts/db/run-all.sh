@@ -189,6 +189,8 @@ supabase_lane() {
   sql_step task16c-external-permissions-db.sql "Task16C: owner/café permission revoke, CAS, audit, Gmail generations"
 
   group "Concurrent sessions"
+  check supabase "Luna run/effect identities and cross-engine execution when present" env \
+    SUPERVISOR_RUN_DB_URL="$supabase_url" node scripts/db/luna-engine-race.mjs
   check supabase "U1 historical replay evaluator fail-closed checks" node --test scripts/acceptance/u1-incident-replay.test.mjs
   check supabase "U1 three historical refs matched recorded incident replay" node scripts/acceptance/u1-incident-replay.mjs
   check supabase "Supervisor direct SQL research: discovery, read-only SQL, café isolation, calculator, chat turn" env \

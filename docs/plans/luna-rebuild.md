@@ -6,7 +6,7 @@ Luna is the operator an owner can delegate a shift to. An owner or employee shou
 
 ## Execution and ownership
 
-Base for the initial design is main at 28622880. Draft PR #593 at d03e1273 owns external ingestion, archive keys, source grants and research data discovery. Its resource identity is business, provider, source account and resource. An unknown grant, an empty result and an unsuccessful collection are distinct observations. Luna should consume the scoped research functions and their coverage metadata. Recheck the merged contract, permission revocation and two-business isolation before integration. This branch can independently develop conversation, scheduling and presentation behavior. Do not bring the archive migrations into this branch.
+Base for the initial design is main at 28622880. Draft PR #593 at d03e1273 owns external ingestion, archive keys, source grants and research data discovery. Its resource identity is business, provider, source account and resource. An unknown grant, an empty result and an unsuccessful collection are distinct observations. Luna should consume the scoped research functions and their coverage metadata. Recheck the merged contract, permission revocation and two-business isolation before integration. The implementation PR can develop conversation, scheduling and presentation against existing scoped services. #593 owns archive migrations.
 
 Owner or employee message → authenticate actor and tenant → admit one logical run → claim a due step → select authorized tools → persist the result → deliver and record a receipt.
 
@@ -118,8 +118,26 @@ Carry this ledger forward on branch luna/complete-rebuild. Existing tests listed
 
 The first worker slice proves the transport and recovery foundation. These release cases stay open until exercised on the integrated system. Verify the actual grants and source cadence on the merged #593 contract before attributing external observations to Luna.
 
+### Implementation ownership and evidence
+
+PR #594 owns the instruction hierarchy, guard and test oracle. Product rows above start open. The implementation integrator records the assigned worker, exact paths, dependency SHA and current proof in this ledger and the single draft as work is assigned.
+
+| Accountable area | Dependencies and owned work | Evidence required before integration |
+| --- | --- | --- |
+| Runtime and switching integrator | First. Shared admission, additive schema, event identity, pin, leases, capacity, migration ordering, entry adapters and rollback. Owns shared-file integration. | Same new harness handles owner chat and a due assignment with refresh off. Both pins pass the migrated two-engine race, crash/recovery and isolation checks. |
+| Capability and operating-cycle worker | Runtime contracts first. Tool discovery, Watch, staff work, approvals, memory, outcomes and #593 scoped observations. | Unfamiliar changes, late/revoked evidence, staff privacy, authorization and independently checked outcomes. |
+| Document worker | Shared run, access and receipt contracts. Private document identity, versions, transformations and delivery. | Each format round-trips across threads, with concurrent edits, revocation and independent byte/receipt checks. |
+| Interaction worker | Runtime stream, document and action contracts. Branch, replay, controls, rich UI and existing surface parity. | Browser, mobile, voice, RTL, accessibility, interruption and lost-render recovery with preserved source. |
+| Integrator and independent reviewer | All areas. Combine the work, run the load trial, unattended shift and rollback, reconcile comments and collect the applicable authorized release evidence. | Record provider/DB/UI/destination evidence and unproved scenarios at exact SHAs. Only verified outcomes close an acceptance row. |
+
+**Protected-file exceptions.** Keep exact exceptions in this ledger. Use the following row shape, with plain repository paths, the Git blob IDs from merge base and proposed head (`absent` for create/delete), the reason and scope, an existing regression test path, and the rollback or retirement condition. The guard validates the path, revision pair and test reference. Reviewers verify that the test exercises the exception and that every changed hunk serves its stated purpose. #594 grants zero runtime exceptions.
+
+```text
+| Legacy exception | path | base blob | proposed blob | reason and scope | test path | exit condition |
+```
+
 ## Continuation and cutover
 
-Continue on [draft PR #594](https://github.com/killbill2792/aicafe/pull/594) and its existing branch. Fetch main and #593, compare migration IDs and shared research files before integrating. Add executable evidence and exact commands here as each row changes. Enable the new experience only for a locally opted-in business until both engines' claims, historical reads and rollback work under concurrency. Inspect actual persisted rows, UI and delivery receipts for each acceptance scenario. An externally visible send, paid live acceptance, production migration/deploy and destructive retirement each require the applicable owner authorization.
+Follow the [fresh-session handoff](luna-rebuild-handoff.md#fresh-session-handoff) into one separate implementation PR based on main after #594 merges. Fetch main and #593, compare migration IDs and shared research files before integrating. Add executable evidence and exact commands here as each row changes. Enable the new experience only for a locally opted-in business until both engines' claims, historical reads and rollback work under concurrency. Inspect actual persisted rows, UI and delivery receipts for each acceptance scenario. An externally visible send, paid live acceptance, production migration/deploy and destructive retirement each require the applicable owner authorization.
 
 The original local compatibility check used an isolated dependency install because the canonical SheetJS tarball was inaccessible there. Repeat the canonical install and build in the implementation workspace. The PR records CI separately from local and application-level proof.
