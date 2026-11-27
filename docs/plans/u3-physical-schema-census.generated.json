@@ -16803,79 +16803,6 @@
      true
     ],
     [
-     "external_time_entry_id",
-     "uuid",
-     true
-    ],
-    [
-     "external_employee_id",
-     "uuid",
-     true
-    ],
-    [
-     "clock_in",
-     "timestamp with time zone",
-     true
-    ],
-    [
-     "clock_out",
-     "timestamp with time zone",
-     false
-    ],
-    [
-     "hourly_wage_cents",
-     "bigint",
-     false
-    ],
-    [
-     "wage_status",
-     "text",
-     true
-    ],
-    [
-     "status",
-     "text",
-     true
-    ],
-    [
-     "deleted",
-     "boolean",
-     true
-    ],
-    [
-     "provider_regular_hours",
-     "numeric",
-     false
-    ],
-    [
-     "provider_overtime_hours",
-     "numeric",
-     false
-    ]
-   ],
-   "relation": "toast_open_labor_summaries",
-   "foreign_keys": [
-    {
-     "target": "businesses",
-     "constraint": "toast_open_labor_summaries_business_id_fkey"
-    }
-   ]
-  },
-  {
-   "rls": true,
-   "kind": "table",
-   "columns": [
-    [
-     "business_id",
-     "uuid",
-     true
-    ],
-    [
-     "restaurant_guid",
-     "uuid",
-     true
-    ],
-    [
      "menu_last_updated",
      "text",
      false
@@ -18392,6 +18319,69 @@
      "constraint": "toast_rollup_refresh_jobs_business_id_fkey"
     }
    ]
+  },
+  {
+   "rls": false,
+   "kind": "view",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "restaurant_guid",
+     "uuid",
+     false
+    ],
+    [
+     "external_time_entry_id",
+     "uuid",
+     false
+    ],
+    [
+     "external_employee_id",
+     "uuid",
+     false
+    ],
+    [
+     "clock_in",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "clock_out",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "hourly_wage_cents",
+     "bigint",
+     false
+    ],
+    [
+     "wage_status",
+     "text",
+     false
+    ],
+    [
+     "provider_regular_hours",
+     "numeric",
+     false
+    ],
+    [
+     "provider_overtime_hours",
+     "numeric",
+     false
+    ],
+    [
+     "deleted",
+     "boolean",
+     false
+    ]
+   ],
+   "relation": "toast_staged_labor_evidence",
+   "foreign_keys": []
   },
   {
    "rls": true,

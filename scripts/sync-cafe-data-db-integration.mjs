@@ -60,8 +60,19 @@ try {
   await q(`insert into timecards(id, business_id, employee_id, clock_in, clock_out, pos_timecard_id, hourly_wage_cents, source_type)
     values ($1, $2, $3, $4::date + interval '8 hours', $4::date + interval '12 hours', $5, 2000, 'connected_pos')`,
     [ids.card, S, ids.emp, day, `toast:${G}:${ids.entry}`]);
-  await q(`insert into toast_open_labor_summaries(business_id, restaurant_guid, external_time_entry_id, external_employee_id, clock_in, clock_out, status, wage_status)
-    values ($1, $2, $3, $4, $5::date + interval '8 hours', $5::date + interval '12 hours', 'actual', 'actual')`, [S, G, ids.entry, ids.emp, day]);
+  await q(`insert into toast_labor_entries(business_id, restaurant_guid, location_id, external_time_entry_id, external_employee_id, clock_in, clock_out, hourly_wage_cents, wage_status)
+    values ($1, $2, $3, $4, $5, $6::date + interval '8 hours', $6::date + interval '12 hours', 2000, 'verified')`, [S, G, ids.loc, ids.entry, ids.emp, day]);
+
+  // Preserve a historical summary that predated the staging table's usable history.
+  const historicalEntry = "c0ffee00-0000-4000-8000-000000000102";
+  await q(`insert into external_records(business_id,provider,source_account,entity,source_key,restaurant_guid,entity_guid,
+    business_date,payload,payload_sha256,capture_key,payload_origin)
+    select $1,'toast',$2::uuid::text,'legacy/open-labor-summary',$3::uuid::text,$2,$3,$4::date,body,
+      encode(sha256(convert_to(body::text,'UTF8')),'hex'),'legacy-labor-fixture','historical_projection'
+    from (select jsonb_build_object('external_time_entry_id',$3::uuid,'external_employee_id',$5::uuid,
+      'clock_in',$4::date+interval '8 hours','clock_out',$4::date+interval '9 hours','hourly_wage_cents',0,
+      'wage_status','verified','provider_regular_hours',1,'provider_overtime_hours',null,'deleted',false,'status','actual') as body) x`,
+    [S,G,historicalEntry,day,ids.emp]);
 
   // Oct 12/14 financial parity fixture. The seventh Oct 14 shift begins on Oct 15
   // UTC but is still Oct 14 at the café (PDT). Two complete shifts have a real
@@ -258,6 +269,10 @@ try {
   check((await one(`select count(*)::int n from cv_item_sales where business_id=$1 and business_date=$2
     and quantity=1 and net_sales_cents=500 and data->>'evidence'='committed_order'`,[D,archiveDay])).n === 1,
   "the mirrored line reads the original quantity and amount under the copied recipe identity");
+  check((await one(`select count(*)::int n from cv_labor_entries where business_id=$1
+    and source_ref=$2 and hourly_wage_cents=0 and regular_hours=1 and overtime_hours is null`,
+    [D,`staged-timecard:${mirroredAccount}:${historicalEntry}`])).n === 1,
+  "unmatched historical labor retains hours and an explicit zero wage in the mirror");
 
   const unchanged = await run();
   check(Object.keys(replacedDays(unchanged)).length === 0, `an unchanged run replaces nothing ${JSON.stringify(replacedDays(unchanged))}`);

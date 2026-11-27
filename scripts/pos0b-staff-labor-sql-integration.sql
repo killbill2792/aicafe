@@ -160,4 +160,25 @@ BEGIN
   FROM public.cv_staff_clock_entries WHERE business_id=b AND pos_timecard_id=clock_ref),
   'original evidence does not replace an independent owner edit');
 END $source_cutover$;
+
+-- The owner-readable projection must keep the existing stage private, even
+-- when an open entry has an independently stored wage.
+SELECT gen_random_uuid() AS projection_owner,gen_random_uuid() AS other_owner \gset
+INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+VALUES(:'projection_owner','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+ 'labor-'||:'projection_owner'||'@example.invalid','',now(),now());
+INSERT INTO public.memberships(business_id,user_id,role)
+VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddd01',:'projection_owner','owner');
+UPDATE public.toast_labor_entries SET clock_out=null,hourly_wage_cents=750,wage_status='verified'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',:'projection_owner',true);
+SELECT pg_temp.pos0b_assert((SELECT count(*)=1 AND bool_and(hourly_wage_cents IS NULL)
+ FROM public.toast_staged_labor_evidence WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddd01')
+ AND NOT has_table_privilege('authenticated','public.toast_labor_entries','SELECT'),
+ 'the owner can read the stage projection without its unpublished wage or raw table');
+SELECT set_config('request.jwt.claim.sub',:'other_owner',true);
+SELECT pg_temp.pos0b_assert(NOT EXISTS(SELECT FROM public.toast_staged_labor_evidence
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddd01'),'the stage projection stays café-scoped');
+RESET ROLE;
 ROLLBACK;

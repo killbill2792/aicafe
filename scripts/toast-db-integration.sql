@@ -834,7 +834,7 @@ BEGIN
  -- Deleted timecards remain retained but must NOT appear as current billable labor.
  update public.toast_labor_entries set deleted=true
   where business_id=b and restaurant_guid=r and external_time_entry_id=entry;
- perform pg_temp.assert_true(exists(select 1 from public.toast_open_labor_summaries
+ perform pg_temp.assert_true(exists(select 1 from public.toast_staged_labor_evidence
   where business_id=b and restaurant_guid=r and external_time_entry_id=entry
    and deleted=true),'deleted labor retained as historical staged evidence');
  perform pg_temp.assert_true(not exists(select 1 from public.cv_labor_entries
