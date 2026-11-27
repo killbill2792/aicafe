@@ -3,7 +3,7 @@ import {createContext,useContext,useId,useMemo,useState,useLayoutEffect,useRef,t
 import dynamic from "next/dynamic";
 import PresentationBoundary from "./PresentationBoundary";
 import {normalizeTableData} from "@/lib/ai/conversations/tableFormatting";
-import {wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
+import {useAdaptiveTable,wideResponseTableClass,wideResponseCellClass,wideResponseLabelClass} from "./responseTableLayout";
 import {JSONUIProvider,Renderer,defineRegistry,type ComponentRegistry} from "@json-render/react";
 import {defineCatalog} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
@@ -128,7 +128,7 @@ function AgendaView({agenda,locale}:{agenda:Agenda;locale:string}){
  </section>;
 }
 function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
- const evidenceId=useId(),scopeId=useId(),wide=table.columns.length>4;
+ const evidenceId=useId(),scopeId=useId(),tableRef=useAdaptiveTable();
  const fmt=(value:RecordTable["rows"][number][number],u:RecordTable["columns"][number]["unit"])=>{
   if(value===null)return copy.notRecorded;
   if(typeof value!=="number")return String(value);
@@ -140,15 +140,15 @@ function RecordTableView({table,locale}:{table:RecordTable;locale:string}){
   <figcaption className="font-medium text-ink">{table.title}</figcaption>
   {table.view!=="tool_response_evidence"&&<p id={evidenceId} className="wrap-break-word text-[0.8125rem] text-ink-muted">{table.view==="tool_sql_research"?"SQL query":table.view} · {table.view!=="tool_sql_research"&&<>{table.from} – {table.to} · </>}{copy.snapshot} {table.asOf}{table.coverage!=="stored"&&table.coverage!=="authored"?" · "+confidence(table.coverage):""}</p>}
   <p id={scopeId} className="wrap-break-word text-[0.8125rem] text-ink-muted">{table.scope}</p>
-  <div role="region" tabIndex={0} aria-label={table.title} className="max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
-   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-auto text-[0.9375rem] tabular-nums "+(wide?wideResponseTableClass:"")}><caption className="sr-only">{table.title}</caption>
+  <div ref={tableRef} role="region" tabIndex={0} aria-label={table.title} className="luna-table-region max-w-full overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink">
+   <table role="table" aria-describedby={table.view==="tool_response_evidence"?scopeId:evidenceId+" "+scopeId} className={"w-full table-auto text-[0.9375rem] tabular-nums "+wideResponseTableClass}><caption className="sr-only">{table.title}</caption>
     <thead><tr>{table.columns.map((c,i)=><th key={i} scope="col" className="border-b border-line px-1.5 sm:px-2 py-2 text-start align-bottom font-medium wrap-anywhere">{c.label}<span className="block text-[0.8125rem] text-ink-muted">{c.unit==="stored"?copy.unitUnknown:c.unit==="microcents"?table.currency+" microcents":c.unit==="cents"?table.currency:c.unit==="cents/hour"?table.currency+" / h":c.unit}</span></th>)}</tr></thead>
     <tbody role="rowgroup">{table.rows.map((row,i)=><tr role="row" key={i}>{row.map((v,j)=>{
      const rowHeader=j===0&&["label","local date"].includes(table.columns[j].unit);
      const Tag=rowHeader?"th":"td";
-     const cls="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top wrap-break-word wrap-anywhere"+(rowHeader?" font-normal":"")+(wide?" "+wideResponseCellClass:"");
+     const cls="border-b border-line px-1.5 sm:px-2 py-2 text-start align-top wrap-break-word wrap-anywhere"+(rowHeader?" font-normal":"")+" "+wideResponseCellClass;
      const value=fmt(v,table.columns[j].unit);
-     return <Tag key={j} role={rowHeader?"rowheader":"cell"} scope={rowHeader?"row":undefined} className={cls}>{wide?<><span aria-hidden="true" className={wideResponseLabelClass}>{table.columns[j].label}</span><span className="min-w-0 wrap-anywhere">{value}</span></>:value}</Tag>;
+     return <Tag key={j} role={rowHeader?"rowheader":"cell"} scope={rowHeader?"row":undefined} className={cls}><span aria-hidden="true" className={wideResponseLabelClass}>{table.columns[j].label}</span><span className="min-w-0 wrap-anywhere">{value}</span></Tag>;
     })}</tr>)}</tbody>
    </table>
   </div>
@@ -285,6 +285,10 @@ function AdaptiveGrid({columns,children}:{columns:unknown;children:ReactNode}){
  const style=preferred?{"--luna-track":"max(0px, calc((100% - ("+preferred+" - 1) * var(--luna-gap, 0px)) / "+preferred+"))"} as CSSProperties:undefined;
  return <div ref={ref} data-testid="luna-adaptive-grid" className="luna-adaptive-flow min-w-0" style={style}>{children}</div>;
 }
+function NativeAdaptiveTable({children}:{children:ReactNode}){
+ const ref=useAdaptiveTable();
+ return <div ref={ref} className="luna-table-region luna-responsive-table min-w-0 max-w-full overflow-x-auto">{children}</div>;
+}
 function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  // A polling parent may reconstruct an equal message object. The keyed
  // widget survives that refresh without resetting edits or keyboard focus.
@@ -320,7 +324,7 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
     const role=name==="Slider"?"slider":name==="Select"?"combobox":name==="Radio"?"radiogroup":null;
     const label="label" in parsed.data&&typeof parsed.data.label==="string"?parsed.data.label:name;
     if(name==="Grid")return <AdaptiveGrid columns={"columns" in parsed.data?parsed.data.columns:undefined}>{component}</AdaptiveGrid>;
-    if(name==="Table")return <div className="luna-responsive-table min-w-0 max-w-full overflow-x-auto">{component}</div>;
+    if(name==="Table")return <NativeAdaptiveTable>{component}</NativeAdaptiveTable>;
     return role?<NamedNativeControl role={role} label={label}>{component}</NamedNativeControl>:component;
    };
   }
