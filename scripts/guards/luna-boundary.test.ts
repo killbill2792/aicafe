@@ -95,45 +95,63 @@ describe('Luna repository boundary',()=>{
     expect(errors).toContain('undeclared package @example/metrics/../local');
     expect(errors).toContain('unapproved Node builtin node:unknown-future-api');
   });
-  it('requires an independent grant for direct and indirect registry edges, including stacked work',()=>{
-    put('package.json',JSON.stringify({dependencies:{metrics:'1.0.0'},imports:{'#report':'metrics/report'}}));
-    put('package-lock.json',JSON.stringify({packages:{'node_modules/metrics':registryItem('metrics')}}));
-    const grant = grantFor('metrics');
-    put(ledger,grant); const unapproved=base; base=commit();
-    put('lib/luna/runtime/app.ts',"export * from '../../shared-helper';");
-    put('lib/shared-helper.ts',"export * from '#report';");
-    expect(run('feature',unapproved).errors).toContain('unapproved runtime package graph metrics');
-    expect(run().status).toBe(0);
-    base=commit(); put(ledger,'');
-    expect(run('docs/retire-metrics').errors).toContain('unapproved runtime package graph metrics');
-    put(ledger,grant); put('lib/shared-helper.ts','export {};');
-    expect(run('feature/migrate').status).toBe(0);
-    base=commit(); put(ledger,'');
-    expect(run('docs/retire-metrics').status).toBe(0);
+  describe('package grants through a shared helper',()=>{
+    let grant:string, unapproved:string;
+    beforeEach(()=>{
+      put('package.json',JSON.stringify({dependencies:{metrics:'1.0.0'},imports:{'#report':'metrics/report'}}));
+      put('package-lock.json',JSON.stringify({packages:{'node_modules/metrics':registryItem('metrics')}}));
+      grant=grantFor('metrics'); unapproved=base;
+      put(ledger,grant); base=commit();
+      put('lib/luna/runtime/app.ts',"export * from '../../shared-helper';");
+      put('lib/shared-helper.ts',"export * from '#report';");
+    });
+    it('requires approval on main even when a stacked parent contains a grant',()=>{
+      expect(run('feature',unapproved).errors).toContain('unapproved runtime package graph metrics');
+      expect(run().status).toBe(0);
+    });
+    it('allows a grant to be retired after its last consumer migrates',()=>{
+      base=commit(); put(ledger,'');
+      expect(run('docs/retire-metrics').errors).toContain('unapproved runtime package graph metrics');
+      put(ledger,grant); put('lib/shared-helper.ts','export {};');
+      expect(run('feature/migrate').status).toBe(0);
+      base=commit(); put(ledger,'');
+      expect(run('docs/retire-metrics').status).toBe(0);
+    });
   });
-  it('binds the reviewed closure across nested, optional and peer installs without freezing unrelated packages',()=>{
+  describe('approved registry dependency graphs',()=>{
+    const transitive={...registryItem('b'),dependencies:{a:'*'}};
     const tree={
       'node_modules/a':{...registryItem('a'),dependencies:{b:'*'},peerDependencies:{p:'*'},peerDependenciesMeta:{p:{optional:true}}},
-      'node_modules/b':{...registryItem('b'),dependencies:{a:'*'}},
+      'node_modules/b':transitive,
     };
-    const lock=(changes:Record<string,unknown>)=>put('package-lock.json',JSON.stringify({packages:{...tree,...changes}}));
-    put('package.json',JSON.stringify({dependencies:{a:'*'}})); lock({});
-    put(ledger,grantFor('a')); base=commit(); put('lib/luna/runtime/app.ts',"export * from 'a';");
-    lock({'node_modules/other':registryItem('other')}); expect(run().status).toBe(0);
-    put('npm-shrinkwrap.json',JSON.stringify({packages:{...tree,'node_modules/b':registryItem('b','2.0.0')}}));
-    expect(run().errors).toContain('unapproved runtime package graph a');
-    rmSync(join(dir,'npm-shrinkwrap.json'));
-    for (const changes of [
-      {'node_modules/a/node_modules/b':registryItem('b','2.0.0')},
-      {'lib/luna/node_modules/a':registryItem('a','2.0.0')},
-      {'node_modules/p':registryItem('p')},
-      {'node_modules/b':{...tree['node_modules/b'],integrity:registryItem('other').integrity}},
-      {'node_modules/b':{...tree['node_modules/b'],resolved:'https://elsewhere.invalid/b.tgz'}},
-      {'node_modules/b':{link:true,resolved:'lib/local'}},
-      {'node_modules/b':{...tree['node_modules/b'],integrity:null}},
-    ]) {
-      lock(changes); expect(run().errors).toContain('unapproved runtime package graph a');
+    function lock(changes:Record<string,unknown>,path='package-lock.json') {
+      put(path,JSON.stringify({packages:{...tree,...changes}}));
     }
+    beforeEach(()=>{
+      put('package.json',JSON.stringify({dependencies:{a:'*'}})); lock({});
+      put(ledger,grantFor('a')); base=commit();
+      put('lib/luna/runtime/app.ts',"export * from 'a';");
+    });
+    it('accepts unrelated lockfile changes alongside a reviewed dependency cycle',()=>{
+      lock({'node_modules/other':registryItem('other')});
+      expect(run().status).toBe(0);
+    });
+    it('checks the preferred shrinkwrap when both npm lockfiles exist',()=>{
+      lock({'node_modules/b':registryItem('b','2.0.0')},'npm-shrinkwrap.json');
+      expect(run().errors).toContain('unapproved runtime package graph a');
+    });
+    it.each([
+      ['nested dependency', 'node_modules/a/node_modules/b', registryItem('b','2.0.0')],
+      ['nearer installation', 'lib/luna/node_modules/a', registryItem('a','2.0.0')],
+      ['optional peer', 'node_modules/p', registryItem('p')],
+      ['changed archive', 'node_modules/b', {...transitive,integrity:registryItem('other').integrity}],
+      ['changed source', 'node_modules/b', {...transitive,resolved:'https://elsewhere.invalid/b.tgz'}],
+      ['local link', 'node_modules/b', {link:true,resolved:'lib/local'}],
+      ['missing integrity', 'node_modules/b', {...transitive,integrity:null}],
+    ] as const)('rejects a %s outside the reviewed graph',(_case,path,item)=>{
+      lock({[path]:item});
+      expect(run().errors).toContain('unapproved runtime package graph a');
+    });
   });
   it('checks local aliases even when the spelling also names a builtin',()=>{
     put('tsconfig.json',JSON.stringify({compilerOptions:{moduleResolution:'bundler',paths:{crypto:['./'+legacy]}}}));
