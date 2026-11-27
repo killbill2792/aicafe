@@ -270,7 +270,7 @@ DECLARE
  b uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee10';r uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee11';
  loc uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee12';ord uuid:='eeeeeeee-1111-4eee-8eee-eeeeeeeeee13';
  d date:=((now() at time zone 'America/Los_Angeles')-interval '4 hours')::date;
- n uuid; p jsonb; projection jsonb; revision jsonb; corrected jsonb; receipt jsonb; snapshot jsonb;
+ n uuid; p jsonb; revision jsonb; corrected jsonb; receipt jsonb; snapshot jsonb; historical jsonb;
  s timestamptz:=now()-interval '7 minutes';e timestamptz:=now()-interval '2 minutes';
  refused boolean;
 BEGIN
@@ -280,15 +280,24 @@ BEGIN
  perform public.toast_save_configuration(b,'https://ws-api.toasttab.com','canonical_client','synthetic_ciphertext',
   jsonb_build_array(jsonb_build_object('location_id',loc,'restaurant_guid',r)));
  update public.toast_location_mappings set verified_at=now(),toast_time_zone='America/Los_Angeles',closeout_hour=4 where business_id=b;
- p:=jsonb_build_object('guid',ord,'businessDate',to_char(d,'YYYYMMDD')::integer,'modifiedDate',e,'checks','[]'::jsonb);
- projection:='{"netSalesCents":1000,"grossSalesCents":1000,"discountsCents":0,"refundsCents":0,"tipCents":0,"orders":1,"openChecks":1,"unparsedOrders":0,"items":[],"observedAt":null}'::jsonb;
- revision:=jsonb_build_object('day',d,'payload',p,'projection',projection);
+ p:=jsonb_build_object('guid',ord,'businessDate',to_char(d,'YYYYMMDD')::integer,'modifiedDate',e,
+  'checks',jsonb_build_array(jsonb_build_object('amount',10,'paymentStatus','OPEN')));
+ revision:=jsonb_build_object('day',d,'payload',p);
+ perform pg_temp.assert_true(public.toast_provisional_dollars_to_cents('1.004999999999'::jsonb)=101
+  and public.toast_provisional_dollars_to_cents('-1.004999999999'::jsonb)=-101
+  and public.toast_provisional_dollars_to_cents('1.0049999999'::jsonb)=100,
+  'provisional rounding keeps Toast parser parity on both sides of a half-cent');
  perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=1,'first canonical order saved');
  perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,'identical canonical order ignored');
  perform pg_temp.assert_true(public.toast_changed_order_days(b,r,jsonb_build_array(revision))='[]'::jsonb,'unchanged evidence cannot create another repair');
- corrected:=jsonb_set(jsonb_set(revision,'{payload,modifiedDate}',to_jsonb(e+interval '1 minute')),'{projection,netSalesCents}','1500'::jsonb);
+ corrected:=jsonb_set(jsonb_set(revision,'{payload,modifiedDate}',to_jsonb(e+interval '1 minute')),'{payload,checks,0,amount}','15'::jsonb);
+ -- A worker on the previous app version can still send the old projection.
+ corrected:=corrected||jsonb_build_object('projection',jsonb_build_object('netSalesCents',999999));
  perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(corrected))=1,'new order revision applied');
  perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,'older source version ignored');
+ perform pg_temp.assert_true((select payload=corrected->'payload' and live_projection is null
+  from public.toast_raw_records where business_id=b and entity_guid=ord),
+  'canonical ingest retained original JSON without saving a calculated projection');
  n:=public.toast_claim_poll(b,r,'orders');
  receipt:=public.toast_commit_canonical_order_page(b,r,n,s,e,1,'[]'::jsonb,false,d);
  perform pg_temp.assert_true((receipt->>'complete')::boolean,'bootstrap completes');
@@ -301,7 +310,7 @@ BEGIN
  exception when others then refused:=true;end;
  perform pg_temp.assert_true(refused,'invalid worker lease cannot advance cursor');
  -- A malformed row must not discard valid page-mates or certify the window.
- corrected:=jsonb_set(jsonb_set(corrected,'{payload,modifiedDate}',to_jsonb(e+interval '90 seconds')),'{projection,netSalesCents}','1700'::jsonb);
+ corrected:=jsonb_set(jsonb_set(corrected,'{payload,modifiedDate}',to_jsonb(e+interval '90 seconds')),'{payload,checks,0,amount}','17'::jsonb);
  receipt:=public.toast_commit_canonical_order_page(b,r,n,e-interval '2 minutes',e+interval '1 minute',1,jsonb_build_array(corrected),false,null,
   jsonb_build_array(jsonb_build_object('order_guid',null,'source_index',2,'raw_sha256',repeat('a',64),'error_path','order_identity_or_business_date')));
  perform pg_temp.assert_true((receipt->>'incomplete')::boolean and not (receipt->>'complete')::boolean,'malformed window not certified');
@@ -312,6 +321,44 @@ BEGIN
  receipt:=public.toast_commit_canonical_order_page(b,r,n,e-interval '2 minutes',e+interval '1 minute',1,jsonb_build_array(corrected),false,null);
  perform pg_temp.assert_true((receipt->>'complete')::boolean and not exists(select 1 from public.toast_order_poll_progress where business_id=b and restaurant_guid=r),'corrected replay clears exception');
  perform pg_temp.assert_true((select canonical_order_poll_at=e+interval '1 minute' from public.toast_sync_health where business_id=b and restaurant_guid=r),'only corrected full replay advances coverage');
+ p:=jsonb_set(jsonb_set(p,'{guid}',to_jsonb(gen_random_uuid())),'{checks,0,amount}','"invalid"'::jsonb);
+ revision:=jsonb_build_object('day',d,'payload',p,'parseFailed',true);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=1,'unparsed provider body is retained');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1700 and (snapshot->>'unparsedOrders')::integer=1,
+  'source parse failure is explicit and does not contribute sales');
+
+ p:=jsonb_set(corrected->'payload','{modifiedDate}',to_jsonb(e+interval '100 seconds'));
+ perform pg_temp.assert_true(public.toast_archive_live_orders(b,r,d,jsonb_build_array(p))=1,
+  'a non-canonical writer observed a newer body');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'truncated')::boolean and (snapshot->>'unparsedOrders')::integer=2,
+  'a newer body without canonical validation is explicit incomplete evidence');
+ revision:=jsonb_build_object('day',d,'payload',p);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=1,
+  'canonical observation validates the newer body already in the archive');
+
+ historical:=public.toast_provisional_order_values(p,r,false)||jsonb_build_object('netSalesCents',1600);
+ update public.toast_raw_records set live_projection=historical,
+  source_context=jsonb_build_object('toastLegacyProjectionBaseline',payload_sha256)
+  where business_id=b and entity_guid=ord;
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=0,
+  'same-body replay leaves divergent historical evidence authoritative');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1600,'divergent history is readable after replay');
+ p:=jsonb_set(jsonb_set(p,'{modifiedDate}',to_jsonb(e+interval '110 seconds')),'{checks,0,amount}','18'::jsonb);
+ perform pg_temp.assert_true(public.toast_archive_live_orders(b,r,d,jsonb_build_array(p))=1,
+  'an archive-first correction replaced the body beside historical evidence');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'truncated')::boolean and (snapshot->>'unparsedOrders')::integer=2,
+  'stale legacy evidence cannot certify the archive-first correction');
+ revision:=jsonb_build_object('day',d,'payload',p);
+ perform pg_temp.assert_true(public.toast_ingest_order_revisions(b,r,jsonb_build_array(revision))=1,
+  'same-body canonical observation admits the archive-first correction');
+ snapshot:=public.toast_refresh_canonical_live(b);
+ perform pg_temp.assert_true((snapshot->>'netSalesCents')::integer=1800
+  and (select live_projection=historical from public.toast_raw_records where business_id=b and entity_guid=ord),
+  'new source-backed results preserve the exact divergent history');
 END $canonical$;
 
 
