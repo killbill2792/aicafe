@@ -173,6 +173,25 @@ SELECT (
 SELECT 1/0;
 \endif
 RESET ROLE;
+INSERT INTO public.locations(business_id,name,pos_location_id)
+VALUES(:'a','Fixture A second store','fixture-square-location-2');
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location-2',0,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location-2',
+  'query',jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+   'start',jsonb_build_object('end_at',current_date::timestamptz),'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text)),true,
+ jsonb_build_array(jsonb_build_object('key','second-square-shift','payload',jsonb_build_object('id','second-square-shift',
+  'published_shift_details',jsonb_build_object('location_id','fixture-square-location-2','team_member_id','second-store-worker',
+  'start_at',(current_date-1+time '15:00')::timestamptz,'end_at',(current_date-1+time '17:00')::timestamptz)))));
+SET LOCAL ROLE authenticated;
+SELECT ((SELECT count(*)=2 AND bool_and(data->>'evidence'='completed_observation')
+ FROM public.cv_shifts WHERE business_id=:'a' AND source='square') IS TRUE
+ AND NOT has_column_privilege('authenticated','public.external_sync_checkpoints','cursor_state','SELECT')) AS square_windows \gset
+\if :square_windows
+\echo Both Square locations retained their own completed evidence. Cursor access stayed service-only.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
 SELECT jsonb_build_object('mode','window','scope',jsonb_build_object('locationId',:'loc_a',
  'from',to_jsonb((current_date-2)::timestamptz),'until',to_jsonb(current_date::timestamptz))) AS schedule_scope \gset
 SELECT public.external_commit_page(:'a','toast',:'toast_loc','labor/v1/shifts','range',1,
