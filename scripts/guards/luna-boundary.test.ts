@@ -41,6 +41,31 @@ describe('Luna repository boundary',()=>{
     put('lib/luna/runtime/index.ts',"export * from '@/lib/metrics/core';");
     expect(run()).toEqual({status:0,errors:''});
   });
+  it('resolves direct literal CommonJS dependencies and ignores type-only Node imports',()=>{
+    put('lib/luna/runtime/index.ts', `
+      import type { Module } from 'node:module';
+      export const first = require('@/lib/metrics/core');
+      export const second = module.require('@/lib/metrics/core');
+      export const permissions = { require: () => true };
+      export type LoaderModule = Module;
+    `);
+    expect(run()).toEqual({status:0,errors:''});
+  });
+  it.each([
+    ["const loader = require; export { loader };", 'computed module loading'],
+    ["const loader = module.require; export { loader };", 'computed module loading'],
+    ["const { require: loader } = module; export { loader };", 'computed module loading'],
+    ["const loader = globalThis['require']; export { loader };", 'computed module loading'],
+    ["export { createRequire as loader } from 'node:module';", 'Node module loader'],
+    ["export const loader = import('module');", 'Node module loader'],
+    ["export const lookup = process.getBuiltinModule;", 'computed module loading'],
+  ])('rejects unverifiable module loader references (%s)', (source, diagnostic)=>{
+    put('lib/luna/runtime/index.ts',"export * from '../../adapter';");
+    put('lib/adapter.ts',source);
+    const result=run('feat/worker');
+    expect(result.status).toBe(1);
+    expect(result.errors).toContain('lib/adapter.ts '+diagnostic);
+  });
   it('follows alias, barrel, explicit JS extension and dynamic import to legacy',()=>{
     put('lib/luna/runtime/index.ts',"export * from './adapter.js';");
     put('lib/luna/runtime/adapter.ts',"export const f = () => import('@/lib/ai/conversations/agentRunner.server');");

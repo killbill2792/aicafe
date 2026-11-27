@@ -45,6 +45,28 @@ function snapshot(ref) {
 
 function imports(file, source) {
   const out = [];
+  function directLoader(call) {
+    return ts.isCallExpression(call) &&
+      ['require', 'module.require', 'import'].includes(call.expression.getText());
+  }
+  function requiresInspection(node) {
+    if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
+      const receiver = node.expression.getText();
+      const property = ts.isPropertyAccessExpression(node) ? node.name : node.argumentExpression;
+      if ((receiver === 'globalThis' || receiver === 'global') && property.text === 'require') return true;
+      if (receiver === 'process' && property.text === 'getBuiltinModule') return true;
+    }
+    if (!ts.isIdentifier(node)) return false;
+    const parent = node.parent;
+    if (node.text === 'module' && ts.isPropertyAccessExpression(parent) && parent.expression === node) {
+      if (parent.name.text === 'exports') return false;
+      if (parent.parent.expression === parent && directLoader(parent.parent)) return false;
+    }
+    if (node.text !== 'require' && node.text !== 'module') return false;
+    if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
+    if (parent.name === node && !ts.isShorthandPropertyAssignment(parent)) return false;
+    return parent.expression !== node || !directLoader(parent);
+  }
   function visit(n) {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
       const clause = n.importClause || n.exportClause;
@@ -54,10 +76,11 @@ function imports(file, source) {
       if (n.moduleSpecifier && !erased) out.push(n.moduleSpecifier.text);
     } else if (ts.isExternalModuleReference(n) && !n.parent.isTypeOnly) {
       out.push(ts.isStringLiteralLike(n.expression) ? n.expression.text : null);
-    } else if (ts.isCallExpression(n) && (n.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        n.expression.getText() === 'require' || n.expression.getText() === 'module.require')) {
+    } else if (directLoader(n)) {
       const arg = n.arguments[0];
       out.push(arg && ts.isStringLiteralLike(arg) ? arg.text : null);
+    } else if (requiresInspection(n)) {
+      out.push(null);
     }
     ts.forEachChild(n,visit);
   }
@@ -94,6 +117,10 @@ export function graphErrors(tree, seeds) {
     const result = [];
     for (const spec of imports(file,tree.read(file))) {
       if (spec === null) { result.push({error:'computed module loading prevents dependency verification'}); continue; }
+      if (spec === 'node:module' || spec === 'module') {
+        result.push({error:'Node module loader prevents dependency verification'});
+        continue;
+      }
       const found = ts.resolveModuleName(spec,root+'/'+file,options,host).resolvedModule;
       if (found) {
         const target = posix.relative(root,found.resolvedFileName);
