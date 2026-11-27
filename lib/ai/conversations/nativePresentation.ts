@@ -12,7 +12,7 @@ export const upstreamComponents=shadcnComponentDefinitions;
 export const nativeChartProps=z.object({
  kind:z.enum(["metric","bar","line","donut","ranked_table","table"]),
  title:z.string(),unit:z.enum(["cents","count","items","units","seconds","minutes","hours","days","ratio","ratio squared","indicator","cents/hour"]),
- currency:z.string().nullable(),measurement:z.string().optional(),description:z.string().optional(),asOf:z.iso.date().optional(),
+ currency:z.string().nullable().default(null),measurement:z.string().optional(),description:z.string().optional(),asOf:z.iso.date().optional(),
  points:z.array(z.object({label:z.string(),value:z.number().finite().nullable()})).min(1),
 });
 export const nativeChartDefinition={props:nativeChartProps,slots:[],description:"Luna financial charts and metrics. Use local state bindings or calculated values in points; monetary values are in minor units."};
