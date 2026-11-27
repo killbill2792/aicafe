@@ -72,9 +72,9 @@ begin
     end if;
     if previous.id is null then
       insert into public.external_records(business_id,provider,source_account,entity,source_key,
-        source_updated_at,payload,payload_sha256,capture_key,source_context,restaurant_guid,entity_guid,business_date,commit_id,reader_owner_user_id)
+        source_updated_at,payload,payload_sha256,capture_key,source_context,restaurant_guid,entity_guid,business_date,commit_id,reader_owner_user_id,last_seen)
       values(p_business_id,p_provider,p_account,p_resource,object_key,modified,body,hash,identity_key,
-        context,(item->>'restaurant_guid')::uuid,(item->>'entity_guid')::uuid,(item->>'business_date')::date,receipt,archive_reader) returning id into previous.id;
+        context,(item->>'restaurant_guid')::uuid,(item->>'entity_guid')::uuid,(item->>'business_date')::date,receipt,archive_reader,clock_timestamp()) returning id into previous.id;
     elsif previous.source_updated_at is null or modified >= previous.source_updated_at or
       (modified is null and previous.payload=body) then
       if previous.payload is distinct from body then

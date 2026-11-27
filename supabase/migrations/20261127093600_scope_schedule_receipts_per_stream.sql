@@ -3,7 +3,7 @@ set statement_timeout = '60s';
 
 -- Completed window metadata is scoped by the same visible resource. Opaque
 -- continuation state, active observations and writer privileges stay private.
-grant select(business_id,provider,source_account,resource,stream,last_complete_observation_id,
+grant select(business_id,provider,source_account,resource,stream,last_complete_observation_id,last_complete_at,
  last_complete_scope,last_complete_mode) on public.external_sync_checkpoints to authenticated;
 create policy owner_read_completed_windows on public.external_sync_checkpoints for select to authenticated
 using (last_complete_mode='window' and last_complete_observation_id is not null and exists(
@@ -32,6 +32,7 @@ with (security_invoker=true) as
    public.toast_time_or_null(r.payload->>'outDate') as end_at) t
   where e.provider='toast' and e.resource='labor/v1/shifts' and c.stream='range' and e.permission_granted is true
    and c.last_complete_mode='window'
+   and (e.last_permission_loss_at is null or c.last_complete_at>=e.last_permission_loss_at)
    and (r.source_account,r.entity,r.payload_sha256)=(e.source_account,e.resource,m.observed_sha256)
    and r.payload_origin='provider' and r.source_key=r.payload->>'guid'
    and r.payload #>> '{employeeReference,guid}' is not null
@@ -54,6 +55,7 @@ with (security_invoker=true) as
   where e.provider='square' and e.resource='scheduled_shifts' and c.stream=c.last_complete_scope->>'location'
    and e.permission_granted is true
    and c.last_complete_mode='window'
+   and (e.last_permission_loss_at is null or c.last_complete_at>=e.last_permission_loss_at)
    and (r.source_account,r.entity,r.payload_sha256)=(e.source_account,e.resource,m.observed_sha256)
    and r.payload_origin='provider' and r.source_key=r.payload->>'id'
    and r.payload #>> '{published_shift_details,location_id}'=l.pos_location_id

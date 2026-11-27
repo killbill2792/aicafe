@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {readProviderPages,readWithSourceAccess} from "./pages";
+import {readProviderPages,readWithSourceAccess,SourceAccessChanged} from "./pages";
 import {retainProviderPayload} from "./retainPayload";
 
 export type Source = {businessId: string; provider: string; account: string};
@@ -126,7 +126,10 @@ export async function synchronizeSource(db: SupabaseClient, source: Source, plan
   } catch (error) {
     // A concurrent successful worker owns the new revision and availability.
     if (error && typeof error === "object" && "code" in error && error.code === "40001") throw error;
-    const failure = plan.failure(error);
+    const classified = plan.failure(error);
+    // The permission fence invalidates active traversals in PostgreSQL.
+    const failure = error instanceof SourceAccessChanged
+      ? {...classified, status: "permission_required" as const, resetCursor: false} : classified;
     if (cursor && failure.resetCursor) await stream.commit([], null, false);
     const failedAt=new Date();
     await noteAvailability(db,source,resource,failure.status,failedAt.toISOString(),failure.retryAt??

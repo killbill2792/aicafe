@@ -6499,6 +6499,11 @@
      "reader_owner_user_id",
      "uuid",
      false
+    ],
+    [
+     "last_permission_loss_at",
+     "timestamp with time zone",
+     false
     ]
    ],
    "relation": "external_resources",

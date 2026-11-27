@@ -175,19 +175,33 @@ SELECT 1/0;
 RESET ROLE;
 INSERT INTO public.locations(business_id,name,pos_location_id)
 VALUES(:'a','Fixture A second store','fixture-square-location-2');
-SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location-2',0,
- jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location-2',
+SELECT jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location-2',
   'query',jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
-   'start',jsonb_build_object('end_at',current_date::timestamptz),'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text)),true,
+   'start',jsonb_build_object('end_at',current_date::timestamptz),'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text)) AS square_scope,
  jsonb_build_array(jsonb_build_object('key','second-square-shift','payload',jsonb_build_object('id','second-square-shift',
   'published_shift_details',jsonb_build_object('location_id','fixture-square-location-2','team_member_id','second-store-worker',
-  'start_at',(current_date-1+time '15:00')::timestamptz,'end_at',(current_date-1+time '17:00')::timestamptz)))));
+  'start_at',(current_date-1+time '15:00')::timestamptz,'end_at',(current_date-1+time '17:00')::timestamptz)))) AS square_payload \gset
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location-2',0,
+ :'square_scope'::jsonb,true,:'square_payload'::jsonb);
 SET LOCAL ROLE authenticated;
 SELECT ((SELECT count(*)=2 AND bool_and(data->>'evidence'='completed_observation')
  FROM public.cv_shifts WHERE business_id=:'a' AND source='square') IS TRUE
  AND NOT has_column_privilege('authenticated','public.external_sync_checkpoints','cursor_state','SELECT')) AS square_windows \gset
 \if :square_windows
 \echo Both Square locations retained their own completed evidence. Cursor access stayed service-only.
+\else
+SELECT 1/0;
+\endif
+SET LOCAL ROLE service_role;
+SELECT public.external_note_availability(:'a','square','fixture-square-merchant','scheduled_shifts','permission_required',clock_timestamp(),null);
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location-2',1,
+ :'square_scope'::jsonb,true,:'square_payload'::jsonb);
+SET LOCAL ROLE authenticated;
+SELECT ((SELECT count(*)=2 and count(*) filter(where data->>'evidence'='completed_observation')=1
+  and bool_and((data->>'evidence'='completed_observation')=(source_ref='square-shift:second-square-shift'))
+  FROM public.cv_shifts WHERE business_id=:'a' AND source='square') IS TRUE) AS square_regain \gset
+\if :square_regain
+\echo Restored access certifies only the Square location observed under the new grant.
 \else
 SELECT 1/0;
 \endif

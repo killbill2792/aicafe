@@ -66,11 +66,12 @@ describe("shared external observation",()=>{
 
   it("discards a page when the source grant changes while fetching",async()=>{
     const {db,rpc}=database();
-    const authorize=vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("grant changed"));
+    const authorize=vi.fn().mockResolvedValueOnce("before").mockResolvedValueOnce("after");
     await expect(synchronizeSource(db,source,{...defaults,scope:{},authorize,
-      observe:async()=>({records:[first],next:null}),failure:()=>({status:"permission_required"})}))
-      .rejects.toThrow("grant changed");
+      observe:async()=>({records:[first],next:null})}))
+      .rejects.toThrow("External source access changed");
     expect(rpc.mock.calls.map(([name])=>name)).toEqual(["external_discover_resources","external_note_availability"]);
+    expect(rpc).toHaveBeenCalledWith("external_note_availability",expect.objectContaining({p_status:"permission_required"}));
   });
 
   it("honors a persisted provider retry deadline before fetching any page",async()=>{

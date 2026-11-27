@@ -108,6 +108,33 @@ begin
     raise exception 'A stale provider page certified a newer payload';
   exception when object_not_in_prerequisite_state then null; end;
 
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:c',0,
+    '{"mode":"window","scope":{"location":"c"}}',true,'[{"key":"order-c","payload":{"amount":310}}]');
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:c',1,
+    '{"mode":"window","scope":{"location":"c"},"cursor":"old grant cursor"}',false,
+    '[{"key":"pending-c","payload":{"amount":100}}]');
+  perform public.external_note_availability(cafe,'square','merchant:7','orders','permission_required',clock_timestamp(),null);
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:d',0,
+    '{"mode":"window","scope":{"location":"d"}}',true,'[{"key":"order-d","payload":{"amount":120}}]');
+  begin
+    perform public.external_commit_page(cafe,'square','merchant:7','orders','location:c',2,
+      '{"mode":"window","scope":{"location":"c"}}',true,'[]');
+    raise exception 'Used a continuation from before permission was lost';
+  exception when serialization_failure then null; end;
+  begin
+    perform public.external_read_observation(cafe,'square','merchant:7','orders','location:c',1,null,
+      '{"location":"c"}','window');
+    raise exception 'A new location restored stale coverage under the former grant';
+  exception when serialization_failure then null; end;
+  if not exists(select from public.external_observation_members m join public.external_records r
+    on (r.business_id,r.provider,r.id)=(m.business_id,m.provider,m.record_id)
+    where r.business_id=cafe and r.source_key='order-c') then
+    raise exception 'Revocation erased historical source evidence'; end if;
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:c',3,
+    '{"mode":"window","scope":{"location":"c"}}',true,'[{"key":"order-c","payload":{"amount":310}}]');
+  if (select count(*) from public.external_read_observation(cafe,'square','merchant:7','orders','location:c',4,null,
+       '{"location":"c"}','window'))<>1 then raise exception 'Fresh first page did not restore coverage'; end if;
+
   perform public.external_commit_page(other,'fixture-provider','merchant:4','activity','one',0,null,true,
     '[{"key":"not-a-guid","payload":{"private":true}}]');
   perform public.external_commit_page(cafe,'fixture-provider','merchant:4','annotations','one',0,null,true,

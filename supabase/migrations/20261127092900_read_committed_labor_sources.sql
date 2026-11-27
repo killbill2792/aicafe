@@ -32,6 +32,7 @@ language sql stable security invoker set search_path=pg_catalog,public as $$
  where r.business_id=p_business and r.provider='toast' and r.source_account=p_account
   and r.entity='labor/v1/timeEntries' and r.source_key=p_entry and r.payload->>'guid'=p_entry
   and r.payload_origin='provider' and e.permission_granted is true
+  and (e.last_permission_loss_at is null or e.last_complete_at>=e.last_permission_loss_at)
   and e.last_complete_scope->>'mode' in ('window','incremental')
   and r.payload#>>'{employeeReference,guid}' is not null
 $$;

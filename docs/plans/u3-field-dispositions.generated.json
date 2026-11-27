@@ -4,7 +4,7 @@
   "modelAuthorization": false,
   "productionRowsIncluded": false,
   "physicalTables": 232,
-  "physicalFields": 2663,
+  "physicalFields": 2664,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -21,7 +21,7 @@
     "restricted_secret_or_auth": 81,
     "scope_only": 36,
     "specialist_or_review_pending": 421,
-    "unreviewed_not_admitted": 189
+    "unreviewed_not_admitted": 190
   },
   "relations": [
     {
@@ -5108,6 +5108,13 @@
         },
         {
           "field": "last_discovered_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_permission_loss_at",
           "type": "timestamp with time zone",
           "notNull": false,
           "status": "unreviewed_not_admitted",
