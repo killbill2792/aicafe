@@ -32,14 +32,16 @@ try {
   report.analytics=(await db.query(`select count(*)::int as metrics,
     count(*) filter(where not exists(select from public.toast_raw_records r where r.business_id=a.business_id
       and r.restaurant_guid=a.restaurant_guid and r.business_date=a.business_date and r.entity='analytics_report'
-      and r.entity_guid::text=a.value_json->>'requestGuid' and a.value_numeric is not distinct from
-      case a.metric when 'orders_count' then (r.payload->>'ordersCount')::numeric
+      and r.entity_guid::text=a.payload->'value_json'->>'requestGuid'
+      and (a.payload->>'value_numeric')::numeric is not distinct from
+      case a.payload->>'metric' when 'orders_count' then (r.payload->>'ordersCount')::numeric
       when 'void_orders_count' then (r.payload->>'voidOrdersCount')::numeric
       when 'discount_cents' then round((r.payload->>'discountAmount')::numeric*100)
       when 'refund_cents' then round((r.payload->>'refundAmount')::numeric*100)
       when 'void_orders_amount_cents' then round((r.payload->>'voidOrdersAmount')::numeric*100)
       when 'net_sales_cents' then round((r.payload->>'netSalesAmount')::numeric*100) end))::int as unmatched_metrics
-    from public.toast_analytics_results a where business_id=$1 and report='metrics/day'`,scope)).rows[0];
+    from public.external_records a where business_id=$1 and provider='toast'
+      and entity='historical_analytics_metric' and payload->>'report'='metrics/day'`,scope)).rows[0];
   await db.query("rollback");
   console.log(JSON.stringify(report,null,2));
   if(!report.connections.verified_locations || !report.archive.length || report.order_coverage.missing_raw ||

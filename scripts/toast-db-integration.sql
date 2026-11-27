@@ -764,16 +764,17 @@ BEGIN
   ='[{"guid":"g","checks":[{"payments":[{"amount":12.5,"cardType":"VISA"}]}]}]'::jsonb,
   'archive redaction drops customer details, tab names, card digits and payer names but keeps amounts');
  perform pg_temp.assert_true(exists(
-  select 1 from public.toast_order_typed_facts t
-  where t.business_id=b and t.order_guid=ord
+  select 1 from public.external_records r
+  cross join lateral public.toast_order_details(r.payload) t
+  where r.provider='toast' and r.entity='order' and r.business_id=b and r.entity_guid=ord
    and t.order_duration_seconds=600
    and t.check_discounts->0->>'name'='Owner Loyalty'
    and (t.check_discounts->0->>'amountCents')::bigint=125
    and (t.item_taxes->0->>'taxAmountCents')::bigint=20
    and (t.modifier_prices->0->>'priceCents')::bigint=75),
-  'typed order fields captured in same transaction as raw provider order');
+  'order details derive exactly from the archived provider order');
  perform pg_temp.assert_true(not has_table_privilege('anon',
-  'public.toast_order_typed_facts','SELECT'),
+  'public.toast_current_typed_order_facts_v','SELECT'),
   'anonymous cannot read sanitized order details');
  -- A later version of the SAME source page/run must survive. Since migration 140
  -- it survives as the one current row (latest content) plus a change-log line.
@@ -879,7 +880,7 @@ BEGIN
  perform pg_temp.assert_true(exists(select 1 from public.cv_payments
   where business_id=b and amount_cents=1200 and tip_cents=200),
   'canonical payment view uses sanitized row');
- perform pg_temp.assert_true((select array_agg(table_name::text order by table_name)=array['cv_analytics','cv_bills','cv_card_fees','cv_cash','cv_customer_products','cv_customer_visits','cv_dining_options','cv_discounts','cv_expenses','cv_financial_periods','cv_inventory','cv_item_sales','cv_item_sales_daily','cv_kitchen','cv_labor_entries','cv_menu','cv_menu_product_costs','cv_orders','cv_owner_facts','cv_payments','cv_running_cost_days','cv_running_cost_months','cv_sales_days','cv_sales_hours','cv_sales_live','cv_shifts','cv_staff','cv_staff_clock_entries','cv_toast_records','cv_voids_refunds' ]::text[] from information_schema.views
+ perform pg_temp.assert_true((select array_agg(table_name::text order by table_name)=array['cv_bills','cv_card_fees','cv_cash','cv_customer_products','cv_customer_visits','cv_dining_options','cv_discounts','cv_expenses','cv_financial_periods','cv_inventory','cv_item_sales','cv_item_sales_daily','cv_kitchen','cv_labor_entries','cv_menu','cv_menu_product_costs','cv_orders','cv_owner_facts','cv_payments','cv_running_cost_days','cv_running_cost_months','cv_sales_days','cv_sales_hours','cv_sales_live','cv_shifts','cv_staff','cv_staff_clock_entries','cv_toast_records','cv_voids_refunds' ]::text[] from information_schema.views
   where table_schema='public' and table_name like 'cv_%'),
   'all 30 canonical views exist including sales, expenses and product activity');
  perform pg_temp.assert_true(to_regclass('public.cv_customer_visits') IS NOT NULL AND to_regclass('public.cv_customer_products') IS NOT NULL,

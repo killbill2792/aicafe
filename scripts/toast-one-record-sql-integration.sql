@@ -84,8 +84,8 @@ BEGIN
  perform pg_temp.assert_true(jsonb_array_length(log)=1
   and log->0->>'path' like '%tipAmount' and log->0->>'before'='1' and log->0->>'after'='2',
   'the change log says tip 1 -> 2, got '||coalesce(log::text,'nothing'));
- perform pg_temp.assert_true((select count(*)=1 from public.toast_order_typed_facts
-  where raw_record_id=row_id and run_id=run_c),'typed details are rebuilt for the latest import');
+ perform pg_temp.assert_true((select count(*)=1 from public.external_records a cross join lateral public.toast_order_details(a.payload)
+  where a.id=row_id and a.run_id=run_c),'details derive from the latest import');
 
  -- The database itself refuses a second row for the same order.
  begin

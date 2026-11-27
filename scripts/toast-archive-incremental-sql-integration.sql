@@ -66,8 +66,8 @@ BEGIN
  perform pg_temp.assert_true(n=1,'unchanged re-import stores no copies');
  perform pg_temp.assert_true((select bool_and(run_id=run_b) from public.toast_raw_records
   where business_id=b and business_date=d),'unchanged records belong to the latest import');
- perform pg_temp.assert_true((select bool_and(run_id=run_b) from public.toast_order_typed_facts
-  where business_id=b and order_guid=ord),'typed order details belong to the latest import');
+ perform pg_temp.assert_true((select bool_and(run_id=run_b) from public.external_records a cross join lateral public.toast_order_details(a.payload)
+  where a.business_id=b and a.entity_guid=ord),'order details belong to the latest import');
 
  -- Import C fails after staging: the last good import (B) stays complete.
  insert into public.toast_sync_runs(business_id,restaurant_guid,kind,state)

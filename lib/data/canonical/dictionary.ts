@@ -15,7 +15,6 @@ export const canonicalViewNames = [
   "cv_bills",
   "cv_inventory",
   "cv_owner_facts",
-  "cv_analytics",
   "cv_orders",
   "cv_cash",
   "cv_kitchen",
@@ -771,53 +770,6 @@ export const canonicalDictionary = {
         "unit": "JSON",
         "source": "app",
         "example": "Show the source detail."
-      }
-    }
-  },
-  "cv_analytics": {
-    "meaning": "Typed Toast ERA measurements",
-    "columns": {
-      "business_id": {
-        "meaning": "Authenticated café UUID; never query other cafés.",
-        "unit": "UUID",
-        "source": "app",
-        "example": "What data does my café have?"
-      },
-      "source": {
-        "meaning": "Data origin: Toast, owner, or application.",
-        "unit": "label",
-        "source": "app",
-        "example": "Where did this number come from?"
-      },
-      "source_ref": {
-        "meaning": "Stable reference for the underlying fact.",
-        "unit": "identifier",
-        "source": "app",
-        "example": "Which record supports it?"
-      },
-      "status": {
-        "meaning": "Actual, estimated, open, needs match or owner provided.",
-        "unit": "label",
-        "source": "app",
-        "example": "Which facts are incomplete?"
-      },
-      "business_date": {
-        "meaning": "Café business date when recorded; null for undated reference facts.",
-        "unit": "local date",
-        "source": "app",
-        "example": "What happened last week?"
-      },
-      "data": {
-        "meaning": "Restricted, non-sensitive attributes relevant to this canonical entity.",
-        "unit": "JSON",
-        "source": "app",
-        "example": "Show the source detail."
-      },
-      "value_numeric": {
-        "meaning": "Numeric ERA measurement; money metrics use cents.",
-        "unit": "metric-dependent",
-        "source": "toast",
-        "example": "What did Toast report?"
       }
     }
   },

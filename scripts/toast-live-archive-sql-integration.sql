@@ -42,7 +42,8 @@ BEGIN
  perform pg_temp.assert_true((select run_id is null and seen_run_id is null and capture_key like 'live:%'
   from public.toast_raw_records where id=row_id),'a live record has no import run yet');
  perform pg_temp.assert_true((select count(*)=1 and bool_and(run_id is null)
-  from public.toast_order_typed_facts where raw_record_id=row_id),'typed details are built for the live record');
+  from public.external_records a cross join lateral public.toast_order_details(a.payload) where a.id=row_id),
+  'live details derive from the one provisional archive record');
 
  -- 2. The same orders again (every 15 minutes): nothing is written.
  n:=public.toast_archive_live_orders(b,r,d,jsonb_build_array(o1));

@@ -10,7 +10,7 @@ export type CanonicalRead={rows:CanonicalRow[];notes:string[];empty:boolean;
 const bounded=z.object({dateFrom:z.iso.date(),dateTo:z.iso.date()});
 const periodViews=new Set<CanonicalView>([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments","cv_discounts",
- "cv_voids_refunds","cv_card_fees","cv_analytics","cv_labor_entries",
+ "cv_voids_refunds","cv_card_fees","cv_labor_entries",
  "cv_shifts","cv_inventory","cv_orders","cv_cash","cv_kitchen","cv_dining_options","cv_customer_visits","cv_customer_products"
 ]);
 /** The only canonical view query path for screens and AI.
@@ -75,7 +75,6 @@ export const readMenu=wrap("cv_menu");
 export const readBills=wrap("cv_bills");
 export const readInventory=wrap("cv_inventory");
 export const readOwnerFacts=wrap("cv_owner_facts");
-export const readAnalytics=wrap("cv_analytics");
 export const readOrders=wrap("cv_orders");
 export const readCash=wrap("cv_cash");
 export const readKitchen=wrap("cv_kitchen");

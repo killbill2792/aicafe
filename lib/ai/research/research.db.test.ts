@@ -91,6 +91,31 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
     expect(String((await sql(scope(otherCafe),"select count(*) from orders")).error)).toContain("supervisor_research_not_owner");
   });
 
+  it("discovers new provider resources and reads opaque JSON and revisions through native SQL",async()=>{
+    for(const [cafe,first,last] of [[cafeA,2,3],[cafeB,40,50]] as const){
+      for(const [revision,quantity] of [first,last].entries()){
+        await admin.query("select public.external_commit_page($1,'new-provider','merchant','observations','one',$2,null,true,$3::jsonb)",[
+          cafe,revision,JSON.stringify([{key:"same-key",payload:{"opaque property":{"a.b":[quantity]}}}]),
+        ]);
+      }
+    }
+    const discovery=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:null}));
+    expect(discovery.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({name:"external_resources"}),
+      expect.objectContaining({name:"external_records"}),
+      expect.objectContaining({name:"external_record_changes"}),
+    ]));
+    const records=await sql(scope(cafeA),`select (r.payload #>> array['opaque property','a.b','0'])::int as quantity
+      from external_records r join external_resources e on
+       (r.business_id,r.provider,r.source_account,r.entity)=(e.business_id,e.provider,e.source_account,e.resource)
+      where e.status='current' and r.provider='new-provider'`);
+    expect(records).toMatchObject({ok:true,rows:[{quantity:3}]});
+    const changes=await sql(scope(cafeA),`select (change->>'before')::int as before,(change->>'after')::int as after
+      from external_record_changes c cross join lateral jsonb_array_elements(c.changes) change
+      where c.provider='new-provider' and change->'segments'='["opaque property","a.b","0"]'`);
+    expect(changes).toMatchObject({ok:true,rows:[{before:2,after:3}]});
+  });
+
 
   it("reads the same canonical running cost rows as the screen, with same-owner cafe isolation",async()=>{
     for(const [cafe,cents] of [[cafeA,1500],[cafeB,4200]] as const)

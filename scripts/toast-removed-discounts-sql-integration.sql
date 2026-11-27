@@ -58,11 +58,10 @@ BEGIN
  perform pg_temp.assert_true((select count(*)=1 and bool_and(not counts_in_sales)
   from public.toast_records_for(b,d,d) where record_type='check_discount'),'the removed check discount is kept but not counted');
 
- -- Rebuilding typed details (as the migration does for existing orders) gives the same result.
- delete from public.toast_order_typed_facts where business_id=b;
- perform public.toast_capture_typed_order(id) from public.toast_raw_records where business_id=b and entity='order';
- perform pg_temp.assert_true((select jsonb_array_length(item_discounts)=2 and run_id=run_i
-  from public.toast_order_typed_facts where business_id=b),'a rebuild keeps the import run and the same discounts');
+ -- The archived provider order supplies the same discount amounts independently of the screen.
+ perform pg_temp.assert_true((select jsonb_array_length(d.item_discounts)=2 and r.run_id=run_i
+  from public.external_records r cross join lateral public.toast_order_details(r.payload) d
+  where r.provider='toast' and r.entity='order' and r.business_id=b),'raw order retains the same discount evidence');
 END $removed$;
 
 ROLLBACK;

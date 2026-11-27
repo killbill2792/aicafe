@@ -240,7 +240,7 @@ try {
     "the historical Test Café order archive holds only its latest order version");
   check((await one("select (payload->'checks'->0->'payments'->0->>'tipAmount')::int tip from toast_raw_records where business_id = $1 and entity='order'", [D])).tip === 2,
     "the copied historical order retains the latest correct tip");
-  check((await one("select count(*)::int n from toast_order_typed_facts where business_id = $1", [D])).n === 1, "typed order details are rebuilt in the test café");
+  check((await one("select count(*)::int n from external_records r cross join lateral toast_order_details(r.payload) where r.business_id = $1 and r.provider = 'toast' and r.entity = 'order'", [D])).n === 1, "order details derive from the mirrored archive in the test café");
   check((await one(`select count(*)::int n from toast_raw_records r join toast_day_status d on d.business_id = r.business_id and d.restaurant_guid = r.restaurant_guid
     and d.business_date = r.business_date and d.last_import_run_id = r.run_id where r.business_id = $1`, [D])).n === 1, "the copied order names its day's copied run");
 
