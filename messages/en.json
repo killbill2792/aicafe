@@ -4592,6 +4592,8 @@
     "scenarioEstimate": "Scenario estimate",
     "scenarioNotice": "Only previously calculated alternatives are shown. Ask Supervisor to recalculate a different assumption.",
     "downloadReport": "Download saved answer report",
+    "downloadPdf": "Download PDF",
+    "reportPreparing": "Report available when this answer is saved.",
     "notRecorded": "Not recorded",
     "unitUnknown": "Stored value; unit not specified",
     "calculatorNotice": "Hypothetical calculation only. Adjust your assumptions locally; nothing is saved or changed.",

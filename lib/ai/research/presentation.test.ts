@@ -401,6 +401,14 @@ it("aligns named table rows by key and preserves extra values without guessing a
  expect(block?.tables?.[0].rows).toEqual([["Sales",25,"Recorded"],["Supplies",0,null]]);
 });
 
+it("preserves a native PDF document as a report alongside ordinary answer blocks",()=>{
+ const pdf={root:"doc",elements:{doc:{type:"Document",props:{title:"Income statement"},children:["page"]},page:{type:"Page",props:{size:"LETTER"},children:["table"]},table:{type:"Table",props:{columns:[{header:"Account"},{header:"Amount"}],rows:[["Sales",1234],["Refund",-25],["Unknown",null]]},children:[]}}};
+ const patches=[{op:"add",path:"/root",value:pdf.root},...Object.entries(pdf.elements).map(([key,value])=>({op:"add",path:"/elements/"+key,value}))];
+ const blocks=resolveResearchSpec(patches,queries,ctx);
+ expect(blocks[0]).toMatchObject({report:true,pdfSpec:pdf});
+ expect(INLINE_PRESENTATION_HINT).toContain("PDF documents:");
+});
+
 it("preserves explicit point-level monetary units and never collapses unlike units",()=>{
  const local={...ctx,currency:"GBP"};
  const money=resolveResearchView({panels:[{kind:"metric",points:[{label:"Net sales",value:12345,unit:"cents"}]}]},new Map(),local);

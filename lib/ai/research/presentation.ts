@@ -1,6 +1,7 @@
 import {z} from "zod";
 import {defineCatalog,defineSchema,createSpecStreamCompiler,type SpecStreamLine} from "@json-render/core";
 import {schema} from "@json-render/react/schema";
+import {standardComponentDefinitions as pdfComponents} from "@json-render/react-pdf/server";
 import {upstreamComponents,nativeChartDefinition,validNativeSpec,recoverNativeDisplaySpec,safeNativeJSON,safeStatePath,safeKey,localActionNames} from "@/lib/ai/conversations/nativePresentation";
 import {exactDecimal,CALC_OPS,type CalcOp} from "@/lib/metrics/core/calculator";
 import {calculate} from "./tools.server";
@@ -60,7 +61,9 @@ const generatedHint=catalog.prompt({mode:"inline",
 // The general-purpose demo instructions in the upstream prompt are unsuitable
 // for live business records. Remove only those and the example remote action;
 // the remaining native UI grammar is supplied by the installed library.
-export const INLINE_PRESENTATION_HINT=generatedHint.split("\n").filter(line=>!/realistic.*sample data|never leave arrays empty|loadCities|side effects \(loading data/i.test(line)).join("\n");
+export const INLINE_PRESENTATION_HINT=generatedHint.split("\n").filter(line=>!/realistic.*sample data|never leave arrays empty|loadCities|side effects \(loading data/i.test(line)).join("\n")+
+ "\nPDF documents: when the owner requests a downloadable PDF, use an independent spec fence with a Document root and Page children. The existing spec patch grammar applies. The following is the complete installed PDF catalog (distinct from the web catalog); author the document layout and content directly. Numeric table cells are adapted by the application. Images can be embedded PNG/JPEG data, not external or local file paths. No action bindings are needed in a static PDF. You can also set DataView.report to true to export the existing answer without authoring a separate document.\n"+
+ JSON.stringify(Object.fromEntries(Object.entries(pdfComponents).map(([name,definition])=>[name,{description:definition.description,props:z.toJSONSchema(definition.props,{unrepresentable:"any"})}])));
 
 type Selection=z.infer<typeof selection>;
 export type PresentationContext={asOf:string;currency?:string|null;presentationAttachments?:readonly string[]};
@@ -353,6 +356,14 @@ export function resolveResearchSpec(patches:readonly unknown[],queries:Presentat
  let spec:ReturnType<typeof compiler.getResult>;
  try{spec=compiler.getResult();}catch{onDeliveryLoss?.();return [];}
  if(!obj(spec.elements))return [];
+ const rootElement=typeof spec.root==="string"?spec.elements[spec.root]:undefined;
+ if(obj(rootElement)&&rootElement.type==="Document"){
+  // Keep the authored PDF document in the existing saved-answer envelope.
+  const pdfSpec:unknown=JSON.parse(JSON.stringify({root:spec.root,elements:spec.elements,...(spec.state?{state:spec.state}:{})}));
+  const report=recoverRichPresentation({type:"rich_presentation",version:1,layout:"stack",panels:[],suggestions:[],report:true,pdfSpec});
+  if(report?.pdfSpec)return [report];
+  onDeliveryLoss?.();return [];
+ }
  // Native widgets and DataView snapshots share a single persisted element tree.
  // Old DataView-only fences retain their established wire representation.
  const native=Boolean(spec.state)||Object.values(spec.elements).some(e=>obj(e)&&(e.type!=="DataView"&&e.type!=="Stack"||e.type==="Stack"&&obj(e.props)&&Object.keys(e.props).length>0||e.on||e.watch||e.visible||e.repeat||e.slots));

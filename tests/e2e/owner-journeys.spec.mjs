@@ -2228,7 +2228,8 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       button:{...nativeNode("Button",{label:"Use 20% growth"}),on:{press:[{action:"setState",params:{statePath:"/factor",value:1.2}},{action:"setState",params:{statePath:"/show",value:true}}]}},
       details:{...nativeNode("Text",{text:"Owner changed the assumption"}),visible:{$state:"/show",eq:true}},
     }};
-    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",nativeSpec,panels:[
+    const pdfSpec={root:"doc",elements:{doc:nativeNode("Document",{title:"Native income statement"},["page"]),page:nativeNode("Page",{size:"LETTER"},["title","table"]),title:nativeNode("Heading",{text:"Native income statement",level:"h1"}),table:nativeNode("Table",{columns:[{header:"Account"},{header:"Amount"}],rows:[["Sales",120.25],["Refund",-12.5],["Zero",0],["Unknown",null]]})}};
+    const blocks=[{type:"text",text},{type:"rich_presentation",version:1,layout:"stack",nativeSpec,pdfSpec,panels:[
       {kind:"line",title:"Daily net sales",unit:"cents",currency:owner.currency,source:"daily_rollups",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",
         points:[{label:"2026-01-01",value:1200},{label:"2026-01-02",value:2400}]},
       {kind:"metric",title:"Recorded sales",unit:"cents",currency:owner.currency,source:"profitability",from:"2026-01-01",to:"2026-01-02",asOf:"2026-01-03",points:[{label:"Sales",value:3600}]},
@@ -2383,6 +2384,19 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
         fileResponse=await loadFile();
       }
       expect(fileResponse.status()).toBe(302);
+      const reportRoute="/api/ai/threads/"+thread+"/messages/"+reply+"/report";
+      const pdfLink=rich.getByRole("link",{name:"Download PDF",exact:true});
+      await expect(pdfLink).toHaveAttribute("href",reportRoute+"?document=1");
+      if(viewport.width===390){
+        for(const url of [reportRoute+"?document=1",reportRoute]){
+          const response=await ctx.request.get(url,{timeout:60000});
+          expect(response.status()).toBe(200);
+          expect(response.headers()["content-type"]).toBe("application/pdf");
+          expect((await response.body()).subarray(0,5).toString()).toBe("%PDF-");
+          expect(response.headers()["cache-control"]).toContain("no-store");
+        }
+        expect((await ctx.request.get(reportRoute+"?document=99")).status()).toBe(404);
+      }
       const downloadEvent=page.waitForEvent("download");
       await rich.getByRole("button",{name:"Download saved answer report"}).click();
       expect((await downloadEvent).suggestedFilename()).toBe("supervisor-report.txt");
@@ -2453,6 +2467,8 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     expect([401,403,404]).toContain(denied.status());
     const foreignFile=await other.request.get(fileRoute+"/"+attachment.id,{maxRedirects:0});
     expect([401,403,404]).toContain(foreignFile.status());
+    const foreignPdf=await other.request.get("/api/ai/threads/"+thread+"/messages/"+reply+"/report?document=1");
+    expect([401,403,404]).toContain(foreignPdf.status());
   }finally{
     await ctx.close();await other.close();
     await db.query("delete from public.ai_threads where id=$1 and business_id=$2",[thread,owner.businessId]).catch(()=>{});
