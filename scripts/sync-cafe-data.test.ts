@@ -323,7 +323,7 @@ describe("day mirror", () => {
   it("mirrors every table in a parent-first order, and copies the payment, labor, void and refund facts", () => {
     expect([...DAY_MIRROR_ORDER].sort()).toEqual(REFRESH_WINDOW_TABLES.map((c) => c.table).sort());
     expect(DAY_MIRROR_ORDER.indexOf("orders")).toBeLessThan(DAY_MIRROR_ORDER.indexOf("order_lines"));
-    for (const name of ["toast_payment_facts", "toast_payment_summaries", "toast_labor_entries", "toast_void_facts", "toast_refund_facts"]) {
+    for (const name of ["toast_payment_facts", "toast_labor_entries", "toast_void_facts", "toast_refund_facts"]) {
       expect(DAY_MIRROR_ORDER).toContain(name);
     }
   });

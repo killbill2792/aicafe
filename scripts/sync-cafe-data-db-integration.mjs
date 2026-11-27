@@ -73,6 +73,13 @@ try {
       'clock_in',$4::date+interval '8 hours','clock_out',$4::date+interval '9 hours','hourly_wage_cents',0,
       'wage_status','verified','provider_regular_hours',1,'provider_overtime_hours',null,'deleted',false,'status','actual') as body) x`,
     [S,G,historicalEntry,day,ids.emp]);
+  await q(`insert into external_records(business_id,provider,source_account,entity,source_key,restaurant_guid,
+    business_date,payload,payload_sha256,capture_key,payload_origin)
+    select $1,'toast',$2::uuid::text,'legacy/payment-summary','historical-payment',$2,$3::date,body,
+      encode(sha256(convert_to(body::text,'UTF8')),'hex'),'legacy-payment-fixture','historical_projection'
+    from (select jsonb_build_object('payment_ref','historical-payment','payment_type','CASH',
+      'status','actual','amount_cents',550,'tip_cents',0,'server_guid',$4::uuid,
+      'paid_at','2026-10-20T12:00:00Z') as body) x`, [S,G,day,ids.emp]);
 
   // Oct 12/14 financial parity fixture. The seventh Oct 14 shift begins on Oct 15
   // UTC but is still Oct 14 at the café (PDT). Two complete shifts have a real
@@ -273,6 +280,11 @@ try {
     and source_ref=$2 and hourly_wage_cents=0 and regular_hours=1 and overtime_hours is null`,
     [D,`staged-timecard:${mirroredAccount}:${historicalEntry}`])).n === 1,
   "unmatched historical labor retains hours and an explicit zero wage in the mirror");
+  check((await one(`select count(*)::int n from cv_payments where business_id=$1 and source_ref=$2
+    and amount_cents=550 and tip_cents=0 and data->>'evidence'='historical_summary'
+    and data->>'serverGuid'=$3 and (data->>'paidAt')::timestamptz='2026-10-20T12:00:00Z'`,
+    [D,`payment:${mirroredAccount}:historical-payment`,ids.emp])).n === 1,
+  "historical payment evidence retains amount, explicit zero, server and payment time in the mirror");
 
   const unchanged = await run();
   check(Object.keys(replacedDays(unchanged)).length === 0, `an unchanged run replaces nothing ${JSON.stringify(replacedDays(unchanged))}`);

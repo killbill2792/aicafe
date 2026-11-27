@@ -147,11 +147,8 @@ print('No lone-dollar DO/END delimiters in', len(paths), 'files')
 PY
 }
 
-restore_newest_toast_importer() {
-  migration 20261103000141_toast_organized_keys.sql &&
-    migration 20261103000145_toast_more_organized_fields.sql &&
-    migration 20261103000146_toast_fill_in_steps.sql &&
-    migration 20261104000147_toast_fill_hash_joins.sql
+save_migrated_toast_importer() {
+  psql_supabase -Atc "select pg_get_functiondef('public.toast_import_day(uuid,uuid,uuid,date,jsonb,jsonb,uuid)'::regprocedure)||';'" > "$work/toast-importer.sql"
 }
 
 supabase_lane() {
@@ -223,6 +220,7 @@ supabase_lane() {
 
   group "Toast"
   lane_setup supabase "Rebuild the database (supabase db reset)" supabase db reset --local --yes
+  setup supabase "Save the fully migrated importer before testing migration 103" save_migrated_toast_importer
   setup supabase "Re-apply migration 103 without dropping data" migration 20261028000103_toast_copy_backfill.sql
   sql_step toast-db-integration.sql "Isolation, rollback and lease"
   sql_step toast-pr1-sql-integration.sql "PR1 atomic import and RLS"
@@ -234,7 +232,7 @@ supabase_lane() {
   sql_step toast-archive-incremental-sql-integration.sql "Re-imports store only new or changed records"
   sql_step toast-archive-identical-copies-sql-integration.sql "Identical archive copies removed"
   sql_step toast-one-record-sql-integration.sql "One record per order and the change log"
-  setup supabase "Restore the newest day importer (141, 145-147)" restore_newest_toast_importer
+  setup supabase "Restore the fully migrated day importer" psql_supabase -f "$work/toast-importer.sql"
   sql_step toast-organized-keys-sql-integration.sql "Organized tables: one row per line and refund"
   sql_step data-health-sql-integration.sql "Daily data health check"
   sql_step toast-one-object-sql-integration.sql "One record per staged object"

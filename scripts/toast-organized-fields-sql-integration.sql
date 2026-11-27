@@ -55,9 +55,9 @@ BEGIN
   from public.order_lines where pos_line_id=sel::text),'the import keeps item timing and kitchen status');
  perform pg_temp.assert_true((select service_charges_cents=25 and gratuity_cents=0 from public.orders
   where business_id=b and pos_order_id like '%'||ord),'the import keeps the order''s service charges');
- perform pg_temp.assert_true((select server_guid=srv and paid_at='2026-10-21T18:05:00Z'::timestamptz
-  from public.toast_payment_summaries where business_id=b and payment_ref=pay::text),
-  'the import keeps who took the payment and when');
+ perform pg_temp.assert_true((select data->>'serverGuid'=srv::text and (data->>'paidAt')::timestamptz='2026-10-21T18:05:00Z'::timestamptz
+  from public.cv_payments where business_id=b and source_ref='payment:'||r::text||':'||pay::text),
+  'the original supplies who took the payment and when');
 
  -- History: an order imported before these columns (no line IDs, nothing filled).
  old_raw:=jsonb_build_object('guid',old_ord,'businessDate',20261021,'modifiedDate','2026-10-21T20:00:00.000+0000',
@@ -71,8 +71,8 @@ BEGIN
    'payments',jsonb_build_array(jsonb_build_object('guid',old_pay,'type','CASH','amount',9.5,
     'server',jsonb_build_object('guid',srv),'paidDate','2026-10-21T19:20:00.000+0000')))));
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,payload,
-  payload_sha256,capture_key)
- values(b,r,'order',old_ord,d,old_raw,repeat('a',64),'test:old-order');
+  payload_sha256,capture_key,source_account,source_key,run_id,seen_run_id)
+ values(b,r,'order',old_ord,d,old_raw,repeat('a',64),'test:old-order',r::text,old_ord::text,run,run);
  insert into public.orders(business_id,location_id,pos_order_id,closed_at,business_date,gross_sales_cents,
   discounts_cents,refunds_cents,tax_cents,tip_cents,processing_fee_cents,processing_fee_status,net_sales_cents,
   toast_excluded)
@@ -80,16 +80,12 @@ BEGIN
  returning id into old_order_id;
  insert into public.order_lines(order_id,name,quantity,net_sales_cents,modifiers,voided)
  values(old_order_id,'Chai',1,400,'[]'::jsonb,false),(old_order_id,'Chai',1,400,'[]'::jsonb,false);
- insert into public.toast_payment_summaries(business_id,restaurant_guid,business_date,payment_ref,
-  payment_type,amount_cents,status)
- values(b,r,d,old_pay::text,'CASH',950,'actual');
-
  -- Toast moved this order once: an older copy is still archived under the previous day.
  insert into public.toast_raw_records(business_id,restaurant_guid,entity,entity_guid,business_date,payload,
   payload_sha256,capture_key)
  values(b,r,'order',old_ord,d-1,old_raw,repeat('b',64),'test:old-order-moved');
- -- The four fill steps, one statement each, as the owner runs them in production.
- for step in 1..4 loop perform public.toast_fill_organized_fields(step); end loop;
+ -- Only the historical item and order repairs still need to run.
+ for step in 2..4 loop perform public.toast_fill_organized_fields(step); end loop;
  select count(*) into n from public.order_lines where order_id=old_order_id
   and pos_line_id in (old_sel1::text,old_sel2::text) and ordered_at is not null and fulfillment_status is not null;
  perform pg_temp.assert_true(n=2,'older lines get their Toast ID and timing, got '||n);
@@ -97,10 +93,11 @@ BEGIN
   'two identical items get two different IDs');
  perform pg_temp.assert_true((select gratuity_cents=150 and service_charges_cents=0 from public.orders
   where id=old_order_id),'older orders get their gratuity once, not again from a moved copy');
- perform pg_temp.assert_true((select server_guid=srv and paid_at is not null from public.toast_payment_summaries
-  where business_id=b and payment_ref=old_pay::text),'older payments get their server and paid time');
+ perform pg_temp.assert_true((select data->>'serverGuid'=srv::text and (data->>'paidAt')::timestamptz='2026-10-21T19:20:00Z'::timestamptz
+  from public.cv_payments where business_id=b and source_ref='payment:'||r::text||':'||old_pay::text),
+  'older committed payments read server and paid time from their retained original');
  -- Running it again changes nothing.
- perform pg_temp.assert_true(public.toast_fill_organized_fields(1)=0
+ perform pg_temp.assert_true(public.toast_fill_organized_fields(2)=0
   and public.toast_fill_organized_fields(4)=0,'a step run twice fills nothing new');
  perform public.toast_fill_organized_fields();
  perform pg_temp.assert_true((select count(*)=2 from public.order_lines where order_id=old_order_id),

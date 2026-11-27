@@ -3,8 +3,8 @@
   "generatedFrom": "migrated pg_catalog physical schema + reviewed U3 SQL manifest",
   "modelAuthorization": false,
   "productionRowsIncluded": false,
-  "physicalTables": 231,
-  "physicalFields": 2652,
+  "physicalTables": 230,
+  "physicalFields": 2641,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -15,7 +15,7 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1279,
+    "internal_or_specialized_service": 1268,
     "not_admitted_from_source": 106,
     "protected_operational_archive": 152,
     "restricted_secret_or_auth": 81,
@@ -17346,89 +17346,6 @@
           "field": "restaurant_guid",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "status",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "tip_cents",
-          "type": "bigint",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        }
-      ]
-    },
-    {
-      "relation": "toast_payment_summaries",
-      "sourceOwner": "POS and menu domain",
-      "fields": [
-        {
-          "field": "amount_cents",
-          "type": "bigint",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "business_date",
-          "type": "date",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "business_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "paid_at",
-          "type": "timestamp with time zone",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "payment_ref",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "payment_status",
-          "type": "text",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "payment_type",
-          "type": "text",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "restaurant_guid",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "server_guid",
-          "type": "uuid",
-          "notNull": false,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },

@@ -31,7 +31,8 @@ with (security_invoker=true) as
   join public.toast_day_status d using(business_id,restaurant_guid,business_date)
   cross join lateral public.toast_order_payment_members(r.payload) p
   where r.provider='toast' and r.entity='order' and r.superseded_by is null
-   and r.source_account=r.restaurant_guid::text and r.source_key=r.entity_guid::text
+   and r.source_account=r.restaurant_guid::text
+   and (r.source_key=r.entity_guid::text or (r.entity_guid is null and r.source_key=r.capture_key))
    and r.payload_origin in ('provider','historical_provider')
    and d.import_state='imported' and (r.run_id=d.last_import_run_id or r.seen_run_id=d.last_import_run_id)
  ), source_rows as not materialized (
@@ -39,6 +40,8 @@ with (security_invoker=true) as
    o.business_id,o.restaurant_guid,o.business_date,o.payment_ref,o.id as order_record_id,o.entity_guid as order_guid,
    left(o.payment->>'type',80) as payment_type,left(o.payment->>'cardType',80) as card_type,
    left(o.payment->>'cardEntryMode',80) as card_entry_mode,left(o.payment->>'paymentStatus',80) as payment_status,
+   public.toast_uuid_or_null(o.payment#>>'{server,guid}') as server_guid,
+   public.toast_time_or_null(o.payment->>'paidDate') as paid_at,
    case when jsonb_typeof(o.payment->'amount')='number' then round((o.payment->>'amount')::numeric*100)::bigint end as amount_cents,
    case when jsonb_typeof(o.payment->'tipAmount')='number' then round((o.payment->>'tipAmount')::numeric*100)::bigint end as tip_cents,
    case when jsonb_typeof(o.payment->'originalProcessingFee')='number'
@@ -88,17 +91,21 @@ with (security_invoker=true) as
   from fees f
  )
  select p.business_id,'toast'::text,'payment:'||p.restaurant_guid::text||':'||p.payment_ref,
-  case when p.amount_cents is null then 'open' else 'actual' end,p.business_date,p.amount_cents,p.tip_cents,
+  case when p.order_guid is null then 'needs_match' when p.amount_cents is null then 'open' else 'actual' end,
+  p.business_date,p.amount_cents,p.tip_cents,
   jsonb_build_object('type',p.payment_type,'cardType',p.card_type,'cardEntryMode',p.card_entry_mode,
-   'originalProcessingFeeCents',p.original_fee,'feeStatus',s.fee_status,'feeBasis',p.basis,
-   'evidence','committed_order','orderGuid',p.order_guid,'paymentStatus',p.payment_status,
+   'originalProcessingFeeCents',case when p.order_guid is not null then p.original_fee end,
+   'feeStatus',s.fee_status,'feeBasis',case when p.order_guid is null then 'missing' else p.basis end,
+   'evidence',case when p.order_guid is null then 'unmatched_order' else 'committed_order' end,
+   'orderGuid',p.order_guid,'paymentStatus',p.payment_status,'serverGuid',p.server_guid,'paidAt',p.paid_at,
    'feeCacheMatches',p.same_inputs and p.original_fee is not distinct from p.retained_fee,
-   'feeEvidence',case when p.point_fee is not null then 'point_observation'
+   'feeEvidence',case when p.order_guid is null then null when p.point_fee is not null then 'point_observation'
     when p.order_fee is not null then 'committed_order'
     when p.original_fee is not null then 'historical_projection' end),
-  p.payment_type,p.card_type,p.card_entry_mode,p.original_fee,p.selected_fee,s.fee_status
+  p.payment_type,p.card_type,p.card_entry_mode,case when p.order_guid is not null then p.original_fee end,
+  case when p.order_guid is not null then p.selected_fee end,s.fee_status
  from fee_choice p
- cross join lateral (select case when p.selected_fee is null then 'missing'
+ cross join lateral (select case when p.selected_fee is null or p.order_guid is null then 'missing'
   when p.basis in ('toast','cash_or_gift') then 'actual' else 'estimated' end as fee_status) s
  union all
  select f.business_id,'toast'::text,'payment:'||f.restaurant_guid::text||':'||f.payment_ref,
@@ -111,15 +118,18 @@ with (security_invoker=true) as
  left join source_rows p using(business_id,restaurant_guid,business_date,payment_ref)
  where p.matches is distinct from 1
  union all
- select s.business_id,'toast'::text,'payment:'||s.restaurant_guid::text||':'||s.payment_ref,
-  s.status,s.business_date,s.amount_cents,s.tip_cents,
-  jsonb_build_object('type',s.payment_type,'legacy',true,'evidence','historical_summary'),
+ select r.business_id,'toast'::text,'payment:'||r.restaurant_guid::text||':'||r.source_key,
+  s.status,r.business_date,s.amount_cents,s.tip_cents,
+  jsonb_build_object('type',s.payment_type,'legacy',true,'evidence','historical_summary',
+   'paymentStatus',s.payment_status,'paidAt',s.paid_at,'serverGuid',s.server_guid),
   s.payment_type,null::text,null::text,null::bigint,null::bigint,'missing'::text
- from public.toast_payment_summaries s
- where not exists(select from public.toast_payment_facts f where
-  (f.business_id,f.restaurant_guid,f.business_date)=(s.business_id,s.restaurant_guid,s.business_date))
+ from public.external_records r cross join lateral jsonb_to_record(r.payload) s(
+  status text,amount_cents bigint,tip_cents bigint,payment_type text,payment_status text,paid_at timestamptz,server_guid uuid)
+ where r.provider='toast' and r.entity='legacy/payment-summary' and r.payload_origin='historical_projection'
+ and not exists(select from public.toast_payment_facts f where
+  (f.business_id,f.restaurant_guid,f.business_date)=(r.business_id,r.restaurant_guid,r.business_date))
   and not exists(select from source_rows p where p.matches=1 and
-   (p.business_id,p.restaurant_guid,p.business_date)=(s.business_id,s.restaurant_guid,s.business_date))
+   (p.business_id,p.restaurant_guid,p.business_date)=(r.business_id,r.restaurant_guid,r.business_date))
  union all
  select e.business_id,'toast'::text,
   'payment-event:'||e.restaurant_guid::text||':'||e.payment_guid::text||':'||e.kind||':'||e.event_business_date::text,

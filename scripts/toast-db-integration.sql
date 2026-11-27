@@ -799,15 +799,18 @@ BEGIN
  perform pg_temp.assert_true(exists(select 1 from public.toast_raw_changes
    where business_id=b and entity_guid=ord),
    'the earlier version survives as a change-log line');
- perform public.toast_rebuild_day_payments(run,b,r,'2026-10-18',true);
+ perform public.toast_archive_day_pages(run,'2026-10-18');
+ insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,last_import_run_id,imported_at)
+ values(b,r,'2026-10-18','imported',run,now())
+ on conflict(business_id,restaurant_guid,business_date) do update set import_state='imported',last_import_run_id=run,imported_at=now();
  perform pg_temp.assert_true(
-  (select count(*)=1 from public.toast_payment_summaries
-   where business_id=b and business_date='2026-10-18'),
+  (select count(*)=1 from public.cv_payments
+   where business_id=b and business_date='2026-10-18' and source_ref='payment:'||r::text||':'||pay::text),
    'duplicate payment GUID resolves to one current row');
  perform pg_temp.assert_true(
-  (select amount_cents=1200 from public.toast_payment_summaries
+  (select amount_cents=1200 from public.cv_payments
    where business_id=b and business_date='2026-10-18'
-    and payment_ref=pay::text),
+    and source_ref='payment:'||r::text||':'||pay::text),
    'latest payment revision wins');
  select count(*) into before_count from public.toast_raw_records
   where business_id=b and run_id=run;
@@ -816,9 +819,9 @@ BEGIN
  where business_id=b and run_id=run;
  perform pg_temp.assert_true(after_count=before_count,
   'clearing source pages preserves all immutable Toast payloads');
- perform pg_temp.assert_true(exists(select 1 from public.toast_payment_summaries
-  where business_id=b and restaurant_guid=r and business_date='2026-10-18'
-  and payment_ref=pay::text and amount_cents=1200 and tip_cents=200),
+ perform pg_temp.assert_true(exists(select 1 from public.cv_payments
+  where business_id=b and business_date='2026-10-18'
+  and source_ref='payment:'||r::text||':'||pay::text and amount_cents=1200 and tip_cents=200),
   'payment safe reader preserves numeric evidence');
  insert into public.toast_labor_entries(business_id,restaurant_guid,location_id,
   external_time_entry_id,external_employee_id,clock_in,clock_out,
@@ -854,11 +857,14 @@ BEGIN
    jsonb_build_object('checks',jsonb_build_array(jsonb_build_object(
     'payments',jsonb_build_array(jsonb_build_object(
      'guid','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0082','amount',6.0)))))));
- perform public.toast_rebuild_day_payments(run,b,r,'2026-10-19',true);
+ perform public.toast_archive_day_pages(run,'2026-10-19');
+ insert into public.toast_day_status(business_id,restaurant_guid,business_date,import_state,last_import_run_id,imported_at,unparsed_count)
+ values(b,r,'2026-10-19','imported',run,now(),2)
+ on conflict(business_id,restaurant_guid,business_date) do update set import_state='imported',last_import_run_id=run,imported_at=now(),unparsed_count=2;
  perform pg_temp.assert_true(
- (select count(*)=2 from public.toast_payment_summaries
-  where business_id=b and restaurant_guid=r and business_date='2026-10-19'),
- 'GUID-less orders retain distinct payment evidence');
+ (select count(*)=2 and sum(amount_cents)=1000 and bool_and(status='needs_match' and fee_status='missing')
+  from public.cv_payments where business_id=b and business_date='2026-10-19' and data->>'evidence'='unmatched_order'),
+ 'GUID-less orders retain distinct payment evidence without certifying fees');
 
  -- Unmatched provider identities remain owner-readable instead of disappearing.
  insert into public.pos_import_reviews(business_id,provider,review_type,source_key,detail,status)

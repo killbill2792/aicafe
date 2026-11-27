@@ -92,7 +92,7 @@ export function wrapClientForSafety(client) {
 
 // Rows of each day's latest Toast import (what toast_day_status.last_import_run_id points at).
 export const LATEST_ORDERS_FILTER = `t.entity = 'order' and t.reader_owner_user_id is null and t.payload_origin in ('provider','historical_provider') and exists (select 1 from toast_day_status d where d.business_id = t.business_id and d.restaurant_guid = t.restaurant_guid and d.business_date = t.business_date and d.import_state = 'imported' and d.last_import_run_id = t.run_id)`;
-const HISTORICAL_LABOR_FILTER = `t.entity = 'legacy/open-labor-summary' and t.payload_origin = 'historical_projection' and t.reader_owner_user_id is null`;
+const HISTORICAL_ARCHIVE_FILTER = `t.entity in ('legacy/open-labor-summary','legacy/payment-summary') and t.payload_origin = 'historical_projection' and t.reader_owner_user_id is null`;
 // Toast endpoints captured per business day; every other endpoint is a setup list, kept newest only.
 const DATED_CAPTURES = `('labor/v1/shifts','labor/v1/timeEntries','cashmgmt/v1/deposits','cashmgmt/v1/entries','kitchen/v1/export/itemFulfillments')`;
 // The newest successful capture of each dated endpoint per day, and of each setup list overall.
@@ -244,7 +244,6 @@ export const REFRESH_WINDOW_TABLES = [
   // Per-payment card fees and payment details, open Toast timecards, voids and refunds: the
   // rows the app's payment, labor and voids/refunds readers use.
   t("toast_payment_facts", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
-  t("toast_payment_summaries", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
   t("toast_labor_entries", { pk: ["business_id", "restaurant_guid", "external_time_entry_id"], fk: { restaurant_guid: "toast_restaurant_guid", location_id: "locations" }, dateColumn: "clock_in", localDay: true }),
   t("toast_void_facts", { pk: ["business_id", "selection_guid"], fk: { location_id: "locations" }, dateColumn: "order_business_date" }),
   // id is an identity column the destination generates; the whole day is deleted first.
@@ -257,8 +256,8 @@ export const REFRESH_WINDOW_TABLES = [
     remapOwnId: true,
     nullOut: ["seen_run_id", "superseded_by", "commit_id", "source_context"],
     fingerprintIgnore: ["first_seen", "last_seen", "source_page", "source_index", "capture_key"],
-    sourceFilter: `((${LATEST_ORDERS_FILTER}) or (${HISTORICAL_LABOR_FILTER}))`,
-    deleteFilter: `(t.entity = 'order' or (${HISTORICAL_LABOR_FILTER}))`,
+    sourceFilter: `((${LATEST_ORDERS_FILTER}) or (${HISTORICAL_ARCHIVE_FILTER}))`,
+    deleteFilter: `(t.entity = 'order' or (${HISTORICAL_ARCHIVE_FILTER}))`,
   }),
   // Daily Toast captures (labor, cash, kitchen, menus, setup): the newest successful capture only.
   // Orders are left out: the archive above already holds them.
@@ -266,7 +265,7 @@ export const REFRESH_WINDOW_TABLES = [
 ];
 
 // Copy order: parents before children. Delete order is the reverse.
-export const DAY_MIRROR_ORDER = ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts", "toast_payment_facts", "toast_payment_summaries", "toast_labor_entries", "toast_void_facts", "toast_refund_facts", "toast_raw_records", "toast_raw_samples"];
+export const DAY_MIRROR_ORDER = ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts", "toast_payment_facts", "toast_labor_entries", "toast_void_facts", "toast_refund_facts", "toast_raw_records", "toast_raw_samples"];
 
 const TOAST_GUID_PREFIX = /^toast:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):/i;
 export function remapToastGuidPrefix(value) {
