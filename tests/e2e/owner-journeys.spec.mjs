@@ -2265,7 +2265,9 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       for(const value of ["120.25","-12.5","0","Not recorded"])await expect(ledger.getByRole("cell",{name:value,exact:true})).toBeVisible();
       const grid=widget.locator(".grid-cols-4");
       await expect(grid).toBeVisible();
-      expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(4);
+      const gridWidth=await grid.evaluate(el=>el.getBoundingClientRect().width);
+      expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(gridWidth<=224?1:gridWidth<=512?2:4);
+      expect(await ledger.evaluate(el=>getComputedStyle(el).tableLayout)).toBe("auto");
       const code=widget.getByText("Native muted surface",{exact:true});
       await expect(code).toBeVisible();
       expect(await code.evaluate(el=>{const sample=document.createElement("span");sample.className="bg-surface2";document.body.appendChild(sample);const matched=getComputedStyle(el).backgroundColor===getComputedStyle(sample).backgroundColor;sample.remove();return matched;})).toBe(true);
