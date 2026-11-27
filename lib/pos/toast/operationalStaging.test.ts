@@ -135,7 +135,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(batch.map(x=>x.args.p_endpoint)).toContain("cashmgmt/v1/entries");
   const stock=batch.find(x=>x.args.p_endpoint==="stock/v1/inventory")!;
   expect(stock.args.p_objects).toEqual(expect.arrayContaining([
-   expect.objectContaining({guid:guid2,status:"OUT_OF_STOCK",quantity:null,
+   expect.objectContaining({payload:expect.objectContaining({guid:guid2,status:"OUT_OF_STOCK",quantity:null}),
     provider_key:guid2,business_id:s.businessId,restaurant_guid:s.restaurantGuid,
     endpoint:"stock/v1/inventory"})]));
   const kitchen=batch.find(x=>x.args.p_endpoint==="kitchen/v1/export/itemFulfillments")!;
@@ -221,7 +221,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(batch).toHaveLength(1); // 206 validated objects, one atomic RPC; never two partial commits
   expect(batch[0].args.p_objects).toHaveLength(206);
   expect(batch[0].args.p_objects).toEqual(expect.arrayContaining([
-   expect.objectContaining({guid:guid1}),expect.objectContaining({guid:guid2})]));
+   expect.objectContaining({payload:expect.objectContaining({guid:guid1})}),expect.objectContaining({payload:expect.objectContaining({guid:guid2})})]));
  });
 });
 
@@ -263,5 +263,5 @@ it("recovers a restock omitted from the constrained-stock list without a webhook
  });
  await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
  const row=f.log.find(x=>x.name==="toast_stage_operational_batch"&&x.args.p_endpoint==="stock/v1/inventory");
- expect(row?.args.p_objects).toEqual([expect.objectContaining({guid:guid1,status:"IN_STOCK"})]);
+ expect(row?.args.p_objects).toEqual([expect.objectContaining({payload:expect.objectContaining({guid:guid1,status:"IN_STOCK"})})]);
 });

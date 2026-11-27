@@ -70,7 +70,9 @@ function classifySquarePaymentFee(payment: SquarePayment): { applicable: boolean
  * docs/06-integrations.md), and verify one day's totals against Square's own Sales Summary /
  * Labor reports before trusting a real sync.
  */
-export function createSquareAdapter(params: { accessToken: string; locationId: string }): PosAdapter {
+export function createSquareAdapter(params: { accessToken: string; locationId: string;
+  archive?: (resource: string) => Promise<(rows: readonly unknown[], next: string | null) => Promise<void>>
+}): PosAdapter {
   const { accessToken, locationId } = params;
 
   return {
@@ -91,7 +93,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           },
           limit: 500,
         },
-        "orders",
+        "orders", await params.archive?.("orders"),
       );
 
       // Processing fees live on Payments, matched back to their order. Failed/canceled attempts
@@ -100,7 +102,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         accessToken,
         "/v2/payments",
         { location_id: locationId, begin_time: since.toISOString(), end_time: until.toISOString() },
-        "payments",
+        "payments", await params.archive?.("payments"), "GET",
       );
       const feeByOrder = new Map<string, { amountCents: number; complete: boolean; applicableCount: number }>();
       for (const payment of payments) {
@@ -172,6 +174,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           location_overrides?:Array<{location_id?:string;price_money?:SquareMoney;price_overrides?:boolean}>}}>;
           modifier_list_info?:Array<{modifier_list_id?:string;min_selected_modifiers?:number;max_selected_modifiers?:number}>};
       };
+      const savePage = await params.archive?.("catalog");
       const all:CatalogObject[]=[];
       let cursor:string|undefined;
       for(let i=0;i<50;i++){
@@ -179,6 +182,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         if(cursor)search.set("cursor",cursor);
         const page=await squareRequest<{objects?:CatalogObject[];cursor?:string}>(
           accessToken,"/v2/catalog/list?"+search.toString());
+        await savePage?.(page.objects ?? [],page.cursor ?? null);
         all.push(...(page.objects??[]));
         if(!page.cursor)break;
         cursor=page.cursor;
@@ -230,11 +234,9 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
 
     async fetchEmployees(): Promise<PosEmployee[]> {
       type TeamMember = { id: string; given_name?: string; family_name?: string; status?: string };
-      const data = await squareRequest<{ team_members?: TeamMember[] }>(accessToken, "/v2/team-members/search", {
-        method: "POST",
-        body: { query: {} },
-      });
-      return (data.team_members ?? []).map((m) => ({
+      const members = await squarePaginated<TeamMember>(accessToken, "/v2/team-members/search",
+        {query: {filter: {location_ids: [locationId]}}}, "team_members", await params.archive?.("team_members"));
+      return members.map((m) => ({
         posTeamMemberId: m.id,
         displayName: [m.given_name, m.family_name].filter(Boolean).join(" ") || "Team member",
         role: null,active:m.status!=="INACTIVE",
@@ -244,6 +246,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
     async fetchPosScheduledShifts({since,until}):Promise<PosScheduledShift[]> {
       type Raw={id?:string;published_shift_details?:{location_id?:string;team_member_id?:string;
         job_id?:string;start_at?:string;end_at?:string;is_deleted?:boolean}};
+      const savePage = await params.archive?.("scheduled_shifts");
       const list:Raw[]=[];
       let cursor:string|undefined;
       for(let n=0;n<50;n++){
@@ -256,7 +259,9 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
               scheduled_shift_statuses:["PUBLISHED"]
             }},limit:50,...(cursor?{cursor}:{})}
           });
-        list.push(...(result.scheduled_shifts??[]));
+        const shifts = result.scheduled_shifts ?? [];
+        await savePage?.(shifts.filter(s => s.published_shift_details?.location_id === locationId),result.cursor ?? null);
+        list.push(...shifts);
         if(!result.cursor)break;
         cursor=result.cursor;
         if(n===49)throw new Error("Square scheduled shifts pagination incomplete");
@@ -284,7 +289,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         accessToken,
         "/v2/labor/timecards/search",
         { query: { filter: { location_ids: [locationId], start: { start_at: since.toISOString(), end_at: until.toISOString() } } } },
-        "timecards",
+        "timecards", await params.archive?.("timecards"),
       );
       return timecards
         .filter((tc) => tc.start_at)

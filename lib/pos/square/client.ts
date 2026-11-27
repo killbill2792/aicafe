@@ -1,3 +1,4 @@
+import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import { squareApiBaseUrl } from "./oauth";
 
@@ -44,16 +45,19 @@ export async function squarePaginated<T>(
   path: string,
   body: Record<string, unknown>,
   itemsKey: string,
+  onPage?: (rows: readonly T[], next: string | null) => Promise<void>,
+  method: "GET" | "POST" = "POST",
 ): Promise<T[]> {
-  const items: T[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await squareRequest<{ cursor?: string } & Record<string, T[]>>(accessToken, path, {
-      method: "POST",
-      body: cursor ? { ...body, cursor } : body,
-    });
-    items.push(...(page[itemsKey] ?? []));
-    cursor = page.cursor;
-  } while (cursor);
-  return items;
+  return readProviderPages(async cursor => {
+    const params = cursor ? {...body, cursor} : body;
+    const url = method === "GET" ? path + "?" + new URLSearchParams(
+      Object.entries(params).map(([key, value]) => [key, String(value)]),
+    ) : path;
+    const page = await squareRequest<Record<string, unknown>>(accessToken, url,
+      method === "GET" ? {method} : {method, body: params});
+    if (page.errors || (page[itemsKey] != null && !Array.isArray(page[itemsKey]))) {
+      throw new Error("Incomplete Square response");
+    }
+    return {items: (page[itemsKey] ?? []) as T[], next: (page.cursor ?? null) as string | null};
+  }, onPage);
 }

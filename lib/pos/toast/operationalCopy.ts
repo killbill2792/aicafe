@@ -334,7 +334,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
    const rows=data.map(row=>{
      const key=nativeOperationalKey(op.endpoint,row,op.businessDate);
      const clean=redactToastRaw(row) as Record<string,unknown>;
-     return {...clean,business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+     return {payload:clean,business_id:p.businessId,restaurant_guid:p.restaurantGuid,
       endpoint:op.endpoint,provider_key:key,
       source_key_kind:GUID.safeParse(row.guid).success?"provider_guid":
        op.single?"restaurant_singleton":"provider_composite",
@@ -393,7 +393,7 @@ export async function refreshToastOperationalEvent(db:SupabaseClient,p:ToastCopy
  const local=localClock(now,p.timezone);
  const day=local.minutes<p.closeoutHour*60?addCalendarDays(local.today,-1):local.today;
  const checked=now.toISOString();
- const payload={...redactToastRaw(rows[0]) as Record<string,unknown>,
+ const payload={payload:redactToastRaw(rows[0]),
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,endpoint:"stock/v1/inventory",
   provider_key:rows[0].guid.toLowerCase(),source_key_kind:"provider_guid",business_date:day,
   source_business_date_kind:"observed_cafe_day",fetched_at:checked,lastSuccessAt:checked};
