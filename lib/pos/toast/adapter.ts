@@ -292,7 +292,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
             const start=timestamp(String(row.inDate)),end=timestamp(String(row.outDate));
             if(start<scope.from||end>=scope.until||end<=start)throw new ToastApiError("invalid_response");
           }
-          const identifiers:SourceIdentifier[]=[{namespace:resource,value:key.data,selector:{path:[]}}];
+          const identifiers:SourceIdentifier[]=[];
           for(const [field,namespace,relationship] of [
             ["employeeReference","labor/v1/employees","employee"],
             ["jobReference","labor/v1/jobs","job"],

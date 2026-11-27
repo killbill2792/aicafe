@@ -323,4 +323,33 @@ SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_c
 \else
 SELECT 1/0;
 \endif
+SELECT public.pos_rebuild_sales_fact_rollups_v1(:'a',:'hourly_day');
+SELECT (
+ EXISTS(SELECT FROM public.hourly_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day' AND hour_local=12)
+ AND EXISTS(SELECT FROM public.employee_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day' AND net_sales_cents=900)
+) AS divergent_saved \gset
+\if :divergent_saved
+\echo A day that cannot be reconstructed keeps each historical bucket.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+UPDATE public.hourly_sales_rollup SET hour_local=11 WHERE business_id=:'a' AND business_date=:'hourly_day';
+UPDATE public.employee_sales_rollup SET net_sales_cents=1200 WHERE business_id=:'a' AND business_date=:'hourly_day';
+SET LOCAL ROLE authenticated;
+SELECT public.pos_rebuild_sales_fact_rollups_v1(:'a',:'hourly_day');
+SELECT public.pos_rebuild_sales_fact_rollups_v1(:'a',:'hourly_day');
+SELECT (
+ NOT EXISTS(SELECT FROM public.hourly_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day')
+ AND NOT EXISTS(SELECT FROM public.employee_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day')
+ AND (SELECT count(*)=1 AND min((data->>'hour_local')::int)=11 AND sum(net_sales_cents)=1200
+      AND bool_and(data->>'evidence'='accepted_orders') FROM public.cv_sales_hours WHERE business_date=:'hourly_day')
+ AND (SELECT count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=1200
+      FROM public.cv_employee_sales WHERE business_date=:'hourly_day')
+) AS regenerated_sales \gset
+\if :regenerated_sales
+\echo Rebuild retires matching copies without writing new rollups or losing readable sales.
+\else
+SELECT 1/0;
+\endif
 ROLLBACK;

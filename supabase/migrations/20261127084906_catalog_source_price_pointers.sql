@@ -33,10 +33,10 @@ begin
   select b.native_id,b.source_id,b.price_source,b.price_attested,
     (array_agg(i.record_id))[1] as record_id,(array_agg(i.selector))[1] as selector
   from jsonb_to_recordset(verified) b(native_id uuid,source_id text,price_source jsonb,price_attested boolean)
-  join public.external_identifiers i on i.namespace=p_namespace and i.value=b.source_id
+  join public.external_current_identities i on i.namespace=p_namespace and i.value=b.source_id
   join public.external_records r on (r.business_id,r.provider,r.id)=(i.business_id,i.provider,i.record_id)
   where (r.business_id,r.provider,r.source_account,r.entity)=(p_business,p_provider,p_account,p_resource)
-    and r.payload_origin='provider' and i.relationship='identity' and i.valid_until is null
+    and r.payload_origin='provider'
   group by b.native_id,b.source_id,b.price_source,b.price_attested having count(*)=1
  ) matches;
 

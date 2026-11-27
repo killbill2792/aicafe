@@ -25,7 +25,7 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
       if ("location_id" in row && row.location_id != null && row.location_id !== location) {
         throw new Error("Square returned an object outside the requested location");
       }
-      const identifiers: SourceIdentifier[]=[{namespace:resource,value:row.id,selector:{path:[]}}];
+      const identifiers: SourceIdentifier[]=[];
       if (resource === "payments" && "order_id" in row && typeof row.order_id === "string" && row.order_id) {
         identifiers.push({namespace:"orders",value:row.order_id,relationship:"payment_for",selector:{path:[]}});
       }

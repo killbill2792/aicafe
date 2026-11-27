@@ -158,30 +158,40 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
 create or replace function public.pos_rebuild_sales_fact_rollups_v1(
  p_business_id uuid,p_business_date date)
 returns void language plpgsql security invoker set search_path=public as $rollup$
-declare v_timezone text;
 begin
  if p_business_id is null or p_business_date is null then raise exception 'Missing day';end if;
  if auth.role() is distinct from 'service_role'
   and not public.scheduling_is_owner(p_business_id) then raise exception 'Not allowed';end if;
- select b.timezone into v_timezone from public.businesses b where b.id=p_business_id;
- if v_timezone is null then raise exception 'Missing timezone';end if;
+ if not exists(select from public.businesses b where b.id=p_business_id and b.timezone is not null)
+  then raise exception 'Missing timezone';end if;
  perform pg_advisory_xact_lock(hashtextextended(
   'pos-sales-rollup:'||p_business_id::text||':'||p_business_date::text,0));
- delete from public.hourly_sales_rollup where business_id=p_business_id and business_date=p_business_date;
- insert into public.hourly_sales_rollup(business_id,location_id,business_date,hour_local,net_sales_cents,orders_count)
- select o.business_id,o.location_id,o.business_date,
-  extract(hour from o.closed_at at time zone v_timezone)::smallint,
-  sum(o.net_sales_cents)::bigint,count(*)::integer
- from public.cv_orders o
- where o.business_id=p_business_id and o.business_date=p_business_date
-  and o.status='actual' and o.pos_order_id not like 'csv-%'
- group by o.business_id,o.location_id,o.business_date,
-  extract(hour from o.closed_at at time zone v_timezone)::smallint;
- delete from public.employee_sales_rollup where business_id=p_business_id and business_date=p_business_date;
- insert into public.employee_sales_rollup(business_id,employee_id,business_date,net_sales_cents,orders_count)
- select o.business_id,o.employee_id,o.business_date,sum(o.net_sales_cents)::bigint,count(*)::integer
- from public.cv_orders o join public.employees e on e.id=o.employee_id and e.business_id=o.business_id
- where o.business_id=p_business_id and o.business_date=p_business_date
-  and o.status='actual'
- group by o.business_id,o.employee_id,o.business_date;
+
+ -- Remove a saved day only if its complete buckets can be regenerated.
+ -- Future imports use live SQL and never write another saved copy.
+ with saved as materialized (
+  select h.location_id,h.hour_local,h.net_sales_cents,h.orders_count from public.hourly_sales_rollup h
+  where h.business_id=p_business_id and h.business_date=p_business_date
+ ), computed as materialized (
+  select * from public.accepted_sales_hours_for_day(p_business_id,p_business_date) where exists(select from saved)
+ ), differences as (
+  (select * from saved except all select * from computed)
+  union all
+  (select * from computed except all select * from saved)
+ )
+ delete from public.hourly_sales_rollup h
+ where h.business_id=p_business_id and h.business_date=p_business_date and not exists(select from differences);
+
+ with saved as materialized (
+  select e.employee_id,e.net_sales_cents,e.orders_count from public.employee_sales_rollup e
+  where e.business_id=p_business_id and e.business_date=p_business_date
+ ), computed as materialized (
+  select * from public.accepted_employee_sales_for_day(p_business_id,p_business_date) where exists(select from saved)
+ ), differences as (
+  (select * from saved except all select * from computed)
+  union all
+  (select * from computed except all select * from saved)
+ )
+ delete from public.employee_sales_rollup e
+ where e.business_id=p_business_id and e.business_date=p_business_date and not exists(select from differences);
 end $rollup$;

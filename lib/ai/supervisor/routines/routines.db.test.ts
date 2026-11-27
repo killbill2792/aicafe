@@ -313,8 +313,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         null,null,first.run_id,randomUUID(),
       ])).rejects.toThrow();
 
-      // The child runs the ACTUAL registered runAgentTurn and get_sales
-      // against this disposable source row with a recorded (free) provider.
+      // The child uses the registered SQL tool against disposable app and
+      // provider source records with a recorded provider.
       // Kill only after its real tool result committed the production U4
       // checkpoint. No direct SQL call pretending to be a model/tool event.
       await admin.query("insert into public.daily_rollups("+
@@ -323,6 +323,8 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
         "voids_cents,sales_data_status) "+
         "values($1,'2026-11-20',4875,9,9,1200,0,0,0,0,'actual')",
         [business]);
+      await admin.query("select public.external_commit_page($1,'routine-fixture','merchant','sales','day',0,null,true,$2::jsonb)",
+        [business,JSON.stringify([{key:"day-record",payload:{"new provider field":{"units.sold":[73]}}}])]);
       const originalLease=first.lease_token;
       const directory=mkdtempSync(join(tmpdir(),"u4-actual-loop-"));
       const marker=join(directory,"checkpoint.txt");
@@ -401,7 +403,7 @@ describe("U4 migrated model-objective and autonomous Watch SQL contract",()=>{
       ])).toBe(true);
       first=resumed;
       // Resume the SAME work identity on another real process. It reads the
-      // checkpoint only as historical progress, independently runs get_sales
+      // checkpoint only as historical progress, independently runs read-only SQL
       // again, reserves model calls against the same owner quota, and posts
       // through the production U4 report RPC.
       const resumeDirectory=mkdtempSync(join(tmpdir(),"u4-resumed-loop-"));

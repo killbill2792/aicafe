@@ -136,8 +136,11 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
       if(requests++===0){
         yield {type:"response.output_item.done",item:{
           type:"function_call",name:"run_sql",call_id:"u4-durable-sales",
-          arguments:JSON.stringify({sql:"select business_date::text as day, net_sales_cents, orders_count "+
-            "from public.daily_rollups where business_date between '2026-11-20' and '2026-11-20' order by business_date"}),
+          arguments:JSON.stringify({sql:"select business_date::text as day, net_sales_cents, orders_count, "+
+            "(select (payload #>> array['new provider field','units.sold','0'])::int "+
+            "from public.external_records where provider='routine-fixture' and entity='sales' "+
+            "and source_key='day-record') as raw_archive_units "+
+            "from public.daily_rollups where business_date='2026-11-20' order by business_date"}),
         }} as never;
       }else{
         yield {type:"response.output_text.delta",
@@ -161,7 +164,7 @@ run("survives actual recorded model and registered source tool across SIGKILL",a
     expect(metered.problem()).toBeNull();
     const observed=turn.toolInvocations?.find(x=>x.name==="run_sql");
     expect(observed?.result.error).toBeUndefined();
-    expect(JSON.stringify(sqlResult)).toContain("4875");
+    expect(sqlResult).toMatchObject({rows:[{net_sales_cents:4875,raw_archive_units:73}]});
     expect(turn.usage.toolCalls).toBe(1);
     const verified=verifyObjectiveTurn(turn,routine as never);
     expect(verified.sourceDomains).toContain("other:sql_research");

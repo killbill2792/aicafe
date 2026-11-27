@@ -23,6 +23,23 @@ $$;
 revoke all on function public.toast_committed_sales_orders(uuid,date) from public,anon;
 grant execute on function public.toast_committed_sales_orders(uuid,date) to authenticated,service_role;
 
+-- Accepted order timestamps preserve historical information that a provider
+-- omitted. Read the buckets on demand for days without a saved snapshot.
+create or replace function public.accepted_sales_hours_for_day(p_business uuid,p_day date)
+returns table(location_id uuid,hour_local smallint,net_sales_cents bigint,orders_count integer)
+language sql stable security invoker set search_path=pg_catalog,public as $$
+ select o.location_id,extract(hour from o.closed_at at time zone b.timezone)::smallint,
+  sum(o.net_sales_cents)::bigint,count(*)::integer
+ from public.orders o join public.businesses b on b.id=o.business_id
+ join public.daily_rollups d on (d.business_id,d.business_date)=(o.business_id,o.business_date)
+ where o.business_id=p_business and o.business_date=p_day and d.orders_count>0
+   and (current_user in ('postgres','service_role','supabase_admin') or public.scheduling_is_owner(p_business))
+   and o.toast_excluded is not true and o.superseded_by is null and o.pos_order_id not like 'csv-%'
+ group by 1,2
+$$;
+revoke all on function public.accepted_sales_hours_for_day(uuid,date) from public,anon;
+grant execute on function public.accepted_sales_hours_for_day(uuid,date) to authenticated,service_role;
+
 -- Reconcile an entire business day before replacing the saved hourly view.
 -- A missing order, an incomplete restaurant receipt or an ambiguous close
 -- leaves the saved history in charge for the whole day.
@@ -75,6 +92,14 @@ begin
  if found then return; end if;
 
  return query
+ select 'app'::text,'hour:'||p_day::text||':'||h.hour_local::text||':'||coalesce(h.location_id::text,'all'),
+  'actual'::text,p_day,h.net_sales_cents,h.orders_count,
+  jsonb_build_object('hour_local',h.hour_local,'location_id',h.location_id,
+    'net_sales_cents',h.net_sales_cents,'orders_count',h.orders_count,'evidence','accepted_orders')
+ from public.accepted_sales_hours_for_day(p_business,p_day) h;
+ if found then return; end if;
+
+ return query
  select 'toast'::text,'live-hour:'||t.business_date::text||':'||(hour.value->>'hourLocal'),
   'provisional'::text,t.business_date,(hour.value->>'netSalesCents')::bigint,(hour.value->>'ordersCount')::integer,
   jsonb_build_object('hour_local',(hour.value->>'hourLocal')::integer,'location_id',null,
@@ -95,7 +120,7 @@ grant execute on function public.sales_hours_for_day(uuid,date) to authenticated
 create or replace view public.cv_sales_hours with (security_invoker=true) as
  select d.business_id,h.source,h.source_ref,h.status,d.business_date,h.net_sales_cents,h.orders_count,h.data
  from (
-   select r.business_id,r.business_date from public.daily_rollups r where r.sales_data_status='actual'
+   select r.business_id,r.business_date from public.daily_rollups r where r.orders_count>0
    union select r.business_id,r.business_date from public.hourly_sales_rollup r
    union select r.business_id,r.business_date from public.toast_today_live r
  ) d cross join lateral public.sales_hours_for_day(d.business_id,d.business_date) h;
@@ -126,7 +151,7 @@ create or replace view u3_research.hourly_sales_rollup with (security_barrier=tr
  select d.business_date,h.location_id,h.hour_local,h.net_sales_cents,h.orders_count
  from (
   select r.business_date from public.hourly_sales_rollup r
-  union select r.business_date from public.daily_rollups r where r.sales_data_status='actual'
+  union select r.business_date from public.daily_rollups r where r.orders_count>0
  ) d cross join lateral u3_research_private.committed_sales_hours(d.business_date) h;
 reset role;
 revoke aicafe_research_view_owner from postgres;

@@ -5731,6 +5731,49 @@
    ]
   },
   {
+   "rls": false,
+   "kind": "view",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
+     "provider",
+     "text",
+     false
+    ],
+    [
+     "record_id",
+     "uuid",
+     false
+    ],
+    [
+     "namespace",
+     "text",
+     false
+    ],
+    [
+     "value",
+     "text",
+     false
+    ],
+    [
+     "selector",
+     "jsonb",
+     false
+    ],
+    [
+     "shared",
+     "boolean",
+     false
+    ]
+   ],
+   "relation": "external_current_identities",
+   "foreign_keys": []
+  },
+  {
    "rls": true,
    "kind": "table",
    "columns": [

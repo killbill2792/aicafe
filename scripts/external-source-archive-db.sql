@@ -137,6 +137,23 @@ begin
 
   perform public.external_commit_page(other,'fixture-provider','merchant:4','activity','one',0,null,true,
     '[{"key":"not-a-guid","payload":{"private":true}}]');
+  perform public.external_commit_page(cafe,'key-fixture','merchant:4','orders','one',0,null,true,
+    '[{"key":"order-root","payload":{"id":"order-root"},"identifiers":[
+       {"namespace":"orders","value":"order-root","selector":{"path":[]}}]}]');
+  perform public.external_commit_page(cafe,'key-fixture','merchant:5','orders','one',0,null,true,
+    '[{"key":"order-root","payload":{"id":"order-root"}}]');
+  perform public.external_commit_page(cafe,'key-fixture','merchant:4','payments','one',0,null,true,
+    '[{"key":"payment-root","payload":{"order_id":"order-root"},"identifiers":[
+       {"namespace":"orders","value":"order-root","relationship":"payment_for","selector":{"path":[]}}]}]');
+  if exists(select from public.external_identifiers where business_id=cafe and value='order-root'
+       and relationship='identity') then raise exception 'Duplicate archive key was persisted'; end if;
+  select * into strict candidate from public.external_relationship_candidates
+    where business_id=cafe and relationship='payment_for' and value='order-root';
+  if candidate.match_status<>'matched' or not exists(select from public.external_records r
+      where (r.business_id,r.provider,r.id,r.source_account)=
+       (cafe,candidate.target_provider,candidate.target_id,'merchant:4')) then
+    raise exception 'Derived archive key did not resolve within its source account'; end if;
+
   perform public.external_commit_page(cafe,'fixture-provider','merchant:4','annotations','one',0,null,true,
     '[{"key":"note","payload":{"sourceReference":"object-24"},"identifiers":[
        {"namespace":"origin","value":"object-24","relationship":"annotates","shared":true,"selector":{"path":[]}}]}]');

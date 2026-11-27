@@ -4,6 +4,20 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
+create or replace function public.accepted_employee_sales_for_day(p_business uuid,p_day date)
+returns table(employee_id uuid,net_sales_cents bigint,orders_count integer)
+language sql stable security invoker set search_path=pg_catalog,public as $$
+ select o.employee_id,sum(o.net_sales_cents)::bigint,count(*)::integer
+ from public.orders o join public.employees e on (e.business_id,e.id)=(o.business_id,o.employee_id)
+ join public.daily_rollups d on (d.business_id,d.business_date)=(o.business_id,o.business_date)
+ where o.business_id=p_business and o.business_date=p_day and d.orders_count>0
+   and (current_user in ('postgres','service_role','supabase_admin') or public.scheduling_is_owner(p_business))
+   and o.toast_excluded is not true and o.superseded_by is null
+ group by o.employee_id
+$$;
+revoke all on function public.accepted_employee_sales_for_day(uuid,date) from public,anon;
+grant execute on function public.accepted_employee_sales_for_day(uuid,date) to authenticated,service_role;
+
 create or replace function public.employee_sales_for_day(p_business uuid,p_day date)
 returns table(employee_id uuid,net_sales_cents bigint,orders_count integer)
 language plpgsql stable security invoker set search_path=pg_catalog,public
@@ -49,6 +63,10 @@ begin
  return query
  select r.employee_id,r.net_sales_cents,r.orders_count
  from public.employee_sales_rollup r where r.business_id=p_business and r.business_date=p_day;
+ if found then return; end if;
+
+ return query select r.employee_id,r.net_sales_cents,r.orders_count
+ from public.accepted_employee_sales_for_day(p_business,p_day) r;
 end $$;
 revoke all on function public.employee_sales_for_day(uuid,date) from public,anon;
 grant execute on function public.employee_sales_for_day(uuid,date) to authenticated,service_role;
@@ -57,7 +75,7 @@ create or replace view public.cv_employee_sales with (security_invoker=true) as
  select d.business_id,d.business_date,s.employee_id,s.net_sales_cents,s.orders_count
  from (
   select r.business_id,r.business_date from public.employee_sales_rollup r
-  union select r.business_id,r.business_date from public.daily_rollups r where r.sales_data_status='actual'
+  union select r.business_id,r.business_date from public.daily_rollups r where r.orders_count>0
  ) d cross join lateral public.employee_sales_for_day(d.business_id,d.business_date) s;
 revoke all on public.cv_employee_sales from public,anon,authenticated;
 grant select on public.cv_employee_sales to authenticated,service_role;
@@ -81,7 +99,7 @@ create or replace view u3_research.employee_sales_rollup with (security_barrier=
  select d.business_date,s.employee_id,s.net_sales_cents,s.orders_count
  from (
   select r.business_date from public.employee_sales_rollup r
-  union select r.business_date from public.daily_rollups r where r.sales_data_status='actual'
+  union select r.business_date from public.daily_rollups r where r.orders_count>0
  ) d cross join lateral u3_research_private.committed_employee_sales(d.business_date) s;
 reset role;
 revoke aicafe_research_view_owner from postgres;

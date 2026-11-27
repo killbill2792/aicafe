@@ -158,7 +158,6 @@ describe("Toast permitted labor source-field handoff",()=>{
    expect(requested.get("pageToken")).toBeNull();
    expect(rpc).toHaveBeenCalledWith("external_commit_page",expect.objectContaining({p_records:[
      expect.objectContaining({identifiers:[
-       {namespace:"labor/v1/shifts",value:shift,selector:{path:[]}},
        {namespace:"labor/v1/employees",value:employee,relationship:"employee",selector:{path:["employeeReference"]}},
      ]}),
    ],p_next:expect.objectContaining({scope:expect.objectContaining({locationId:employee,
