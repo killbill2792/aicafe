@@ -326,3 +326,29 @@ html[data-theme="glass"] body {
 .luna-native-widget :where(.flex, .grid) > * { max-inline-size: 100%; }
 .luna-responsive-table table { table-layout: auto; }
 .luna-responsive-table th, .luna-responsive-table td { white-space: normal; overflow-wrap: anywhere; }
+
+/* A single content-measured table layout, shared by Markdown, native tables
+   and older saved evidence. Labels are sourced from each table's headers. */
+.luna-table-label { display: none; }
+.luna-table-region[data-luna-measuring] table {
+  width: max-content !important;
+  max-width: none !important;
+  table-layout: auto !important;
+}
+.luna-table-region[data-luna-reflow] table,
+.luna-table-region[data-luna-reflow] tbody,
+.luna-table-region[data-luna-reflow] tbody tr { display: block; width: 100%; }
+.luna-table-region[data-luna-reflow] thead {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+}
+.luna-table-region[data-luna-reflow] tbody tr { border-block-end: 1px solid var(--color-line); }
+.luna-table-region[data-luna-reflow] tbody :is(td,th) {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: calc(var(--spacing) * 2);
+  border-block-end: 0; text-align: start; white-space: normal; overflow-wrap: anywhere;
+}
+.luna-table-region[data-luna-reflow] .luna-table-label { display: block; }
+.luna-table-region[data-luna-reflow] [data-luna-column]::before {
+  content: attr(data-luna-column); font-size: .8125rem; color: var(--color-ink-muted);
+  font-weight: 500;
+}
