@@ -4,6 +4,25 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
+-- Fetch the original bodies as one indexed café/day set. Both sales readers
+-- can establish coverage from the same completed restaurant import receipt.
+create or replace function public.toast_committed_sales_orders(p_business uuid,p_day date)
+returns table(pos_order_id text,restaurant_guid uuid,payload jsonb)
+language sql stable security invoker as $$
+ select 'toast:'||r.restaurant_guid::text||':'||r.entity_guid::text,r.restaurant_guid,r.payload
+ from public.toast_day_status c
+ join public.external_records r on (r.business_id,r.restaurant_guid,r.business_date,r.run_id)=
+  (c.business_id,c.restaurant_guid,c.business_date,c.last_import_run_id)
+ where c.business_id=p_business and c.business_date=p_day
+  and c.import_state='imported' and c.coverage_complete and c.unparsed_count=0
+  and r.provider='toast' and r.entity='order' and r.superseded_by is null
+  and r.source_account=r.restaurant_guid::text and r.source_key=r.entity_guid::text
+  and r.payload->>'guid'=r.entity_guid::text
+  and r.payload_origin in ('provider','historical_provider')
+$$;
+revoke all on function public.toast_committed_sales_orders(uuid,date) from public,anon;
+grant execute on function public.toast_committed_sales_orders(uuid,date) to authenticated,service_role;
+
 -- Reconcile an entire business day before replacing the saved hourly view.
 -- A missing order, an incomplete restaurant receipt or an ambiguous close
 -- leaves the saved history in charge for the whole day.
@@ -21,16 +40,7 @@ begin
     and d.sales_data_status='actual' and d.orders_count>0
     and exists(select from public.toast_day_status c where c.business_id=d.business_id and c.business_date=d.business_date)
  ), originals as materialized (
-  select 'toast:'||r.restaurant_guid::text||':'||r.entity_guid::text as pos_order_id,r.payload
-  from public.toast_day_status c
-  join public.external_records r on (r.business_id,r.restaurant_guid,r.business_date,r.run_id)=
-   (c.business_id,c.restaurant_guid,c.business_date,c.last_import_run_id)
-  where c.business_id=p_business and c.business_date=p_day
-   and c.import_state='imported' and c.coverage_complete and c.unparsed_count=0
-   and r.provider='toast' and r.entity='order' and r.superseded_by is null
-   and r.source_account=r.restaurant_guid::text and r.source_key=r.entity_guid::text
-   and r.payload->>'guid'=r.entity_guid::text
-   and r.payload_origin in ('provider','historical_provider')
+  select r.pos_order_id,r.payload from public.toast_committed_sales_orders(p_business,p_day) r
  ), orders as materialized (
   select o.location_id,o.closed_at,o.net_sales_cents as accepted_amount,
    case when r.payload->>'closedDate' ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'

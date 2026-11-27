@@ -3604,6 +3604,39 @@
      false
     ],
     [
+     "business_date",
+     "date",
+     false
+    ],
+    [
+     "employee_id",
+     "uuid",
+     false
+    ],
+    [
+     "net_sales_cents",
+     "bigint",
+     false
+    ],
+    [
+     "orders_count",
+     "integer",
+     false
+    ]
+   ],
+   "relation": "cv_employee_sales",
+   "foreign_keys": []
+  },
+  {
+   "rls": false,
+   "kind": "view",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     false
+    ],
+    [
      "source",
      "text",
      false

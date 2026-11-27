@@ -72,7 +72,7 @@ describe("POS fact readers avoid PostgREST's one-thousand-row cap",()=>{
    const h=mockDatabase([{business_date:period.from,hour_local:10,
      location_id:null,net_sales_cents:500,orders_count:1}],"cv_sales_hours");
    const staff=mockDatabase([{business_date:period.from,employee_id:"e",net_sales_cents:500,
-     orders_count:1}],"employee_sales_rollup");
+     orders_count:1}],"cv_employee_sales");
    const hourly=await posFactReaders(h.db,"b").peakHours(period);
    const employees=await posFactReaders(staff.db,"b").employeeSales(period);
    expect(hourly.available).toBe(true);

@@ -241,7 +241,7 @@ SELECT 1/0;
 -- A complete day may replace stale saved hours only when every accepted order
 -- matches its committed original, including the close and reconciled totals.
 SELECT gen_random_uuid() AS hourly_run,gen_random_uuid() AS hourly_order,
- gen_random_uuid() AS hourly_thread,current_date-9 AS hourly_day \gset
+ gen_random_uuid() AS hourly_thread,gen_random_uuid() AS provider_actor,current_date-9 AS hourly_day \gset
 INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state,requested_from,requested_to)
 VALUES(:'hourly_run',:'a',:'toast_loc','daily','running',:'hourly_day',:'hourly_day');
 INSERT INTO public.toast_day_status(business_id,restaurant_guid,business_date,import_state,coverage_complete,
@@ -253,13 +253,18 @@ INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,order
 VALUES(:'a',:'hourly_day',1200,1,0,0,0,0,'actual');
 INSERT INTO public.hourly_sales_rollup(business_id,location_id,business_date,hour_local,net_sales_cents,orders_count)
 VALUES(:'a',:'loc_a',:'hourly_day',12,1200,1),(:'b',:'loc_b',:'hourly_day',12,9900,1);
-INSERT INTO public.orders(business_id,location_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents)
-VALUES(:'a',:'loc_a','toast:'||:'toast_loc'||':'||:'hourly_order',
+INSERT INTO public.employees(id,business_id,display_name,pos_team_member_id)
+VALUES(:'employee_key',:'a','First shift','toast:'||:'toast_loc'||':'||:'provider_actor');
+INSERT INTO public.employee_sales_rollup(business_id,employee_id,business_date,net_sales_cents,orders_count)
+VALUES(:'a',:'employee_key',:'hourly_day',900,1);
+INSERT INTO public.orders(business_id,location_id,employee_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents)
+VALUES(:'a',:'loc_a',:'employee_key','toast:'||:'toast_loc'||':'||:'hourly_order',
  (:'hourly_day'::date + time '11:05') AT TIME ZONE 'UTC',:'hourly_day',1200,1200);
 INSERT INTO public.external_records(business_id,restaurant_guid,entity,entity_guid,business_date,
  run_id,seen_run_id,payload,payload_sha256,capture_key,source_account,source_key)
 VALUES(:'a',:'toast_loc','order',:'hourly_order',:'hourly_day',:'hourly_run',:'hourly_run',
- jsonb_build_object('guid',:'hourly_order','closedDate',:'hourly_day'||'T11:05:00Z','checks','[{"amount":12}]'::jsonb),
+ jsonb_build_object('guid',:'hourly_order','closedDate',:'hourly_day'||'T11:05:00Z',
+  'server',jsonb_build_object('guid',:'provider_actor'),'checks','[{"amount":12}]'::jsonb),
  repeat('a',64),'fixture-hourly-order',:'toast_loc',:'hourly_order');
 INSERT INTO public.ai_threads(id,business_id,owner_user_id,client_request_id)
 VALUES(:'hourly_thread',:'a',:'oa',gen_random_uuid());
@@ -275,6 +280,13 @@ SELECT (count(*)=1 AND min(hour_local)=11 AND sum(net_sales_cents)=1200 AND sum(
 \else
 SELECT 1/0;
 \endif
+SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=1200 AND sum(orders_count)=1)
+ AS employee_research FROM u3_research.employee_sales_rollup WHERE business_date=:'hourly_day' \gset
+\if :employee_research
+\echo Governed SQL reconciles employee sales from the original order and the existing employee association.
+\else
+SELECT 1/0;
+\endif
 RESET ROLE;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.role','authenticated',true);
@@ -286,14 +298,28 @@ FROM public.cv_sales_hours WHERE business_date=:'hourly_day' \gset
 \else
 SELECT 1/0;
 \endif
+SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=1200 AND sum(orders_count)=1)
+ AS employee_app FROM public.cv_employee_sales WHERE business_date=:'hourly_day' \gset
+\if :employee_app
+\echo The app uses the original sale under its verified employee association.
+\else
+SELECT 1/0;
+\endif
 RESET ROLE;
-UPDATE public.external_records SET payload=payload-'closedDate' WHERE business_id=:'a' AND entity_guid=:'hourly_order';
+UPDATE public.external_records SET payload=payload-'closedDate'-'server' WHERE business_id=:'a' AND entity_guid=:'hourly_order';
 SET LOCAL ROLE authenticated;
 SELECT (count(*)=1 AND min((data->>'hour_local')::int)=12 AND sum(net_sales_cents)=1200
  AND bool_and(data->>'evidence'='saved_hourly_rollup')) AS hourly_fallback
 FROM public.cv_sales_hours WHERE business_date=:'hourly_day' \gset
 \if :hourly_fallback
 \echo An original with no close preserves the entire saved day.
+\else
+SELECT 1/0;
+\endif
+SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=900 AND sum(orders_count)=1)
+ AS employee_fallback FROM public.cv_employee_sales WHERE business_date=:'hourly_day' \gset
+\if :employee_fallback
+\echo Missing provider attribution leaves the saved employee amounts readable.
 \else
 SELECT 1/0;
 \endif
