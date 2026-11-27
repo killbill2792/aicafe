@@ -103,16 +103,15 @@ export async function readUsageVariance(raw:z.input<typeof readInput>, explicit?
   chosenIds.length?allRows((a,b)=>db.from("pantry_stock_purchases").select("ingredient_id,purchase_date,quantity_base")
     .eq("business_id",businessId).in("ingredient_id",chosenIds).gte("purchase_date",input.from).lte("purchase_date",input.to).is("voided_at",null)
     .order("id").range(a,b),8000):Promise.resolve([]),
-  allRows((a,b)=>db.from("orders").select("id,business_date,closed_at,pos_order_id,location_id")
+  allRows((a,b)=>db.from("cv_orders").select("id:order_ref,business_date,closed_at,pos_order_id,location_id")
     .eq("business_id",businessId).gte("business_date",input.from).lte("business_date",input.to)
-    .eq("toast_excluded",false).is("superseded_by",null)
-    .order("id").range(a,b),20000),
+    .eq("status","actual").order("order_ref").range(a,b),20000),
  ]);
  if(evidence.error||modifiers.error||addons.error||conversions.error||counts.error||!modifiers.data||!addons.data||!conversions.data||!counts.data)
   throw new Error("usage_data_unavailable");
  const sales=await readUsageOrderLines(orders,(ids,a,b)=>
-  db.from("order_lines").select("id,order_id,menu_item_id,quantity,modifiers,voided")
-   .in("order_id",ids).order("id").range(a,b),20000);
+  db.from("cv_item_sales").select("id:source_ref,order_id:data->>order_id,menu_item_id:data->>menu_item_id,quantity,modifiers:data->modifiers,voided:data->voided")
+   .eq("business_id",businessId).eq("status","actual").in("data->>order_id",ids).order("source_ref").range(a,b),20000);
  const e=evidence.data as {covered?:boolean;staff?:UsageStaff[];
   modifierMappings?:Array<{restaurantGuid?:string;locationRef?:string;provider?:"toast"|"square"|"csv";posModifierId:string;recipeId:string}>}|null;
  const mappedMods=scopedToastModifierRecipes(e?.modifierMappings??[],modifiers.data.map(m=>({
