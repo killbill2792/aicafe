@@ -3,18 +3,33 @@
 set lock_timeout = '5s';
 set statement_timeout = '60s';
 
+-- Keep payload identity with membership and completed coverage with its stream.
+-- A record can participate in several observations without copying its payload.
+alter table public.external_observation_members add column observed_sha256 text;
+grant update(observed_sha256) on public.external_observation_members to service_role;
+alter table public.external_sync_checkpoints
+  add column last_complete_revision bigint,
+  add column last_complete_at timestamptz,
+  add column last_complete_scope jsonb,
+  add column last_complete_mode text;
+
 create or replace function public.external_commit_page(
   p_business_id uuid,p_provider text,p_account text,p_resource text,p_stream text,
   p_revision bigint,p_next jsonb,p_complete boolean,p_records jsonb
 ) returns bigint language plpgsql security invoker set search_path=pg_catalog,public as $$
 declare state public.external_sync_checkpoints%rowtype; item jsonb; previous public.external_records%rowtype;
   identity_key text; object_key text; body jsonb; hash text; modified timestamptz; delta jsonb; receipt uuid; archive_reader uuid;
-  point boolean:=coalesce(p_next->>'mode'='point',false); context jsonb;
+  mode text:=coalesce(p_next->>'mode','snapshot');
+  scope jsonb:=coalesce(p_next->'scope','{}'::jsonb);
+  observed_at timestamptz; context jsonb;
 begin
   if nullif(p_provider,'') is null or nullif(p_account,'') is null or nullif(p_resource,'') is null
      or nullif(p_stream,'') is null or p_complete is null or p_revision is null
      or jsonb_typeof(p_records) is distinct from 'array' then raise exception 'Invalid external page'; end if;
-  if point and (not p_complete or jsonb_array_length(p_records)<>1 or p_next->>'cursor' is not null) then
+  if mode not in ('snapshot','window','incremental','point') or jsonb_typeof(scope)<>'object' then
+    raise exception 'Invalid external observation scope';
+  end if;
+  if mode='point' and (not p_complete or jsonb_array_length(p_records)<>1 or p_next->>'cursor' is not null) then
     raise exception 'A point observation requires exactly one record and no continuation';
   end if;
   insert into public.external_resources(business_id,provider,source_account,resource)
@@ -32,6 +47,11 @@ begin
   if p_next is null and not p_complete and jsonb_array_length(p_records)<>0 then
     raise exception 'Non-final external page needs a continuation';
   end if;
+  if state.active_observation_id is not null and (p_next is not null or p_complete)
+    and (scope,mode) is distinct from
+      (coalesce(state.cursor_state->'scope','{}'::jsonb),coalesce(state.cursor_state->>'mode','snapshot')) then
+    raise exception 'External page does not match the active observation scope';
+  end if;
   receipt := coalesce(state.active_observation_id,gen_random_uuid());
   for item in select value from jsonb_array_elements(p_records) with ordinality order by value->>'key', ordinality loop
     object_key := item->>'key'; body := item->'payload'; modified := (item->>'updated_at')::timestamptz;
@@ -39,7 +59,7 @@ begin
       raise exception 'Missing external record identity or payload';
     end if;
     context := coalesce(item->'context','{}'::jsonb) ||
-      jsonb_build_object('observation_mode',case when point then 'point' else 'collection' end);
+      jsonb_build_object('observation_mode',mode);
     identity_key := coalesce(item->>'archive_key','external:'||encode(sha256(convert_to(jsonb_build_array(p_account,p_resource,object_key)::text,'UTF8')),'hex'));
     -- The resource row above serializes all writers for this identity scope.
     -- The unique capture key protects against any older writer racing a cutover.
@@ -70,42 +90,92 @@ begin
         source_updated_at=coalesce(modified,source_updated_at)
         where business_id=p_business_id and provider=p_provider and id=previous.id;
     else
-      -- The provider returned this identity, even if a newer payload is known.
-      insert into public.external_observation_members values(p_business_id,p_provider,receipt,previous.id)
+      -- A late page cannot certify the newer payload it did not observe.
+      insert into public.external_observation_members(business_id,provider,observation_id,record_id,observed_sha256)
+        values(p_business_id,p_provider,receipt,previous.id,hash)
         on conflict do nothing;
       continue;
     end if;
     if item ? 'identifiers' then
       perform public.external_observe_identifiers(p_business_id,p_provider,previous.id,item->'identifiers');
     end if;
-    insert into public.external_observation_members values(p_business_id,p_provider,receipt,previous.id)
-      on conflict do nothing;
+    insert into public.external_observation_members as member(business_id,provider,observation_id,record_id,observed_sha256)
+      values(p_business_id,p_provider,receipt,previous.id,hash)
+      on conflict(business_id,provider,observation_id,record_id) do update
+      set observed_sha256=excluded.observed_sha256
+      where member.observed_sha256 is distinct from excluded.observed_sha256;
   end loop;
   if p_complete or p_next is null then
     delete from public.external_observation_members
      where (business_id,provider,observation_id)=(p_business_id,p_provider,
        case when p_complete then state.last_complete_observation_id else state.active_observation_id end);
   end if;
+  observed_at := clock_timestamp();
   update public.external_sync_checkpoints set revision=revision+1,cursor_state=p_next,
     active_observation_id=case when not p_complete and p_next is not null then receipt end,
-    last_complete_observation_id=case when p_complete then receipt else last_complete_observation_id end
+    last_complete_observation_id=case when p_complete then receipt else last_complete_observation_id end,
+    last_complete_revision=case when p_complete then revision+1 else last_complete_revision end,
+    last_complete_at=case when p_complete then observed_at else last_complete_at end,
+    last_complete_scope=case when p_complete then scope else last_complete_scope end,
+    last_complete_mode=case when p_complete then mode else last_complete_mode end
     where business_id=p_business_id and provider=p_provider and source_account=p_account
       and resource=p_resource and stream=p_stream;
-  if point then
+  if mode='point' then
     update public.external_resources set permission_granted=true
       where business_id=p_business_id and provider=p_provider and source_account=p_account and resource=p_resource;
   else
     update public.external_resources set status=case when p_complete then 'current' else 'syncing' end,
       permission_granted=case when p_complete or p_next is not null then true else permission_granted end,
-      last_attempt_at=clock_timestamp(),
-      last_complete_at=case when p_complete then clock_timestamp() else last_complete_at end,
+      last_attempt_at=observed_at,
+      last_complete_at=case when p_complete then observed_at else last_complete_at end,
       last_complete_commit=case when p_complete then receipt else last_complete_commit end,
-      last_complete_scope=case when p_complete then jsonb_build_object('stream',p_stream) ||
-        coalesce(p_next->'scope','{}'::jsonb) else last_complete_scope end
+      last_complete_scope=case when p_complete then scope ||
+        jsonb_build_object('stream',p_stream,'mode',mode) else last_complete_scope end
       where business_id=p_business_id and provider=p_provider and source_account=p_account and resource=p_resource;
   end if;
   return state.revision+1;
 end $$;
+
+-- Dashboard callers must supply the scope and mode they requested. Keep the
+-- last completed receipt available while another traversal is in flight, but
+-- fail the read if any returned row can no longer be served at that revision.
+create function public.external_read_observation(
+  p_business_id uuid,p_provider text,p_account text,p_resource text,p_stream text,
+  p_revision bigint,p_after uuid,p_scope jsonb default null,p_mode text default null
+) returns table(record_id uuid,payload jsonb)
+language plpgsql stable security invoker set search_path=pg_catalog,public as $$
+declare observation uuid; member record;
+begin
+  select c.last_complete_observation_id into observation
+    from public.external_sync_checkpoints c
+    join public.external_resources e using(business_id,provider,source_account,resource)
+    where (c.business_id,c.provider,c.source_account,c.resource,c.stream,c.last_complete_revision)=
+      (p_business_id,p_provider,p_account,p_resource,p_stream,p_revision)
+      and (p_scope is null or c.last_complete_scope=p_scope)
+      and (p_mode is null or c.last_complete_mode=p_mode)
+      and e.permission_granted is distinct from false;
+  if observation is null then raise exception 'Stale external observation' using errcode='40001'; end if;
+  for member in
+    select m.record_id,r.payload,
+      (r.source_account,r.entity,r.payload_sha256)=(p_account,p_resource,m.observed_sha256) as matches
+    from public.external_observation_members m
+    join public.external_records r on (r.business_id,r.provider,r.id)=(m.business_id,m.provider,m.record_id)
+    where (m.business_id,m.provider,m.observation_id)=(p_business_id,p_provider,observation)
+      and (p_after is null or m.record_id>p_after)
+    order by m.record_id limit 500
+  loop
+    if member.matches is distinct from true then
+      raise exception 'External observation payload has changed' using errcode='55000';
+    end if;
+    record_id := member.record_id;
+    payload := member.payload;
+    return next;
+  end loop;
+end $$;
+revoke all on function public.external_read_observation(uuid,text,text,text,text,bigint,uuid,jsonb,text)
+  from public,anon,authenticated;
+grant execute on function public.external_read_observation(uuid,text,text,text,text,bigint,uuid,jsonb,text)
+  to service_role;
 
 create or replace function public.external_note_availability(p_business_id uuid,p_provider text,p_account text,
  p_resource text,p_status text,p_attempt timestamptz,p_retry timestamptz)
@@ -132,10 +202,11 @@ returns boolean language sql stable security invoker set search_path=pg_catalog,
   select coalesce(r.payload_origin='provider' and e.permission_granted is distinct from false and
     (r.business_id,r.provider,r.source_account,r.entity)=(e.business_id,e.provider,e.source_account,e.resource) and
     ((r.source_context->>'observation_mode'='point' and r.last_seen>=coalesce(e.last_attempt_at,'-infinity'::timestamptz))
-    or (e.status='current' and e.last_complete_at is not null and
-     (r.commit_id=e.last_complete_commit or exists(select from public.external_observation_members m
+    or (e.status='current' and e.last_complete_at is not null and e.last_complete_scope->>'mode'='snapshot' and
+     exists(select from public.external_observation_members m
        where (m.business_id,m.provider,m.observation_id,m.record_id)=
-         (r.business_id,r.provider,e.last_complete_commit,r.id))))),false);
+         (r.business_id,r.provider,e.last_complete_commit,r.id)
+         and m.observed_sha256=r.payload_sha256))),false);
 $$;
 revoke all on function public.external_current_observation(public.external_records,public.external_resources)
   from public,anon;
@@ -203,7 +274,8 @@ begin
    and resource=p_endpoint and c.stream=observation.stream;
  perform public.external_commit_page(p_business_id,'toast',p_restaurant_guid::text,p_endpoint,stream,
    coalesce(revision,0),case when point then jsonb_build_object('mode','point')
-     else jsonb_build_object('scope',jsonb_strip_nulls(jsonb_build_object('business_date',p_business_date))) end,
+     else jsonb_build_object('scope',jsonb_strip_nulls(jsonb_build_object('business_date',p_business_date)),
+       'mode',case when p_business_date is null or p_endpoint='stock/v1/inventory' then 'snapshot' else 'window' end) end,
    true,records);
  return jsonb_array_length(p_objects);
 end $$;

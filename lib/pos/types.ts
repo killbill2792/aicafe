@@ -70,7 +70,11 @@ export type PosCatalogModifierGroup = {
   posMetadata?: Record<string,unknown>;
   options: PosCatalogModifierOption[];
 };
-export type CatalogPriceSource = {recordKey:string;path:string[]};
+export type CatalogPriceSource = {
+  recordKey:string;
+  path:string[];
+  checks?:Array<{path:string[];value:string|number|boolean}>;
+};
 export type CatalogSourceBinding = {native_id:string;source_id:string;price_source?:CatalogPriceSource|null};
 export type PosCatalogItem = {
   /** Location of this item inside the validated original publication. */

@@ -269,6 +269,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     const source={businessId,provider:"toast",account:restaurantGuid};
     const records=await synchronizeSource(db,source,{
       capability:{resource,permission:"labor"},stream:streamKey,scope:{query},readCompleted:true,
+      mode:streamKey==="modified"?"incremental":query?"window":"snapshot",
       authorize:()=>client.assertSourceAccess(restaurantGuid,"labor"),
       observe:async (cursor,scope)=>{
         const requested=new URLSearchParams(scope.query);
@@ -277,7 +278,10 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         const raw=await client.request(endpoint+(requested.size?"?"+requested:""),restaurantGuid,z.array(z.record(z.string(),z.unknown())),{
           deadlineAt,onResponse:meta=>{next=meta.nextPageToken ?? null;}
         });
-        if(!schema.safeParse(raw).success)throw new ToastApiError("invalid_response");
+        if(!schema.safeParse(raw).success ||
+          (streamKey==="modified"&&raw.some(row=>typeof row.modifiedDate!=="string"||!row.modifiedDate))){
+          throw new ToastApiError("invalid_response");
+        }
         const records=raw.map(row=>{
           const key=GUID.safeParse(row.guid);
           if(!key.success)throw new ToastApiError("invalid_response");

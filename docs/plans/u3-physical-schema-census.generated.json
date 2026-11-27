@@ -5809,6 +5809,11 @@
      "record_id",
      "uuid",
      true
+    ],
+    [
+     "observed_sha256",
+     "text",
+     false
     ]
    ],
    "relation": "external_observation_members",
@@ -6490,6 +6495,26 @@
     [
      "last_complete_observation_id",
      "uuid",
+     false
+    ],
+    [
+     "last_complete_revision",
+     "bigint",
+     false
+    ],
+    [
+     "last_complete_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "last_complete_scope",
+     "jsonb",
+     false
+    ],
+    [
+     "last_complete_mode",
+     "text",
      false
     ]
    ],

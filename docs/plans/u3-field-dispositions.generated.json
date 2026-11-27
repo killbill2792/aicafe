@@ -4,7 +4,7 @@
   "modelAuthorization": false,
   "productionRowsIncluded": false,
   "physicalTables": 232,
-  "physicalFields": 2658,
+  "physicalFields": 2663,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -21,7 +21,7 @@
     "restricted_secret_or_auth": 81,
     "scope_only": 36,
     "specialist_or_review_pending": 421,
-    "unreviewed_not_admitted": 184
+    "unreviewed_not_admitted": 189
   },
   "relations": [
     {
@@ -4475,6 +4475,13 @@
           "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
         },
         {
+          "field": "observed_sha256",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
           "field": "provider",
           "type": "text",
           "notNull": true,
@@ -5190,8 +5197,36 @@
           "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
         },
         {
+          "field": "last_complete_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_mode",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
           "field": "last_complete_observation_id",
           "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_revision",
+          "type": "bigint",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_scope",
+          "type": "jsonb",
           "notNull": false,
           "status": "unreviewed_not_admitted",
           "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"

@@ -137,7 +137,7 @@ describe("Toast permitted labor source-field handoff",()=>{
    const previousQuery="startDate=2026-10-09T00%3A00%3A00.000%2B0000"+
      "&endDate=2026-10-10T00%3A00%3A00.000%2B0000";
    const query={select:()=>query,eq:()=>query,maybeSingle:async()=>({data:{revision:1,
-     cursor_state:{cursor:"opaque/+ token",scope:{query:previousQuery}}},error:null})};
+     cursor_state:{cursor:"opaque/+ token",scope:{query:previousQuery},mode:"window"}},error:null})};
    let current:unknown[]=[];
    const rpc=vi.fn(async(name:string,args:{p_revision:number;p_records:{payload:unknown}[]})=>{
      if(name==="external_commit_page"){

@@ -72,6 +72,8 @@ returns numeric language sql stable security invoker set search_path=pg_catalog,
     r.payload #> array(select jsonb_array_elements_text(pointer->'path')) end as amount) v
   where (r.business_id,r.provider,r.source_account,r.entity,r.source_key)=
     (anchor.business_id,anchor.provider,anchor.source_account,anchor.entity,pointer->>'recordKey')
+    and not exists(select from jsonb_array_elements(coalesce(pointer->'checks','[]'::jsonb)) c
+      where r.payload #> array(select jsonb_array_elements_text(c->'path')) is distinct from c->'value')
     and public.external_current_observation(r,e);
 $$;
 revoke all on function public.external_read_minor_price(public.external_records,jsonb) from public,anon;
@@ -97,7 +99,8 @@ language sql stable security invoker set search_path=pg_catalog,public as $$
  left join lateral (
    select (array_agg(c.item))[1] as item,(array_agg(c.size_option))[1] as size_option,
      bool_or(l.evidence ? 'price_source') as price_attested,
-     (array_agg(public.external_read_minor_price(r,l.evidence->'price_source')))[1] as source_price
+     (array_agg(case when public.external_current_observation(r,e)
+       then public.external_read_minor_price(r,l.evidence->'price_source') end))[1] as source_price
    from public.external_record_links l
    join public.external_records r on (r.business_id,r.provider,r.id)=(l.business_id,l.provider,l.record_id)
    left join public.external_resources e on (e.business_id,e.provider,e.source_account,e.resource)=
@@ -113,7 +116,7 @@ language sql stable security invoker set search_path=pg_catalog,public as $$
      and md5(l.native_key::text)=md5(jsonb_build_object('id',m.id)::text)
      and l.relation='native_identity' and l.valid_until is null
      and l.evidence->>'value'=m.pos_item_id
-     and ((l.evidence ? 'price_source' and m.is_active and public.external_current_observation(r,e))
+     and ((l.evidence ? 'price_source' and m.is_active)
        or (r.provider='toast' and r.entity='menus/v2/menus' and r.payload_origin='provider'
          and m.toast_publication_state='active'
          and r.source_updated_at=public.toast_time_or_null(m.toast_publication_version)

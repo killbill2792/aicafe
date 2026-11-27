@@ -117,29 +117,5 @@ begin
   return state.revision+1;
 end $$;
 
--- Use the revision that completed the traversal. A concurrent replacement
--- fails the read instead of certifying a truncated window as complete.
-create function public.external_read_observation(
-  p_business_id uuid,p_provider text,p_account text,p_resource text,p_stream text,p_revision bigint,p_after uuid
-) returns table(record_id uuid,payload jsonb)
-language plpgsql stable security invoker set search_path=pg_catalog,public as $$
-declare observation uuid;
-begin
-  select c.last_complete_observation_id into observation from public.external_sync_checkpoints c
-    where (c.business_id,c.provider,c.source_account,c.resource,c.stream,c.revision)=
-      (p_business_id,p_provider,p_account,p_resource,p_stream,p_revision)
-      and c.active_observation_id is null;
-  if observation is null then raise exception 'Stale external observation' using errcode='40001'; end if;
-  return query
-    select r.id,r.payload from public.external_observation_members m
-    join public.external_records r on (r.business_id,r.provider,r.id)=(m.business_id,m.provider,m.record_id)
-    where (m.business_id,m.provider,m.observation_id)=(p_business_id,p_provider,observation)
-      and (r.source_account,r.entity)=(p_account,p_resource)
-      and (p_after is null or m.record_id>p_after)
-    order by m.record_id limit 500;
-end $$;
-revoke all on function public.external_read_observation(uuid,text,text,text,text,bigint,uuid) from public,anon,authenticated;
-grant execute on function public.external_read_observation(uuid,text,text,text,text,bigint,uuid) to service_role;
-
 comment on column public.external_resources.last_complete_commit is
   'Receipt of the latest completed observation across all its pages. For scoped reads, match the intended stream and coverage.';

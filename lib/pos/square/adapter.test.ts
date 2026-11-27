@@ -55,6 +55,14 @@ describe("Square processing fees", () => {
       .toMatchObject({ processingFeeStatus: "missing" });
   });
 
+  it("distinguishes a missing amount in a fee entry from an explicit zero", async () => {
+    const payment = { order_id: "order-1", status: "COMPLETED", source_type: "CARD" };
+    expect(await fetchWithPayments([{ ...payment, processing_fee: [{}] }]))
+      .toMatchObject({ processingFeeStatus: "missing" });
+    expect(await fetchWithPayments([{ ...payment, processing_fee: [{ amount_money: { amount: 0 } }] }]))
+      .toMatchObject({ processingFeeCents: 0, processingFeeStatus: "actual" });
+  });
+
   it("ignores failed/canceled attempts when a completed payment is valid", async () => {
     expect(await fetchWithPayments([
       { order_id: "order-1", status: "FAILED", source_type: "CARD" },

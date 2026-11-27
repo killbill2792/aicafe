@@ -31,12 +31,12 @@ export async function openSourceStream(db: SupabaseClient, source: Source, resou
       if (typeof saved !== "number" || saved !== revision + 1) throw new Error("External checkpoint was not confirmed");
       revision = saved;
     },
-    async completedRecords(): Promise<unknown[]> {
+    async completedRecords(expectedScope: ObservationScope, mode: ObservationMode): Promise<unknown[]> {
       const records: unknown[] = [];
       let after: string | null = null;
       for (;;) {
         const {data, error: failure}: {data: unknown; error: unknown} = await db.rpc("external_read_observation", {
-          ...scope, p_revision: revision, p_after: after,
+          ...scope, p_revision: revision, p_after: after, p_scope: expectedScope, p_mode: mode,
         });
         if (failure || !Array.isArray(data)) throw failure ?? new Error("Missing external observation");
         records.push(...data.map(row => row.payload));
@@ -56,11 +56,13 @@ export class SourceRetryDeferred extends Error {
 }
 
 type ObservationScope = Readonly<Record<string, string>>;
-type CursorState = {cursor: string; scope: ObservationScope};
+type ObservationMode = "snapshot" | "window" | "incremental";
+type CursorState = {cursor: string; scope: ObservationScope; mode: ObservationMode};
 type SourceSync = {
   capability: ResourceCapability;
   stream: string;
   scope: ObservationScope;
+  mode?: ObservationMode;
   authorize: () => Promise<string | number | void>;
   observe: (cursor: string | null, scope: ObservationScope) => Promise<{records: SourceRecord[]; next: string | null}>;
   failure: (error: unknown) => {status: Availability; retryAt?: string; resetCursor?: boolean};
@@ -72,9 +74,13 @@ function pendingObservation(value: unknown): CursorState | null {
   if (typeof value.cursor !== "string" || !value.cursor || !("scope" in value) ||
     !value.scope || typeof value.scope !== "object" || Array.isArray(value.scope) ||
     Object.values(value.scope).some(part => typeof part !== "string")) {
-    throw new Error("Invalid external checkpoint");
+    return null;
   }
-  return {cursor: value.cursor, scope: value.scope as ObservationScope};
+  const mode = "mode" in value ? value.mode : "snapshot";
+  if (mode !== "snapshot" && mode !== "window" && mode !== "incremental") {
+    return null;
+  }
+  return {cursor: value.cursor, scope: value.scope as ObservationScope, mode};
 }
 
 /** Complete a saved observation in its original query scope before moving to
@@ -88,21 +94,24 @@ export async function synchronizeSource(db: SupabaseClient, source: Source, plan
   if(scheduleError)throw scheduleError;
   if(schedule?.retry_at&&Date.parse(schedule.retry_at)>Date.now())throw new SourceRetryDeferred(schedule.retry_at);
   const stream = await openSourceStream(db, source, resource, plan.stream);
-  const pending = pendingObservation(stream.cursor);
+  const mode = plan.mode ?? "snapshot";
+  const saved = pendingObservation(stream.cursor);
+  const pending = saved?.mode === mode ? saved : null;
+  const hasSavedTraversal = stream.cursor != null && !(typeof stream.cursor === "object" &&
+    "cursor" in stream.cursor && stream.cursor.cursor === null);
   let cursor = pending?.cursor ?? null;
   const observe = async (scope: ObservationScope) => {
     await readProviderPages(async current => {
       const page = await readWithSourceAccess(plan.authorize,()=>plan.observe(current,scope));
       return {items: [], next: page.next, commit: async () => {
-        await stream.commit(page.records, {cursor: page.next, scope}, page.next === null);
+        await stream.commit(page.records, {cursor: page.next, scope, mode}, page.next === null);
         cursor = page.next;
       }};
     }, cursor);
   };
   try {
-    // Older checkpoints stored a token without its query. Restart the traversal
-    // because the token cannot prove coverage for this run's requested scope.
-    if (typeof stream.cursor === "string" && stream.cursor) {
+    // An older or malformed token cannot prove coverage for this scope and mode.
+    if (hasSavedTraversal && !pending) {
       await plan.authorize();
       await stream.commit([], null, false);
     }
@@ -110,7 +119,7 @@ export async function synchronizeSource(db: SupabaseClient, source: Source, plan
     if (!pending || JSON.stringify(Object.entries(pending.scope).sort()) !==
         JSON.stringify(Object.entries(plan.scope).sort())) await observe(plan.scope);
     if (!plan.readCompleted) return [];
-    return await readWithSourceAccess(plan.authorize,()=>stream.completedRecords());
+    return await readWithSourceAccess(plan.authorize,()=>stream.completedRecords(plan.scope,mode));
   } catch (error) {
     // A concurrent successful worker owns the new revision and availability.
     if (error && typeof error === "object" && "code" in error && error.code === "40001") throw error;

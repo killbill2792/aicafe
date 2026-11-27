@@ -59,6 +59,55 @@ begin
     null,true,'[{"key":"notice-1","payload":{"appendix":{"unfamiliar title":[null,2]}}}]');
   if (select count(*) from public.external_read_observation(cafe,'fixture-provider','merchant:4','public_documents','city',2,null))<>2 then
     raise exception 'Overlapping observation overwrote prior membership'; end if;
+
+  -- The same merchant object can occur in more than one coverage window.
+  -- A valid late change may advance the original, but cannot silently change
+  -- the payload certified by the earlier receipt.
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:a',0,
+    '{"mode":"window","scope":{"location":"a","from":"2026-10-01","through":"2026-10-02"}}',true,
+    '[{"key":"order-1","updated_at":"2026-10-02T12:00:00Z","payload":{"amount":700}}]');
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:a',1,
+    '{"mode":"window","scope":{"location":"a","from":"2026-10-02","through":"2026-10-03"},"cursor":"next"}',false,'[]');
+  if not exists(select from public.external_read_observation(cafe,'square','merchant:7','orders','location:a',1,null,
+    '{"location":"a","from":"2026-10-01","through":"2026-10-02"}','window') where payload->>'amount'='700') then
+    raise exception 'Starting a traversal discarded the previous completed receipt';
+  end if;
+  begin
+    perform public.external_commit_page(cafe,'square','merchant:7','orders','location:a',2,
+      '{"mode":"window","scope":{"location":"b","from":"2026-10-02","through":"2026-10-03"}}',true,'[]');
+    raise exception 'Accepted a changed scope on a continuation';
+  exception when raise_exception then
+    if sqlerrm<>'External page does not match the active observation scope' then raise; end if;
+  end;
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','modified:a',0,
+    '{"mode":"incremental","scope":{"location":"a","modified_from":"2026-10-03"}}',true,
+    '[{"key":"order-1","updated_at":"2026-10-03T12:00:00Z","payload":{"amount":600}}]');
+  begin
+    perform public.external_read_observation(cafe,'square','merchant:7','orders','location:a',1,null,
+      '{"location":"a","from":"2026-10-01","through":"2026-10-02"}','window');
+    raise exception 'Returned a payload that the window did not observe';
+  exception when object_not_in_prerequisite_state then null; end;
+  begin
+    perform public.external_read_observation(cafe,'square','merchant:7','orders','modified:a',1,null,
+      '{"location":"b","modified_from":"2026-10-03"}','incremental');
+    raise exception 'Accepted another location as completed coverage';
+  exception when serialization_failure then null; end;
+  if exists(select from public.external_records r join public.external_resources e
+       on (r.business_id,r.provider,r.source_account,r.entity)=(e.business_id,e.provider,e.source_account,e.resource)
+       where r.business_id=cafe and r.source_account='merchant:7' and public.external_current_observation(r,e))
+     or not exists(select from public.external_read_observation(cafe,'square','merchant:7','orders','modified:a',1,null,
+       '{"location":"a","modified_from":"2026-10-03"}','incremental') where payload->>'amount'='600') then
+    raise exception 'An incremental receipt became unscoped current evidence or lost its observed payload';
+  end if;
+  perform public.external_commit_page(cafe,'square','merchant:7','orders','location:a',2,
+    '{"mode":"window","scope":{"location":"a","from":"2026-10-02","through":"2026-10-03"}}',true,
+    '[{"key":"order-1","updated_at":"2026-10-02T12:00:00Z","payload":{"amount":700}}]');
+  begin
+    perform public.external_read_observation(cafe,'square','merchant:7','orders','location:a',3,null,
+      '{"location":"a","from":"2026-10-02","through":"2026-10-03"}','window');
+    raise exception 'A stale provider page certified a newer payload';
+  exception when object_not_in_prerequisite_state then null; end;
+
   perform public.external_commit_page(other,'fixture-provider','merchant:4','activity','one',0,null,true,
     '[{"key":"not-a-guid","payload":{"private":true}}]');
   perform public.external_commit_page(cafe,'fixture-provider','merchant:4','annotations','one',0,null,true,
@@ -141,10 +190,11 @@ begin
   perform public.external_commit_page(cafe,'square','merchant:6','catalog','location:6',0,null,true,
     '[{"key":"square-item","payload":{"item_data":{"name":"Provider label"}},"identifiers":[
      {"namespace":"pos_item_id","value":"square-variation","selector":{"path":["item_data"]}}]},
-      {"key":"square-variation","payload":{"item_variation_data":{"price_money":{"amount":625}}}}]');
+      {"key":"square-variation","payload":{"version":7,"item_variation_data":{"price_money":{"amount":625}}}}]');
   perform public.external_bind_native_identities(cafe,'square','merchant:6','catalog','pos_item_id',
     'public.menu_items',jsonb_build_array(jsonb_build_object('native_id',square_item,'source_id','square-variation',
-     'price_source','{"recordKey":"square-variation","path":["item_variation_data","price_money","amount"]}'::jsonb)));
+     'price_source','{"recordKey":"square-variation","path":["item_variation_data","price_money","amount"],
+        "checks":[{"path":["version"],"value":7}]}'::jsonb)));
   perform set_config('request.jwt.claim.sub',owner_id::text,true);
   perform set_config('app.supervisor_research_business_id',cafe::text,true);
   set local role authenticated;
@@ -164,5 +214,19 @@ begin
     raise exception 'Menu used a copied or foreign price instead of the exact archived Square value'; end if;
   if has_function_privilege('authenticated','public.external_commit_page(uuid,text,text,text,text,bigint,jsonb,boolean,jsonb)','execute') then
     raise exception 'Owner has archive write privilege'; end if;
+  reset role;
+  perform public.external_commit_page(cafe,'square','merchant:6','catalog','location:6',1,
+    '{"cursor":"page-2","scope":{}}',false,'[]');
+  set local role authenticated;
+  if not exists(select from public.menu_catalog_for(cafe) c where c.id=square_item and c.price_cents is null) then
+    raise exception 'Menu fell back to a copied price after losing current catalog coverage'; end if;
+  reset role;
+  perform public.external_commit_page(cafe,'square','merchant:6','catalog','location:6',2,
+    '{"cursor":null,"scope":{}}',true,
+    '[{"key":"square-item","payload":{"item_data":{"name":"Provider label"}}},
+      {"key":"square-variation","payload":{"version":8,"item_variation_data":{"price_money":{"amount":620}}}}]');
+  set local role authenticated;
+  if not exists(select from public.menu_catalog_for(cafe) c where c.id=square_item and c.price_cents is null) then
+    raise exception 'Menu resolved a price path from a different catalog version'; end if;
 end $$;
 rollback;

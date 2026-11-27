@@ -55,10 +55,13 @@ describe("shared external observation",()=>{
     expect(observe.mock.calls).toEqual([["opaque token",{edition:"first"}],[null,{edition:"revised"}]]);
     expect(result).toEqual([first.payload,second.payload]);
     expect(rpc.mock.calls.filter(([name])=>name==="external_commit_page").map(([,p])=>p.p_next)).toEqual([
-      {cursor:"opaque token",scope:{edition:"first"}},
-      {cursor:null,scope:{edition:"first"}},
-      {cursor:null,scope:{edition:"revised"}},
+      {cursor:"opaque token",scope:{edition:"first"},mode:"snapshot"},
+      {cursor:null,scope:{edition:"first"},mode:"snapshot"},
+      {cursor:null,scope:{edition:"revised"},mode:"snapshot"},
     ]);
+    expect(rpc).toHaveBeenCalledWith("external_read_observation",expect.objectContaining({
+      p_scope:{edition:"revised"},p_mode:"snapshot",
+    }));
   });
 
   it("discards a page when the source grant changes while fetching",async()=>{

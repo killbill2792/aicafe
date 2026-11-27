@@ -55,6 +55,7 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
     });
     const records = await synchronizeSource(db,source,{
       capability:{resource,permission},stream:location,scope:{location,query:JSON.stringify(query)},
+      mode:resource==="catalog"?"snapshot":"window",
       authorize,readCompleted:true,
       observe:async (cursor,scope)=>{
         const savedQuery:unknown=JSON.parse(scope.query);

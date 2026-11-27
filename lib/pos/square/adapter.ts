@@ -2,7 +2,7 @@ import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import { squarePaginated, squareRequest } from "./client";
 import type {squareArchive} from "./sourceArchive.server";
-import type { PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
+import type { CatalogPriceSource, PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
 
 type SquareMoney = { amount?: number; currency?: string };
 type SquareOrderLineItem = {
@@ -55,8 +55,12 @@ function classifySquarePaymentFee(payment: SquarePayment): { applicable: boolean
     return { applicable: true, complete: true, amountCents: 0 };
   }
 
-  if (payment.processing_fee !== undefined) {
-    const signedNet = payment.processing_fee.reduce((sum, entry) => sum + cents(entry.amount_money), 0);
+  if (Array.isArray(payment.processing_fee)) {
+    const amounts = payment.processing_fee.map(entry => entry?.amount_money?.amount);
+    if (!amounts.every((amount): amount is number => typeof amount === "number" && Number.isSafeInteger(amount))) {
+      return { applicable: true, complete: false, amountCents: 0 };
+    }
+    const signedNet = amounts.reduce((sum, amount) => sum + amount, 0);
     return { applicable: true, complete: true, amountCents: normalizeSquareProcessingFeeCents(signedNet) };
   }
 
@@ -166,7 +170,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
 
     async fetchCatalogItems(): Promise<PosCatalogItem[]> {
       type CatalogObject={
-        id:string;type:string;
+        id:string;type:string;version?:number;
         category_data?:{name?:string};
         modifier_data?:{name?:string;price_money?:SquareMoney};
         modifier_list_data?:{name?:string;modifiers?:Array<{id?:string;modifier_data?:{name?:string;price_money?:SquareMoney}}>;selection_type?:string};
@@ -211,7 +215,8 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         const variations=object.item_data?.variations??[];
         for(const [index,variation] of variations.entries()){
           if(!variation.id)continue;
-          const separate=byId.get(variation.id)?.item_variation_data;
+          const separateRecord=byId.get(variation.id);
+          const separate=separateRecord?.item_variation_data;
           const v=separate??variation.item_variation_data;
           const override=v?.location_overrides?.findIndex(row=>row.location_id===locationId&&row.price_overrides)??-1;
           const overrideAmount=v?.location_overrides?.[override]?.price_money?.amount;
@@ -219,9 +224,18 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           const basePath=separate?["item_variation_data"]:["item_data","variations",String(index),"item_variation_data"];
           const path=overrideAmount==null?[...basePath,"price_money","amount"]:
             [...basePath,"location_overrides",String(override),"price_money","amount"];
+          const version=separate ? separateRecord?.version : object.version;
+          const checks:NonNullable<CatalogPriceSource["checks"]>=[];
+          if(version!==undefined)checks.push({path:["version"],value:version});
+          if(!separate)checks.push({path:["item_data","variations",String(index),"id"],value:variation.id});
+          if(overrideAmount!=null){
+            const overridePath=[...basePath,"location_overrides",String(override)];
+            checks.push({path:[...overridePath,"location_id"],value:locationId},
+              {path:[...overridePath,"price_overrides"],value:true});
+          }
           const size=v?.name??null;
           items.push({posItemId:variation.id,name:base,baseName:base,sizeLabel:size,
-            priceCents,priceSource:priceCents===null?null:{recordKey:separate?variation.id:object.id,path},
+            priceCents,priceSource:priceCents===null?null:{recordKey:separate?variation.id:object.id,path,checks},
             category:categories.get(object.item_data?.category_id??"")??null,
             description:object.item_data?.description??null,
             pricingStrategy:v?.pricing_type??null,
