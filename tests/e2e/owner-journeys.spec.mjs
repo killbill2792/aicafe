@@ -2213,8 +2213,9 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
     const nativeNode=(type,props,children=[])=>({type,props,children});
     const forecastExpr={$computed:"calculate",args:{inputs:[{name:"sales",unit:"cents",value:1000000},{name:"factor",unit:"ratio",value:{$state:"/factor"}}],steps:[{id:"forecast",op:"multiply",args:["sales","factor"]}],format:"currency",currency:owner.currency}};
     const nativeSpec={root:"card",state:{factor:1.1,show:false,dialog:false},elements:{
-      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details","grid","code","openDialog","dialog","ledger","unformatted","fallback"]),
+      card:nativeNode("Card",{title:"Interactive growth forecast"},["slider","value","button","details","grid","code","openDialog","dialog","ledger","ordersMetric","unformatted","fallback"]),
       ledger:nativeNode("Table",{columns:["Native account","Amount"],rows:[["Sales",120.25],["Refund",-12.5],["Zero",0],["Missing",null]],caption:"Native accounting ledger"}),
+      ordersMetric:nativeNode("LunaChart",{kind:"metric",title:"Orders without currency or date",unit:"count",points:[{label:"Orders",value:17}]}),
       unformatted:nativeNode("Text",{text:125}),
       fallback:nativeNode("LunaFallback",{widget:"IncomeStatement",values:{title:"Fallback income statement",columns:["Account","Amount"],rows:[["Fallback revenue",7654],["Fallback expense",-321]]}}),
       grid:nativeNode("Grid",{columns:4,gap:"sm"},["a","b","c","d"]),
@@ -2258,6 +2259,9 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       const ledger=widget.getByRole("table").filter({hasText:"Native account"});
       await expect(widget.getByText("Native accounting ledger",{exact:true})).toBeVisible();
       await expect(widget.getByText("125",{exact:true})).toBeVisible();
+      const orders=widget.locator("figure").filter({hasText:"Orders without currency or date"});
+      await expect(orders.getByText("17",{exact:true})).toBeVisible();
+      await expect(widget.getByText("asOf",{exact:true})).toHaveCount(0);
       const fallback=widget.getByRole("table").filter({hasText:"Fallback revenue"});
       await expect(fallback.getByRole("cell",{name:"7654",exact:true})).toBeVisible();
       await expect(fallback.getByRole("cell",{name:"-321",exact:true})).toBeVisible();
@@ -2265,7 +2269,7 @@ test("@home Task16E adaptive answer survives reload, preserves prose and opens a
       for(const value of ["120.25","-12.5","0","Not recorded"])await expect(ledger.getByRole("cell",{name:value,exact:true})).toBeVisible();
       const grid=widget.locator(".grid-cols-4");
       await expect(grid).toBeVisible();
-      const gridWidth=await grid.evaluate(el=>el.getBoundingClientRect().width);
+      const gridWidth=await grid.evaluate(el=>el.parentElement.getBoundingClientRect().width);
       expect(await grid.evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(gridWidth<=224?1:gridWidth<=512?2:4);
       expect(await ledger.evaluate(el=>getComputedStyle(el).tableLayout)).toBe("auto");
       const code=widget.getByText("Native muted surface",{exact:true});
