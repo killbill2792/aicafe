@@ -16,11 +16,11 @@ const doc={root:"doc",elements:{
 const patches=[{op:"add",path:"/root",value:doc.root},...Object.entries(doc.elements).map(([key,value])=>({op:"add",path:"/elements/"+key,value}))].map(v=>JSON.stringify(v)).join("\n");
 const intro="I prepared the accounting summary PDF below.\n\n";
 const fence=(lang:string,body:string)=>"\x60\x60\x60"+lang+"\n"+body+"\n\x60\x60\x60";
-async function replay(label:string,raw:string,terminalOnly=false){
+async function replay(label:string,raw:string,terminalOnly=false,streamOverride?:string){
  let calls=0;
  const provider:AgentProvider=async function*(){
   calls++;
-  const streamed=terminalOnly?intro:raw;
+  const streamed=streamOverride??(terminalOnly?intro:raw);
   for(let i=0;i<streamed.length;i+=7)yield {type:"response.output_text.delta",delta:streamed.slice(i,i+7)};
   yield {type:"response.output_item.done",item:{type:"message",role:"assistant",content:[{type:"output_text",text:raw,annotations:[]}]}};
   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
@@ -50,6 +50,14 @@ describe("deployed PDF delivery diagnostic (no provider, no production data)",()
  it("recovers a document available in the completed message but missing from text deltas",async()=>{
   const r=await replay("terminal-message-document",intro+fence("spec",patches)+"\n",true);
   expect(r.documents).toHaveLength(1);expect(r.pdfTitle).toBe("Diagnostic accounting statement");expect(r.pdfContainsData).toBe(true);
+ });
+ it("replaces a divergent streamed prefix with the complete authoritative document",async()=>{
+  const r=await replay("terminal-divergence",intro+fence("spec",patches)+"\n",false,"A different streamed answer.\n\n");
+  expect(r.documents).toHaveLength(1);expect(r.pdfTitle).toBe("Diagnostic accounting statement");expect(r.pdfContainsData).toBe(true);expect(r.result.text).not.toContain("different streamed answer");
+ },30000);
+ it("preserves unrelated JSON code blocks as prose",async()=>{
+  const r=await replay("ordinary-json",intro+fence("json",JSON.stringify({example:123})));
+  expect(r.documents).toHaveLength(0);expect(r.result.text).toContain('"example":123');
  });
  it("delivers alternative serializations with identical document content",async()=>{
   for(const [label,raw] of [
