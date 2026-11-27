@@ -426,3 +426,18 @@ it("keeps the visual-first owner instruction alongside the upstream web and PDF 
  expect(INLINE_PRESENTATION_HINT).not.toContain("A text-only answer is always appropriate");
  expect(INLINE_PRESENTATION_HINT).toContain("PDF documents:");
 });
+
+it("incorporates a same-thread message arriving during research without a second executor",async()=>{
+ let calls=0,read=0;const followUp={id:"follow-up",text:"Compare this month too."};
+ const rpc=vi.fn().mockResolvedValue({data:{ok:true,rows},error:null});
+ const provider:AgentProvider=async function*(params){
+  calls++;
+  if(calls===1){yield {type:"response.output_item.done",item:{type:"function_call",name:"run_sql",call_id:"costs",arguments:JSON.stringify({sql:"select category, amount_cents from expenses"})}};}
+  else {expect(JSON.stringify(params.input)).toContain(followUp.text);yield {type:"response.output_text.delta",delta:"Both months compared."};}
+  yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+ };
+ const turn=await runResearchTurn({ownerText:"Check expenses",cafeContext:"Cafe",provider,
+  scope:{db:{rpc} as never,businessId:"business",ownerUserId:"owner"},actions:{context:ctx as AgentToolContext,definitions:[]},
+  readFollowUps:async()=>++read>1?[followUp]:[]});
+ expect(calls).toBe(2);expect(turn.endReason).toBe("complete");expect(turn.absorbedOwnerMessageIds).toEqual([followUp.id]);expect(turn.text).toContain("Both months compared.");
+});
