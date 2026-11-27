@@ -48,6 +48,8 @@ describe('Luna repository boundary',()=>{
       export const second = module.require('@/lib/metrics/core');
       export const permissions = { require: () => true };
       export type LoaderModule = Module;
+      export type Callback = Function;
+      export type Evaluator = typeof eval;
     `);
     expect(run()).toEqual({status:0,errors:''});
   });
@@ -56,9 +58,13 @@ describe('Luna repository boundary',()=>{
     ["const loader = module.require; export { loader };", 'computed module loading'],
     ["const { require: loader } = module; export { loader };", 'computed module loading'],
     ["const loader = globalThis['require']; export { loader };", 'computed module loading'],
-    ["export { createRequire as loader } from 'node:module';", 'Node module loader'],
-    ["export const loader = import('module');", 'Node module loader'],
+    ["export { createRequire as loader } from 'node:module';", 'Node runtime loader'],
+    ["export const loader = import('module');", 'Node runtime loader'],
     ["export const lookup = process.getBuiltinModule;", 'computed module loading'],
+    ["export const evaluate = eval;", 'computed module loading'],
+    ["export const evaluate = new Function('return 1');", 'computed module loading'],
+    ["export const evaluate = globalThis['eval'];", 'computed module loading'],
+    ["export { compileFunction } from 'node:vm';", 'Node runtime loader'],
   ])('rejects unverifiable module loader references (%s)', (source, diagnostic)=>{
     put('lib/luna/runtime/index.ts',"export * from '../../adapter';");
     put('lib/adapter.ts',source);

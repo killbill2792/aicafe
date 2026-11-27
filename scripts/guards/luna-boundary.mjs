@@ -45,6 +45,7 @@ function snapshot(ref) {
 
 function imports(file, source) {
   const out = [];
+  const opaqueGlobals = new Set(['require', 'eval', 'Function']);
   function directLoader(call) {
     return ts.isCallExpression(call) &&
       ['require', 'module.require', 'import'].includes(call.expression.getText());
@@ -53,7 +54,7 @@ function imports(file, source) {
     if (ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)) {
       const receiver = node.expression.getText();
       const property = ts.isPropertyAccessExpression(node) ? node.name : node.argumentExpression;
-      if ((receiver === 'globalThis' || receiver === 'global') && property.text === 'require') return true;
+      if ((receiver === 'globalThis' || receiver === 'global') && opaqueGlobals.has(property.text)) return true;
       if (receiver === 'process' && property.text === 'getBuiltinModule') return true;
     }
     if (!ts.isIdentifier(node)) return false;
@@ -62,12 +63,13 @@ function imports(file, source) {
       if (parent.name.text === 'exports') return false;
       if (parent.parent.expression === parent && directLoader(parent.parent)) return false;
     }
-    if (node.text !== 'require' && node.text !== 'module') return false;
+    if (node.text !== 'module' && !opaqueGlobals.has(node.text)) return false;
     if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
     if (parent.name === node && !ts.isShorthandPropertyAssignment(parent)) return false;
     return parent.expression !== node || !directLoader(parent);
   }
   function visit(n) {
+    if (ts.isTypeReferenceNode(n) || ts.isTypeQueryNode(n)) return;
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) {
       const clause = n.importClause || n.exportClause;
       const members = clause?.namedBindings?.elements || clause?.elements;
@@ -117,8 +119,8 @@ export function graphErrors(tree, seeds) {
     const result = [];
     for (const spec of imports(file,tree.read(file))) {
       if (spec === null) { result.push({error:'computed module loading prevents dependency verification'}); continue; }
-      if (spec === 'node:module' || spec === 'module') {
-        result.push({error:'Node module loader prevents dependency verification'});
+      if (['node:module', 'module', 'node:vm', 'vm'].includes(spec)) {
+        result.push({error:'Node runtime loader or evaluator prevents dependency verification'});
         continue;
       }
       const found = ts.resolveModuleName(spec,root+'/'+file,options,host).resolvedModule;
