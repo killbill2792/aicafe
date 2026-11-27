@@ -92,7 +92,7 @@ export const menuPriceChangeCapability=registerLoopCapability({
     const {coveredDays,observedUnits,observedRevenueCents}=summarizeActualMenuSales(samples);
     const status=coveredDays===7&&windowComplete?"complete":
       windowComplete?"insufficient_evidence":"in_progress";
-    return {status,recommendation:"adjust" as const,source:"daily_rollups+order_lines",
+    return {status,recommendation:"adjust" as const,source:"daily_rollups+cv_item_sales",
       result:{productId:effect.productId,productName:effect.productName,
         oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
         coveredDays,windowDays:7,observedUnits,

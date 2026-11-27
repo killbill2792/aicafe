@@ -9,7 +9,7 @@ export type SourceLine={id:string;orderedAt:string|null;closedAt:string|null;
  toastExcluded:boolean;supersededBy:string|null};
 export type WindowEvidence={window:ElapsedWindow;status:"actual"|"insufficient_evidence";
  units:number|null;revenueCents:number|null;countedLines:number;
- unknownTimeLines:number;source:"order_lines.ordered_at";asOf:string;
+ unknownTimeLines:number;source:"cv_item_sales.ordered_at";asOf:string;
  segmentEndAt?:string};
 const DAY_MS=86400000;
 function instant(value:string):number{
@@ -55,7 +55,7 @@ export function summarizeElapsedWindow(window:ElapsedWindow,lines:readonly Sourc
   Number.isSafeInteger(revenue)&&Number.isFinite(units);
  return {window,status:complete?"actual":"insufficient_evidence",
   units:complete?units:null,revenueCents:complete?revenue:null,
-  countedLines,unknownTimeLines,source:"order_lines.ordered_at",asOf,
+  countedLines,unknownTimeLines,source:"cv_item_sales.ordered_at",asOf,
   ...(segmentEndAt===undefined?{}:{segmentEndAt:new Date(end).toISOString()})};
 }
 /** A source line with no usable order AND closure time could belong to
@@ -102,34 +102,30 @@ export async function readElapsedWindowObservations(db:SupabaseClient,
  if(segmentEndAt!==undefined&&(instant(segmentEndAt)<=instant(window.startAt)||
    instant(segmentEndAt)>instant(window.endAt)))throw new Error("invalid_exposure_segment");
  const interval={...window,endAt:segmentEndAt??window.endAt};
- const base=()=>db.from("order_lines")
-  .select("id,ordered_at,quantity,net_sales_cents,voided,orders!inner(closed_at,business_id,toast_excluded,superseded_by)",{count:"exact"})
-  .eq("menu_item_id",menuItemId).eq("orders.business_id",businessId)
-  .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
-  .eq("voided",false);
+ const base=()=>db.from("cv_item_sales")
+  .select("order_line_id,ordered_at,closed_at,quantity,net_sales_cents",{count:"exact"})
+  .eq("menu_item_id",menuItemId).eq("business_id",businessId).eq("status","actual");
  const [known,missing,unknownBoth,sourceCovered]=await Promise.all([
   base().gte("ordered_at",window.startAt).lt("ordered_at",interval.endAt)
    .limit(10000),
   // A line with an unknown order time may close AFTER this window. Its
   // missing source timestamp cannot be silently excluded from earlier sales.
-  base().is("ordered_at",null).gte("orders.closed_at",window.startAt)
-   .lte("orders.closed_at",asOf).limit(10000),
+  base().is("ordered_at",null).gte("closed_at",window.startAt)
+   .lte("closed_at",asOf).limit(10000),
   // With neither source time present, no window can be certified without
   // inventing when the sale happened. Count these source rows separately.
-  base().is("ordered_at",null).is("orders.closed_at",null).limit(1),
+  base().is("ordered_at",null).is("closed_at",null).limit(1),
   verifiedWindowSourceCoverage(db,businessId,timezone,interval),
  ]);
  if(known.error||missing.error||unknownBoth.error)
   throw new Error("rolling_sales_source_read_failed");
  const completePages=[known,missing].every(r=>r.count!==null&&
   r.count===(r.data?.length??0));
- const rows=[...(known.data??[]),...(missing.data??[])].map(row=>{
-  const order=Array.isArray(row.orders)?row.orders[0]:row.orders;
-  return {id:row.id,orderedAt:row.ordered_at,closedAt:order?.closed_at??null,
-   quantity:Number(row.quantity),netSalesCents:Number(row.net_sales_cents),
-   voided:row.voided,toastExcluded:Boolean(order?.toast_excluded),
-   supersededBy:order?.superseded_by??null};
- });
+ const rows=[...(known.data??[]),...(missing.data??[])].map(row=>({
+  id:row.order_line_id,orderedAt:row.ordered_at,closedAt:row.closed_at,
+  quantity:Number(row.quantity),netSalesCents:Number(row.net_sales_cents),
+  voided:false,toastExcluded:false,supersededBy:null,
+ }));
  const measured=summarizeElapsedWindow(window,rows,sourceCovered&&completePages,asOf,segmentEndAt);
  return withUnattributedSourceLines(measured,
   (unknownBoth.count??0)>0?1:0,completePages);

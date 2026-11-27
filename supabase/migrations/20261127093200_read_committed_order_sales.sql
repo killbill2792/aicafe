@@ -62,13 +62,15 @@ revoke all on function public.toast_committed_order_net_cents(jsonb) from public
 grant execute on function public.toast_committed_order_net_cents(jsonb) to authenticated,service_role;
 
 create function public.toast_committed_line_values(p_order jsonb,p_selection text)
-returns table(quantity numeric,net_sales_cents bigint,display_name text)
-language sql immutable strict parallel safe security invoker set search_path=pg_catalog,public as $$
+returns table(quantity numeric,net_sales_cents bigint,display_name text,ordered_at timestamptz)
+language sql stable strict security invoker set search_path=pg_catalog,public as $$
  select (case when jsonb_typeof(p.raw->'quantity')='number' then (p.raw->>'quantity')::numeric end),
   public.toast_json_dollars_to_cents(p.raw->'price')-
    case when p.raw->'refundDetails'->'refundAmount' is null or p.raw->'refundDetails'->'refundAmount'='null'::jsonb then 0
     else public.toast_json_dollars_to_cents(p.raw->'refundDetails'->'refundAmount') end,
-  nullif(btrim(p.raw->>'displayName'),'')
+  nullif(btrim(p.raw->>'displayName'),''),
+  case when p.raw->>'createdDate' ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+   then public.toast_time_or_null(p.raw->>'createdDate') end
  from (
   select x.raw,count(*) over() as matches
   from jsonb_array_elements(case when jsonb_typeof(p_order->'checks')='array'
@@ -128,10 +130,15 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   'modifiers',l.modifiers,'voided',l.voided,
   'evidence',case when p.net_sales_cents is not null then 'committed_order'
     when o.pos_order_id like 'toast:%' then 'historical_projection' else 'app_record' end) as data,
- t.order_duration_seconds,t.item_taxes,t.modifier_prices
+ t.order_duration_seconds,t.item_taxes,t.modifier_prices,
+ l.id as order_line_id,l.menu_item_id,
+ case when body.payload is null then l.ordered_at else p.ordered_at end as ordered_at,
+ case when body.payload is null then o.closed_at
+  when body.payload->>'closedDate' ~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+   then public.toast_time_or_null(body.payload->>'closedDate') end as closed_at
  from public.order_lines l join public.orders o on o.id=l.order_id
- left join lateral public.toast_committed_line_values(
-  public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date),l.pos_line_id) p on true
+ cross join lateral (select public.toast_committed_order_body(o.business_id,o.pos_order_id,o.business_date) as payload offset 0) body
+ left join lateral public.toast_committed_line_values(body.payload,l.pos_line_id) p on true
  left join public.toast_current_typed_order_facts_v t
   on t.business_id=o.business_id and t.business_date=o.business_date
   and t.order_guid::text=regexp_replace(o.pos_order_id,'^toast:[^:]+:','')
@@ -143,7 +150,7 @@ create or replace view public.cv_item_sales (business_id,source,source_ref,statu
   null::bigint,null::numeric,
   jsonb_build_object('kind','modified_order','order_guid',m.order_guid,
    'reviewed_at',m.last_checked_at,'staging_state',m.state),
-  null::bigint,null::jsonb,null::jsonb
+  null::bigint,null::jsonb,null::jsonb,null::uuid,null::uuid,null::timestamptz,null::timestamptz
  from public.toast_modified_orders_staging m
  join public.businesses b on b.id=m.business_id
  where m.state='review_required';

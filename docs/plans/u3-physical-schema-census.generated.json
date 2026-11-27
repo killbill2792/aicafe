@@ -3831,6 +3831,26 @@
      "modifier_prices",
      "jsonb",
      false
+    ],
+    [
+     "order_line_id",
+     "uuid",
+     false
+    ],
+    [
+     "menu_item_id",
+     "uuid",
+     false
+    ],
+    [
+     "ordered_at",
+     "timestamp with time zone",
+     false
+    ],
+    [
+     "closed_at",
+     "timestamp with time zone",
+     false
     ]
    ],
    "relation": "cv_item_sales",

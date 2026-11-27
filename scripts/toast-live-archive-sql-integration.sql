@@ -30,9 +30,11 @@ BEGIN
    'paymentStatus','CLOSED','amount',12.65,'appliedServiceCharges',jsonb_build_array(
     jsonb_build_object('serviceChargeCategory','FUNDRAISING_CAMPAIGN','chargeAmount',1)),
    'selections',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0012',
-    'displayName','Strawberry Matcha','quantity',1,'price',7.65,'preDiscountPrice',8.5,'refundDetails',jsonb_build_object('refundAmount',0.40),
+    'displayName','Strawberry Matcha','createdDate','2026-11-03T20:55:00.000+0000',
+    'quantity',1,'price',7.65,'preDiscountPrice',8.5,'refundDetails',jsonb_build_object('refundAmount',0.40),
     'appliedDiscounts',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0013',
-     'name','Dental Students & Faculty','discountAmount',0.85))),jsonb_build_object('deferred',true,'price',2)),
+     'name','Dental Students & Faculty','discountAmount',0.85))),jsonb_build_object('deferred',true,'price',2),
+    jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0015','displayName','No recorded sale time','quantity',1,'price',0)),
    'payments',jsonb_build_array(jsonb_build_object('guid','eeeeeeee-1111-4eee-8eee-eeeeeeee0014',
     'type','CREDIT','paymentStatus','CAPTURED','amount',7.65,'tipAmount',1,'refund',jsonb_build_object('refundAmount',1.50))))));
  o1_tip:=jsonb_set(jsonb_set(o1,'{checks,0,payments,0,tipAmount}','2'::jsonb),
@@ -134,8 +136,9 @@ BEGIN
  values(b,loc,'toast:'||r::text||':'||ord::text,d,now(),9999,9999) returning id into app_order;
  insert into public.menu_items(business_id,name,base_name,price_cents,category)
  values(b,'Independent recipe','Independent recipe',750,'drink') returning id into app_item;
- insert into public.order_lines(order_id,menu_item_id,pos_line_id,name,quantity,net_sales_cents,voided)
- values(app_order,app_item,'eeeeeeee-1111-4eee-8eee-eeeeeeee0012','Old copied name',9,9999,false);
+ insert into public.order_lines(order_id,menu_item_id,pos_line_id,name,quantity,net_sales_cents,voided,ordered_at)
+ values(app_order,app_item,'eeeeeeee-1111-4eee-8eee-eeeeeeee0012','Old copied name',9,9999,false,now()),
+  (app_order,null,'eeeeeeee-1111-4eee-8eee-eeeeeeee0015','No recorded sale time',1,0,false,now());
  perform pg_temp.assert_true((select net_sales_cents=815 and guest_count=3 and dining_option='Dine In'
   and data->>'evidence'='committed_order' from public.cv_orders where business_id=b and order_ref=app_order::text),
   'committed source drives order revenue including fundraising, deferred items and payment refunds');
@@ -145,6 +148,13 @@ BEGIN
  perform pg_temp.assert_true((select quantity=1 and net_sales_cents=725 from public.cv_item_sales_daily
   where business_id=b and business_date=d and menu_item_id=app_item),
   'the same selection drives the sold item total');
+ perform pg_temp.assert_true((select ordered_at=timestamptz '2026-11-03T20:55:00Z'
+  and closed_at=timestamptz '2026-11-03T21:00:00Z' from public.cv_item_sales
+  where business_id=b and menu_item_id=app_item and order_line_id is not null),
+  'source timestamps override copied clock values for elapsed sales windows');
+ perform pg_temp.assert_true((select ordered_at is null and closed_at=timestamptz '2026-11-03T21:00:00Z'
+  from public.cv_item_sales where business_id=b and menu_item_id is null and order_line_id is not null),
+  'a missing original sale time stays unknown even when a stored projection has one');
  perform pg_temp.assert_true(public.toast_committed_order_net_cents('{"checks":[{}]}') is null,
   'a missing original check amount cannot certify zero');
 
