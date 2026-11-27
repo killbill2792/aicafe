@@ -47,9 +47,11 @@ export function presentationSpec(p:RichPresentation):Spec{
 type DisplayPanel=Omit<PresentationPanel,"from"|"to"|"asOf">&Partial<Pick<PresentationPanel,"from"|"to"|"asOf">>;
 function Panel({panel,locale}:{panel:DisplayPanel;locale:string}){
  const evidenceId=useId(),coverageId=useId();
- const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
-  {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
- const format=(v:number)=>formatter.format(["cents","cents/hour"].includes(panel.unit)?v/100:v)+(["cents","cents/hour"].includes(panel.unit)&&!panel.currency?" (currency not set)":"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
+ const money=["cents","cents/hour"].includes(panel.unit);
+ const currency=money&&panel.currency&&/^[A-Za-z]{3}$/.test(panel.currency)?panel.currency:null;
+ const formatter=new Intl.NumberFormat(locale,currency?
+  {style:"currency",currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
+ const format=(v:number)=>formatter.format(money?v/100:v)+(money&&!currency?(panel.currency?" "+panel.currency:" (currency not set)"):"")+(panel.unit==="cents/hour"?" / h":["seconds","minutes","hours","days","units","items","ratio","ratio squared","indicator"].includes(panel.unit)?" "+(panel.measurement??panel.unit):"");
  const detailsLabel=({en,es,ar}[locale as "en"|"es"|"ar"]??en).Home.chatStartDetails;
  const table=<div role="region" aria-label={panel.title} tabIndex={0} className="overflow-x-auto overscroll-x-contain focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ink"><table aria-describedby={panel.coverage&&panel.source!=="response_evidence"?coverageId+" "+evidenceId:evidenceId} className="w-full text-[1.0625rem] tabular-nums"><caption className="sr-only">{panel.title}</caption>
     <thead><tr><th scope="col" className="py-2 text-start">{copy.categoryLabel}</th><th scope="col" className="py-2 text-end">{copy.valueLabel}{panel.currency?" ("+panel.currency+")":panel.measurement?" ("+panel.measurement+")":""}</th></tr></thead>
