@@ -1,3 +1,4 @@
+import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import { squarePaginated, squareRequest } from "./client";
 import type { PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
@@ -175,19 +176,13 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
           modifier_list_info?:Array<{modifier_list_id?:string;min_selected_modifiers?:number;max_selected_modifiers?:number}>};
       };
       const savePage = await params.archive?.("catalog");
-      const all:CatalogObject[]=[];
-      let cursor:string|undefined;
-      for(let i=0;i<50;i++){
-        const search=new URLSearchParams({types:"ITEM,ITEM_VARIATION,CATEGORY,MODIFIER_LIST,MODIFIER"});
-        if(cursor)search.set("cursor",cursor);
-        const page=await squareRequest<{objects?:CatalogObject[];cursor?:string}>(
-          accessToken,"/v2/catalog/list?"+search.toString());
-        await savePage?.(page.objects ?? [],page.cursor ?? null);
-        all.push(...(page.objects??[]));
-        if(!page.cursor)break;
-        cursor=page.cursor;
-        if(i===49)throw new Error("Square catalog pagination incomplete");
-      }
+      const all = await readProviderPages<CatalogObject>(async cursor => {
+        const search = new URLSearchParams();
+        if (cursor) search.set("cursor",cursor);
+        const page = await squareRequest<{objects?:CatalogObject[];cursor?:string}>(
+          accessToken,"/v2/catalog/list"+(search.size ? "?"+search : ""));
+        return {items:page.objects ?? [], next:page.cursor ?? null};
+      }, savePage);
       const byId=new Map(all.map(row=>[row.id,row]));
       const categories=new Map(all.filter(row=>row.type==="CATEGORY")
         .map(row=>[row.id,row.category_data?.name??"Uncategorized"]));
@@ -247,9 +242,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
       type Raw={id?:string;published_shift_details?:{location_id?:string;team_member_id?:string;
         job_id?:string;start_at?:string;end_at?:string;is_deleted?:boolean}};
       const savePage = await params.archive?.("scheduled_shifts");
-      const list:Raw[]=[];
-      let cursor:string|undefined;
-      for(let n=0;n<50;n++){
+      const list = await readProviderPages<Raw>(async cursor => {
         const result=await squareRequest<{scheduled_shifts?:Raw[];cursor?:string}>(
           accessToken,"/v2/labor/scheduled-shifts/search",{
             method:"POST",body:{query:{filter:{
@@ -259,13 +252,9 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
               scheduled_shift_statuses:["PUBLISHED"]
             }},limit:50,...(cursor?{cursor}:{})}
           });
-        const shifts = result.scheduled_shifts ?? [];
-        await savePage?.(shifts.filter(s => s.published_shift_details?.location_id === locationId),result.cursor ?? null);
-        list.push(...shifts);
-        if(!result.cursor)break;
-        cursor=result.cursor;
-        if(n===49)throw new Error("Square scheduled shifts pagination incomplete");
-      }
+        const items=(result.scheduled_shifts ?? []).filter(s=>s.published_shift_details?.location_id===locationId);
+        return {items,next:result.cursor ?? null};
+      }, savePage);
       return list.flatMap(shift=>{
         const d=shift.published_shift_details;
         if(!shift.id||!d||d.location_id!==locationId||!d.team_member_id||

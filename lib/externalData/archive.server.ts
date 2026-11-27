@@ -3,7 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {retainProviderPayload} from "./retainPayload";
 
 export type Source = {businessId: string; provider: string; account: string};
-export type SourceRecord = {key: string; payload: unknown; updatedAt?: string | null};
+export type SourceRecord = {key: string; payload: unknown; updatedAt?: string | null; identifiers?: {namespace: string; value: string; selector: object}[]};
 
 /** A stream identifies one connector's independent query window or location.
  * A concurrent worker cannot move a checkpoint read by another worker. */
@@ -19,11 +19,22 @@ export async function openSourceStream(db: SupabaseClient, source: Source, resou
       const {data: saved, error: failure} = await db.rpc("external_commit_page", {
         p_business_id: source.businessId, p_provider: source.provider, p_account: source.account,
         p_resource: resource, p_stream: stream, p_revision: revision, p_next: next, p_complete: complete,
-        p_records: records.map(r => ({key: r.key, payload: retainProviderPayload(r.payload), updated_at: r.updatedAt})),
+        p_records: records.map(r => ({key: r.key, payload: retainProviderPayload(r.payload), updated_at: r.updatedAt, identifiers: r.identifiers})),
       });
       if (failure) throw failure;
       if (typeof saved !== "number" || saved !== revision + 1) throw new Error("External checkpoint was not confirmed");
       revision = saved;
     },
   };
+}
+
+export type Availability = "pending" | "permission_required" | "incomplete" | "unavailable" | "unsupported";
+
+export async function noteAvailability(db: SupabaseClient, source: Source, resource: string,
+  status: Availability, attempt: string, retryAt?: string) {
+  const {error}=await db.rpc("external_note_availability",{
+    p_business_id:source.businessId,p_provider:source.provider,p_account:source.account,
+    p_resource:resource,p_status:status,p_attempt:attempt,p_retry:retryAt ?? null,
+  });
+  if(error)throw error;
 }

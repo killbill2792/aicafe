@@ -41,7 +41,7 @@ export async function reconcileToastOperationalHealth(db:SupabaseClient,p:Scope,
 
 /** Staff and menu facts are source-scoped staging, not canonical wage/recipe edits. */
 export async function stageToastRoster(db:SupabaseClient,p:Scope) {
- const adapter=createToastAdapter({db,...p});
+ const adapter=createToastAdapter({db,...p,captureSources:true});
  const rows=await adapter.fetchEmployeeRosterFacts();
  if(rows.length>5000)throw new ToastApiError("invalid_response");
  for(let i=0;i<rows.length;i+=500){
@@ -56,7 +56,7 @@ export async function stageToastRoster(db:SupabaseClient,p:Scope) {
 export async function stageToastCatalog(db:SupabaseClient,p:Scope,
  publishedFacts?:readonly ToastCatalogFact[]){
  // Reuse verified facts when passed; never refetch the full menu to stage them.
- const rows=publishedFacts??await createToastAdapter({db,...p}).fetchCatalogFacts();
+ const rows=publishedFacts??await createToastAdapter({db,...p,captureSources:true}).fetchCatalogFacts();
  for(let i=0;i<rows.length;i+=500){
   const {error}=await db.rpc("toast_stage_catalog",{
    p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_rows:rows.slice(i,i+500)

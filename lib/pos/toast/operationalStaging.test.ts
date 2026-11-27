@@ -86,6 +86,7 @@ function operationalDb(scopes:Record<string,boolean>={}){
   },
   async rpc(name:string,args:Record<string,unknown>){
    log.push({name,args});
+   if(name==="external_note_availability")return {error:null,data:null};
    if(name==="toast_constrained_stock_guids")return {error:null,data:constrained};
    return {error:null,data:(args.p_objects as unknown[]).length};
   }

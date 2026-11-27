@@ -71,6 +71,8 @@ export type PosCatalogModifierGroup = {
   options: PosCatalogModifierOption[];
 };
 export type PosCatalogItem = {
+  /** Location of this item inside the validated original publication. */
+  sourcePath?: string[];
   posItemId: string;
   name: string;
   baseName?: string;

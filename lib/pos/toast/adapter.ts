@@ -1,3 +1,5 @@
+import {openSourceStream,noteAvailability} from "@/lib/externalData/archive.server";
+import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import {z} from "zod";
 import type {SupabaseClient} from "@supabase/supabase-js";
@@ -244,7 +246,7 @@ export type ToastAdapter=PosAdapter&{
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchCatalogFacts():Promise<ToastCatalogFact[]>;
   /** Receipt requires stable authenticated metadata before/after one full Menus V2 GET. */
-  fetchPublishedCatalogBundle():Promise<{items:PosCatalogItem[];facts:ToastCatalogFact[];
+  fetchPublishedCatalogBundle():Promise<{source:unknown;items:PosCatalogItem[];facts:ToastCatalogFact[];
     receipt:{restaurantGuid:string;publicationVersion:string;observedAt:string}}>;
   fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
   fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]>;
@@ -255,17 +257,51 @@ export type ToastAdapter=PosAdapter&{
 };
 /** Read-only adapter. DO NOT use its modified-order scan as proof of closed-date coverage.
  * Automatic canonical import stays disabled until CSV overlap/reconciliation is solved. */
-export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string;deadlineAt?:number}):ToastAdapter {
+export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;restaurantGuid:string;deadlineAt?:number;captureSources?:boolean}):ToastAdapter {
   if(!params)throw new PosNotConnectedError("toast");
   const {db,businessId,restaurantGuid}=params;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema,{deadlineAt:params.deadlineAt});
+  async function laborCollection<T>(path:string,schema:z.ZodType<T[]>,streamKey="current"):Promise<T[]> {
+    if(!params?.captureSources)return request(path,schema);
+    const resource=path.split("?")[0].slice(1);
+    const source={businessId,provider:"toast",account:restaurantGuid};
+    const attempt=new Date().toISOString();
+    const stream=await openSourceStream(db,source,resource,streamKey);
+    try {
+      return await readProviderPages(async cursor=>{
+        let next:string|null=null;
+        const remotePath=cursor ? path+(path.includes("?")?"&":"?")+"pageToken="+encodeURIComponent(cursor) : path;
+        const raw=await client.request(remotePath,restaurantGuid,z.array(z.record(z.string(),z.unknown())),{
+          deadlineAt:params.deadlineAt,onResponse:meta=>{next=meta.nextPageToken ?? null;}
+        });
+        const typed=schema.safeParse(raw);
+        if(!typed.success)throw new ToastApiError("invalid_response");
+        const records=raw.map(row=>{
+          const key=GUID.safeParse(row.guid);
+          if(!key.success)throw new ToastApiError("invalid_response");
+          if(row.restaurantGuid!=null && String(row.restaurantGuid).toLowerCase()!==restaurantGuid.toLowerCase())
+            throw new ToastApiError("unauthorized_location");
+          return {key:key.data,payload:row,updatedAt:typeof row.modifiedDate==="string"?timestamp(row.modifiedDate):null};
+        });
+        return {items:typed.data,next,commit:()=>stream.commit(records,next,next===null)};
+      });
+    }catch(error){
+      const failure=error instanceof ToastApiError?error:null;
+      await noteAvailability(db,source,resource,failure?.status===403?"permission_required":
+        failure?.category==="invalid_response"?"incomplete":"unavailable",attempt,failure?.retryAt);
+      throw error;
+    }
+  }
   /** A partial published menu has no authority to remove prior provider items.
    * Toast can return a success response with missing referenced options; never
    * silently filter those references into a seemingly complete snapshot. */
   async function fetchValidatedPublishedMenu() {
-    const data=await request("/menus/v2/menus",menusSchema);
+    const source=await request("/menus/v2/menus",z.unknown());
+    const parsed=menusSchema.safeParse(source);
+    if(!parsed.success)throw new ToastApiError("invalid_response");
+    const data=parsed.data;
     if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
       throw new ToastApiError("unauthorized_location");
     const groups=data.modifierGroupReferences;
@@ -301,7 +337,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     }
     // No-items may be legitimate upstream, but it cannot certify unpublication.
     if(!itemCount)throw new ToastApiError("invalid_response");
-    return data;
+    return {source,data};
   }
   async function statePage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}> {
     if(!Number.isSafeInteger(page)||page<1||page>1000)throw new ToastApiError("invalid_response");
@@ -346,7 +382,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     const params=mode==="modified"
       ?query(range).replace("startDate=","modifiedStartDate=").replace("&endDate=","&modifiedEndDate=")
       :query(range)+"&includeArchived=true";
-    const rows=await request("/labor/v1/timeEntries?"+params,timeEntriesSchema);
+    const rows=await laborCollection("/labor/v1/timeEntries?"+params,timeEntriesSchema,mode);
     if(mode==="modified"&&rows.some(r=>!r.modifiedDate))
       throw new ToastApiError("invalid_response");
     return rows.map(r=>({
@@ -396,8 +432,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         }
         return null;
       };
-      function visit(g:MenuGroup,path:string[],menuAvailability:unknown){
-        for(const i of g.menuItems) {
+      function visit(g:MenuGroup,path:string[],menuAvailability:unknown,sourcePath:string[]){
+        for(const [itemIndex,i] of g.menuItems.entries()) {
           const itemGroups=(i.modifierGroupReferences??[])
             .map(id=>data.modifierGroupReferences[String(id)]).filter((x):x is typeof groups[number]=>Boolean(x));
           const linkedGroups=itemGroups.map(group=>({
@@ -414,6 +450,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
           const resolvedPrice=resolvedRulePrice(i.pricingStrategy,i.price,i.pricingRules);
           const visibility=(i.visibility??[]).filter((v):v is string=>typeof v==="string").join(",")||null;
           const common={
+            sourcePath:[...sourcePath,"menuItems",String(itemIndex)],
             name:i.name,baseName:i.name,category:i.salesCategory?.name??g.name,
             menuGroup:path.join(" / "),description:i.description??null,
             visibility,pricingStrategy:i.pricingStrategy??null,
@@ -422,10 +459,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
             posMetadata:{
               itemGuid:i.guid,pricingRules:i.pricingRules??null,
               itemVisibility:i.visibility??null,
-              menuAvailability,groupAvailability:g.availability??null,
-              originalItem:i,originalModifierGroups:itemGroups,
-              originalModifierOptions:itemGroups.flatMap(group=>group.modifierOptionReferences
-                .map(ref=>options[String(ref)]).filter(Boolean))
+              menuAvailability,groupAvailability:g.availability??null
             } as Record<string,unknown>
           };
           const sizeGuid=i.pricingStrategy==="SIZE_PRICE"?i.pricingRules?.sizeSpecificPricingGuid:null;
@@ -438,17 +472,17 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
               // Toast publishes size prices on the Size group's option items.
               const sizePrice=resolvedRulePrice(option.pricingStrategy??"NONE",option.price,option.pricingRules);
               addPublished({...common,posItemId:id,sizeLabel:option.name,priceCents:sizePrice,
-                posMetadata:{...common.posMetadata,sizeOption:option}});
+                posMetadata:{...common.posMetadata,sizeOptionGuid:option.guid}});
             }
           }else{
             const id=posId(i.guid);
             addPublished({...common,posItemId:id,sizeLabel:null,priceCents:resolvedPrice});
           }
         }
-        for(const child of g.menuGroups)visit(child,[...path,child.name],menuAvailability);
+        for(const [i,child] of g.menuGroups.entries())visit(child,[...path,child.name],menuAvailability,[...sourcePath,"menuGroups",String(i)]);
       }
-      for(const menu of data.menus)for(const group of menu.menuGroups)
-        visit(group,[menu.name??"Menu",group.name],menu.availability??null);
+      for(const [i,menu] of data.menus.entries())for(const [j,group] of menu.menuGroups.entries())
+        visit(group,[menu.name??"Menu",group.name],menu.availability??null,["menus",String(i),"menuGroups",String(j)]);
       if(items.size>5000)throw new ToastApiError("invalid_response");
       return [...items.values()];
   }
@@ -514,8 +548,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         throw new ToastApiError("unauthorized_location");
       return metadata;
     },
-    fetchCatalogItems:async()=>catalogItemsFromSnapshot(await fetchValidatedPublishedMenu()),
-    fetchCatalogFacts:async()=>catalogFactsFromSnapshot(await fetchValidatedPublishedMenu()),
+    fetchCatalogItems:async()=>catalogItemsFromSnapshot((await fetchValidatedPublishedMenu()).data),
+    fetchCatalogFacts:async()=>catalogFactsFromSnapshot((await fetchValidatedPublishedMenu()).data),
     async fetchPublishedCatalogBundle(){
       // Observe publication metadata on both sides of the SINGLE full Menus V2
       // request. A changed version, wrong location or incomplete reference set
@@ -523,7 +557,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       const before=await request("/menus/v2/metadata",metadataSchema);
       if(before.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
         throw new ToastApiError("unauthorized_location");
-      const snapshot=await fetchValidatedPublishedMenu();
+      const {data:snapshot,source}=await fetchValidatedPublishedMenu();
       const after=await request("/menus/v2/metadata",metadataSchema);
       if(after.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
         throw new ToastApiError("unauthorized_location");
@@ -536,11 +570,11 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       const publicationVersion=after.lastUpdated;
       const items=catalogItemsFromSnapshot(snapshot);
       const facts=catalogFactsFromSnapshot(snapshot);
-      return {items,facts,receipt:{restaurantGuid,publicationVersion,
+      return {items,facts,source,receipt:{restaurantGuid,publicationVersion,
         observedAt:new Date().toISOString()}};
     },
     async fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]> {
-      const rows=await request("/labor/v1/employees",employeesSchema);
+      const rows=await laborCollection("/labor/v1/employees",employeesSchema);
       return rows.map(r=>({
         employee_guid:r.guid,
         display_name:([r.chosenName||r.firstName,r.lastName].filter(Boolean).join(" ").trim()||
@@ -549,19 +583,19 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       }));
     },
     async fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]> {
-      const rows=await request("/labor/v1/employees",employeesSchema);
+      const rows=await laborCollection("/labor/v1/employees",employeesSchema);
       return rows.map(r=>({employeeGuid:r.guid,restaurantGuid,
         sourceFields:validatedLaborSource(employeeSourceSchema,r)}));
     },
     async fetchLaborJobSources():Promise<ToastLaborJobSource[]> {
-      const rows=await request("/labor/v1/jobs",toastJobSchema);
+      const rows=await laborCollection("/labor/v1/jobs",toastJobSchema);
       return rows.map(r=>({jobGuid:r.guid,restaurantGuid,
         sourceFields:validatedLaborSource(jobSourceSchema,r)}));
     },
     async fetchEmployees():Promise<PosEmployee[]> {
       const [rows,jobs]=await Promise.all([
-        request("/labor/v1/employees",employeesSchema),
-        request("/labor/v1/jobs",toastJobSchema)
+        laborCollection("/labor/v1/employees",employeesSchema),
+        laborCollection("/labor/v1/jobs",toastJobSchema)
       ]);
       const jobsById=new Map(jobs.filter(j=>!j.deleted).map(j=>[j.guid,j]));
       return rows.map(r=>{
@@ -589,7 +623,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       });
     },
     async fetchScheduledShifts(range):Promise<ToastScheduledShift[]> {
-      const rows=await request("/labor/v1/shifts?"+query(range),shiftsSchema);
+      const rows=await laborCollection("/labor/v1/shifts?"+query(range),shiftsSchema,"range");
       return rows.map(r=>({externalShiftId:r.guid,
         externalEmployeeId:r.employeeReference.guid,externalLocationId:restaurantGuid,
         scheduledStart:timestamp(r.inDate),scheduledEnd:timestamp(r.outDate),

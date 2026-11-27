@@ -1,11 +1,9 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {retainProviderPayload} from "@/lib/externalData/retainPayload";
-import {createHash} from "node:crypto";
 import {z} from "zod";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
 import {GUID,ToastApiError,trustedToastOrigin,toastRetryAt} from "./client";
-import {toastMoneyCents} from "./adapter";
 
 const tokenSchema=z.object({token:z.object({
  accessToken:z.string().min(1),expiresIn:z.number().positive()
@@ -179,30 +177,10 @@ export function createToastAnalyticsClient(db:SupabaseClient,businessId:string,d
       row.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase()||
       row.businessDate!==businessDate.replaceAll("-",""))
     throw new ToastApiError("invalid_response");
-   const payload=retainProviderPayload(row);
-   const raw=JSON.stringify(payload);
-   const hash=createHash("sha256").update(raw).digest("hex");
-   const {error:archiveError}=await db.from("toast_raw_records").upsert({
-    business_id:businessId,restaurant_guid:restaurantGuid,entity:"analytics_report",
-    entity_guid:reportRequestGuid,business_date:businessDate,
-    payload,payload_sha256:hash,
-    capture_key:"era:"+reportRequestGuid+":"+restaurantGuid+":"+businessDate+":"+hash
-   },{onConflict:"business_id,capture_key",ignoreDuplicates:true});
-   if(archiveError)throw new ToastApiError("unavailable");
-   const metrics=[
-    ["net_sales_cents",toastMoneyCents(row.netSalesAmount),"cents"],
-    ["orders_count",row.ordersCount,"count"],
-    ["discount_cents",toastMoneyCents(row.discountAmount),"cents"],
-    ["refund_cents",toastMoneyCents(row.refundAmount),"cents"],
-    ["void_orders_count",row.voidOrdersCount,"count"],
-    ["void_orders_amount_cents",row.voidOrdersAmount==null?null:toastMoneyCents(row.voidOrdersAmount),"cents"]
-   ] as const;
-   const {error}=await db.from("toast_analytics_results").upsert(metrics.map(
-    ([metric,value,unit])=>({
-     business_id:businessId,restaurant_guid:restaurantGuid,business_date:businessDate,
-     report:"metrics/day",metric,value_numeric:value,value_json:{value,unit,requestGuid:reportRequestGuid},
-     fetched_at:new Date().toISOString()
-    })),{onConflict:"business_id,restaurant_guid,business_date,report,metric"});
+   const {error}=await db.rpc("toast_commit_analytics_report",{
+     p_business_id:businessId,p_restaurant:restaurantGuid,p_date:businessDate,
+     p_request:reportRequestGuid,p_payload:retainProviderPayload(row)
+   });
    if(error)throw new ToastApiError("unavailable");
   },
   async getDay(reportRequestGuid:string){

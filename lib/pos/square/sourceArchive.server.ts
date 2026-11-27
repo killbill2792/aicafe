@@ -16,7 +16,15 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
         if ("location_id" in row && row.location_id != null && row.location_id !== location) {
           throw new Error("Square returned an object outside the requested location");
         }
-        return {key: row.id, payload: row,
+        let identifiers: {namespace: string; value: string; selector: object}[] | undefined;
+        if (resource === "catalog" && "item_data" in row && row.item_data && typeof row.item_data === "object") {
+          const data=row.item_data;
+          if ("variations" in data && Array.isArray(data.variations)) {
+            identifiers=data.variations.flatMap(v => typeof v?.id === "string"
+              ? [{namespace:"pos_item_id",value:v.id,selector:{path:["item_data"],variation:v.id}}] : []);
+          }
+        }
+        return {key: row.id, payload: row, identifiers,
           updatedAt: "updated_at" in row && typeof row.updated_at === "string" ? row.updated_at : null};
       });
       await stream.commit(records, next, next === null);

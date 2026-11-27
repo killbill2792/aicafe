@@ -13,7 +13,7 @@ const restaurant="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const itemGuid="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const posItemId="toast:"+restaurant+":"+itemGuid;
 const scope={businessId:business,restaurantGuid:restaurant, locationId:"dddddddd-dddd-4ddd-8ddd-dddddddddddd", timezone:"America/Los_Angeles",deadlineAt:Date.now()+600000};
-const bundle={items:[{posItemId,name:"Latte",baseName:"Latte", category:"DRINK",sizeLabel:null,priceCents:550,modifierGroups:[]}], facts:[{kind:"item",provider_guid:itemGuid,name:"Latte",category:"Coffee",
+const bundle={source:{restaurantGuid:restaurant,menus:[]},items:[{posItemId,name:"Latte",baseName:"Latte", category:"DRINK",sizeLabel:null,priceCents:550,modifierGroups:[]}], facts:[{kind:"item",provider_guid:itemGuid,name:"Latte",category:"Coffee",
  price_cents:550,pricing_strategy:"BASE_PRICE",modifier_group_guids:[]}], receipt:{restaurantGuid:restaurant,publicationVersion:"2026-11-10T15:00:00Z", observedAt:"2026-11-10T16:00:00Z"}};
 function mockDB(){
  const previous={menu_last_updated:"2026-11-09T15:00:00Z", menu_copied_at:"2026-11-09T16:00:00Z",menu_checked_local_day:"2026-11-09", menu_pending_observations:[] as string[]};
@@ -34,7 +34,8 @@ function mockDB(){
   return {inactiveItems:0,inactiveModifiers:0,inactiveGroups:0};
  });
  const rpc=vi.fn(async(name:string,args?:Record<string,unknown>):Promise<{
-  error:{message:string}|null;data:boolean|string[]|null}>=>{
+  error:{message:string}|null;data:number|boolean|string[]|null}>=>{
+  if(name==="external_commit_page")return {data:1,error:null};
   if(name==="toast_record_pending_menu_observation"){
    if(failRecord.value)return {error:{message:"cannot persist receipt"},data:null};
    const observed=String(args?.p_observed_at);
@@ -53,6 +54,9 @@ function mockDB(){
  });
  const db={
   from(table:string){
+   if(table==="external_sync_checkpoints"){
+    const q={select(){return q;},eq(){return q;},async maybeSingle(){return {data:null,error:null};}};return q;
+   }
    if(table==="menu_items"){
     const q={select(_s:string){return q;},eq(_k:string,_v:unknown){return q;}, async in(_key:string,ids:string[]){
       return {data:ids.flatMap(id=>{
