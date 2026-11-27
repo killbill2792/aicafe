@@ -55,6 +55,16 @@ describe("PDF delivery compatibility regression (no provider, no production data
   const r=await replay("terminal-divergence",intro+fence("spec",patches)+"\n",false,"A different streamed answer.\n\n");
   expect(r.documents).toHaveLength(1);expect(r.pdfTitle).toBe("Diagnostic accounting statement");expect(r.pdfContainsData).toBe(true);expect(r.result.text).not.toContain("different streamed answer");
  },30000);
+ it("recovers the final output_text.done event even without a completed message item",async()=>{
+  const raw=intro+fence("spec",patches);
+  const provider:AgentProvider=async function*(){
+   yield {type:"response.output_text.delta",delta:intro};
+   yield {type:"response.output_text.done",output_index:0,content_index:0,text:raw};
+   yield {type:"response.completed",response:{usage:{input_tokens:1,output_tokens:1}}};
+  };
+  const result=await runResearchTurn({ownerText:"Generate a PDF",cafeContext:"Synthetic Cafe",provider,scope:{db:{} as never,businessId:"business",ownerUserId:"owner"},presentationContext:ctx});
+  expect(agentReplyPayload(result).reply.blocks.filter(b=>b.type==="rich_presentation"&&b.pdfSpec)).toHaveLength(1);
+ });
  it("preserves unrelated JSON code blocks as prose",async()=>{
   const r=await replay("ordinary-json",intro+fence("json",JSON.stringify({example:123})));
   expect(r.documents).toHaveLength(0);expect(r.result.text).toContain('"example":123');
