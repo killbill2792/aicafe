@@ -7,10 +7,11 @@ export type PageSink<T> = ((items: readonly T[], next: string | null) => Promise
 export async function readProviderPages<T>(
   fetchPage: (cursor: string | null) => Promise<{items: T[]; next: string | null; commit?: () => Promise<void>}>,
   onPage?: PageSink<T>,
+  initialCursor: string | null = null,
 ): Promise<T[]> {
   const result: T[] = [];
-  const seen = new Set<string>();
-  let cursor: string | null = null;
+  const seen = new Set(initialCursor ? [initialCursor] : []);
+  let cursor = initialCursor;
   try {
     do {
       const {items, next, commit} = await fetchPage(cursor);

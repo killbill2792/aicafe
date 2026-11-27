@@ -5,6 +5,8 @@ import {NextResponse} from "next/server";
 import {z} from "zod";
 import {authorizeToastOwner} from "@/lib/pos/toast/ownerAccess";
 import {createToastClient,GUID,ToastApiError,toToastTimestamp} from "@/lib/pos/toast/client";
+import {discoverSourceResources,type ResourceCapability} from "@/lib/externalData/archive.server";
+import {TOAST_READ_ENDPOINTS} from "@/lib/pos/toast/readOperations";
 export const runtime="nodejs";
 // Credential verification and first catalog copy share one bounded request.
 export const maxDuration=300;
@@ -33,23 +35,31 @@ export async function POST(request:Request){
   try {
     for(const mapping of mappings) {
       const guid=mapping.restaurant_guid;
+      const capabilities:ResourceCapability[]=TOAST_READ_ENDPOINTS
+        .filter(op=>op.scope!=="unsupported"&&!op.path.startsWith("/era/"))
+        .map(op=>({resource:op.endpoint,permission:op.path.split("/")[1]}));
+      capabilities.push({resource:"order",permission:"orders",granted:true});
       await refreshToastRestaurantInfo(db,businessId,guid,{allowUnverified:true});
       // Standard access needs only orders and restaurant identity. Optional
       // scopes are probed independently; a 403 must not disconnect sales.
       await client.request(query("/orders/v2/ordersBulk")+"&pageSize=1&page=1",guid,z.array(z.unknown()),{allowUnverified:true});
       for(const [scope,path] of [
-        ["menus","/menus/v2/metadata"],["labor","/labor/v1/employees"],
+        ["menus","/menus/v2/metadata"],
+        ["labor","/labor/v1/employees"],
         ["config","/config/v2/voidReasons"]
       ] as const){
+        let granted=true;
         try {
           await client.request(path,guid,z.unknown(),{allowUnverified:true});
         }catch(err) {
-          if(err instanceof ToastApiError&&["missing_scope_or_location","missing_permissions"].includes(err.category))
+          if(err instanceof ToastApiError&&["missing_scope_or_location","missing_permissions"].includes(err.category)){
             scopesAvailable[scope]=false;
-          else throw err;
+            granted=false;
+          }else throw err;
         }
+        capabilities.push({resource:path.slice(1),permission:scope,granted});
       }
-
+      await discoverSourceResources(db,{businessId,provider:"toast",account:guid},capabilities,new Date().toISOString());
     }
     const at=new Date().toISOString();
     for(const mapping of mappings) {

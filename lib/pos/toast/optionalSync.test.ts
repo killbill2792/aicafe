@@ -34,10 +34,13 @@ function mockDB(scopes:Record<string,boolean>,alreadyCopied=false,stale=false,le
  let attendanceAt=alreadyCopied?"2026-10-22T00:00:00Z":null;
  let operationalSources:Record<string,unknown>={};
  const db={
-  async rpc(name:string){rpcCalls.push(name);return {error:null,data:0};},
+  async rpc(name:string,args?:{p_revision?:number}){
+   rpcCalls.push(name);return {error:null,data:name==="external_commit_page"?(args?.p_revision??0)+1:0};
+  },
   from(table:string){
    const q={
     select(_columns:string){return q;},eq(_key:string,_value:unknown){return q;},
+    async in(){return {data:[],error:null};},
     async maybeSingle(){return {data:table==="toast_api_credentials"
      ?{scopes_available:scopes}:table==="toast_optional_sync_state"
       ?{menu_last_updated:lastMenu,menu_copied_at:copyAt,
