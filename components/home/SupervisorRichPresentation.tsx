@@ -44,7 +44,8 @@ export function presentationSpec(p:RichPresentation):Spec{
  }
  return {root:"root",elements};
 }
-function Panel({panel,locale}:{panel:PresentationPanel;locale:string}){
+type DisplayPanel=Omit<PresentationPanel,"from"|"to"|"asOf">&Partial<Pick<PresentationPanel,"from"|"to"|"asOf">>;
+function Panel({panel,locale}:{panel:DisplayPanel;locale:string}){
  const evidenceId=useId(),coverageId=useId();
  const formatter=new Intl.NumberFormat(locale,["cents","cents/hour"].includes(panel.unit)&&panel.currency?
   {style:"currency",currency:panel.currency,minimumFractionDigits:2,maximumFractionDigits:20}:{maximumFractionDigits:20});
@@ -270,13 +271,20 @@ function NativeWidget({spec,locale}:{spec:Spec;locale:string}){
  const registry=useMemo(()=>{
   const {registry}=defineRegistry(nativeCatalog,{components:{...shadcnComponents,
    LunaChart:({props})=>{
-    const p=nativeChartProps.safeParse(props);if(!p.success)return <AuthoredValues value={props}/>;
+    const p=nativeChartProps.safeParse(props);
+    if(!p.success)return <AuthoredValues value={{title:props.title,description:props.description,points:props.points,unit:props.unit,currency:props.currency}}/>;
     const {description,measurement,asOf,...values}=p.data;
-    if(!asOf)return <AuthoredValues value={{title:values.title,description,points:values.points}}/>;
-    const panel=presentationPanelSchema.safeParse({...values,source:"response_evidence",from:asOf,to:asOf,asOf,...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})});
-    if(panel.success)return <Panel panel={panel.data} locale={locale}/>;
-    const table=recordTableSchema.safeParse({title:values.title,view:"tool_response_evidence",from:asOf,to:asOf,asOf,currency:values.currency,coverage:"authored",scope:description??"",columns:[{label:"Category",unit:"label"},{label:measurement??values.unit,unit:values.unit}],rows:values.points.map(p=>[p.label,p.value])});
-    return table.success?<RecordTableView table={table.data} locale={locale}/>:<AuthoredValues value={props}/>;
+    const points=values.points.flatMap(point=>point.value===null?[]:[{...point,value:point.value}]);
+    // A date or a provenance contract is not required for an authored chart.
+    // Unknown values remain visible instead of being plotted as zero.
+    if(points.length===values.points.length)return <Panel panel={{...values,points,source:"response_evidence",...(asOf?{asOf}:{}),...(description?{sourceDetail:description}:{}),...(measurement?{measurement}:{})}} locale={locale}/>;
+    const format=(value:number|null)=>{
+     if(value===null)return copy.notRecorded;
+     const monetary=values.unit==="cents"||values.unit==="cents/hour";
+     try{return new Intl.NumberFormat(locale,monetary&&values.currency?{style:"currency",currency:values.currency}:{maximumFractionDigits:20}).format(monetary?value/100:value)+(values.unit==="cents/hour"?" / h":"");}
+     catch{return String(monetary?value/100:value)+(values.currency?" "+values.currency:"");}
+    };
+    return <figure className="min-w-0 space-y-2"><figcaption className="font-medium">{values.title}</figcaption>{description&&<p className="text-sm text-ink-muted">{description}</p>}<div className="overflow-x-auto"><table className="w-full table-auto text-sm"><thead><tr><th scope="col" className="text-start">{copy.categoryLabel}</th><th scope="col" className="text-end">{measurement??values.unit}</th></tr></thead><tbody>{values.points.map((point,i)=><tr key={i}><th scope="row" className="text-start font-normal">{point.label}</th><td className="text-end">{format(point.value)}</td></tr>)}</tbody></table></div></figure>;
    },
    LunaSnapshot:({props})=><NativeSnapshot value={props.snapshotJSON} locale={locale}/>,
    LunaFallback:({props,children})=><div className="min-w-0 space-y-2"><AuthoredValues value={props.values}/>{children}</div>,
