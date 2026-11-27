@@ -32,8 +32,10 @@ export async function readCanonicalView(db:SupabaseClient,businessId:string,
   return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
  // Customer timeline/cohort values are computed at the requested cutoff,
  // never at today's date then filtered back into a historical range.
- let query=view==="cv_customer_visits"||view==="cv_customer_products"
-  ?db.rpc(view==="cv_customer_visits"?"customer_visits_for":"customer_products_for",{p_business_id:businessId,p_from:range.dateFrom,p_to:range.dateTo}).eq("business_id",businessId)
+ const scopedQuery=view==="cv_customer_visits"?"customer_visits_for":
+  view==="cv_customer_products"?"customer_products_for":view==="cv_inventory"?"inventory_evidence_for":null;
+ let query=scopedQuery
+  ?db.rpc(scopedQuery,{p_business_id:businessId,p_from:range.dateFrom,p_to:range.dateTo}).eq("business_id",businessId)
   :db.from(view).select("*").eq("business_id",businessId);
  if(periodViews.has(view))
   query=query.gte("business_date",range.dateFrom).lte("business_date",range.dateTo);

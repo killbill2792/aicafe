@@ -24,8 +24,12 @@ const cardContainer = /^(?:card|cardInfo|cardDetails|cardData|creditCard|debitCa
 const paymentContainer = /^(?:payments?|cardPayments?|tenders?)$/i;
 const bankContainer = /^(?:bankAccounts?|bankAccountDetails|bankDetails|achDetails)$/i;
 const normalizeKey = (name: string) => name.replace(/[^a-z0-9]/gi, "");
+const isRawJson = (JSON as typeof JSON & {isRawJSON?: (value: unknown) => boolean}).isRawJSON;
 
 function retain(value: unknown, context: "business"|"payment"|"card"|"bank"): unknown {
+  if (isRawJson?.(value)) {
+    return plausibleCardNumber((value as {rawJSON: string}).rawJSON) ? "[redacted]" : value;
+  }
   if (Array.isArray(value)) return value.map(item => retain(item, context));
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value).flatMap(([name, child]) => {
