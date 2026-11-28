@@ -155,7 +155,9 @@ export function scenariosForPath(path) {
   // seeded browser, not merely a server-component/unit render. The @home
   // owner-inbox journey verifies the persisted report and its original thread.
   if(path==="app/[locale]/operations/page.tsx"||
-     path==="app/[locale]/operations/page.test.tsx")
+     path==="app/[locale]/operations/page.test.tsx"||
+     path==="app/[locale]/operations/team/page.tsx"||
+     path==="components/luna/WorkforceProfileForm.tsx")
     return ["home"];
   // Maintenance intake and verification must run the signed-in, locally
   // seeded owner Operations journey. Never classify new owner UI as backend.
