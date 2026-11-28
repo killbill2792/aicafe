@@ -15,6 +15,8 @@ const assistantMessage = z.object({
   type: z.literal("message"), role: z.literal("assistant"), content: z.array(textPart),
 });
 type ProviderArgs = Parameters<typeof runClaimedAssignmentProvider>[0];
+const workerWindowMs = 55_000;
+const checkpointHeadroomMs = 5_000;
 
 const describeDatabaseArguments = z.strictObject({ tables: z.array(z.string()).nullable() });
 const runSqlArguments = z.strictObject({ sql: z.string().trim().min(1) });
@@ -46,6 +48,7 @@ export function assignmentInstructions(instructions: string, key: string) {
 }
 
 export function assignmentTextBlocks(result: SavedProviderResponse) {
+  if (result.response.status !== "completed") throw new Error("luna_assignment_reply_unfinished");
   const items = result.response.output.filter(item => item.type !== "reasoning");
   const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)
     .filter(part => part.text.length > 0).map(part => ({ type: "text", text: part.text }));
@@ -57,7 +60,7 @@ export function assignmentTextBlocks(result: SavedProviderResponse) {
  * provider checkpoint and atomic publication RPCs. */
 export async function processLunaAssignment({
   scope: claimedScope, runId: id, dispatch, resultBlocks, ...provider
-}: Omit<ProviderArgs, "lease" | "supersedeOperation"> & {
+}: Omit<ProviderArgs, "lease" | "supersedeOperation" | "slice"> & {
   scope: RunScope; runId: string; dispatch?: { workerId: string; step: StepClaim };
   resultBlocks?: (result: SavedProviderResponse) => readonly SupervisorReplyBlock[];
 }): Promise<"busy" | "blocked" | "completed"> {
@@ -68,7 +71,8 @@ export async function processLunaAssignment({
     p_run_id: runId,
   };
   const workerId = dispatch?.workerId ?? randomUUID();
-  const signal = AbortSignal.any([provider.signal, AbortSignal.timeout(55_000)]);
+  const { signal } = provider;
+  const workerDeadline = Date.now() + Math.min(workerWindowMs - checkpointHeadroomMs, provider.accounting.budget.maxElapsedMs);
   const claim = async () => {
     signal.throwIfAborted();
     return decodeClaim(await provider.rpc("luna_assignment_claim", {
@@ -86,8 +90,11 @@ export async function processLunaAssignment({
   if (step.kind === "completed" || step.kind === "busy" || step.kind === "blocked") return step.kind;
   if (step.kind !== "claimed" || step.key !== "owner_turn") throw new Error("luna_assignment_step_unrecognized");
 
+  const workMs = Math.max(0, Math.min(workerDeadline, Date.parse(step.leaseUntil) - checkpointHeadroomMs) - Date.now());
+  const window = workMs > 0 ? AbortSignal.timeout(workMs) : AbortSignal.abort(new DOMException("Worker window elapsed", "TimeoutError"));
   const providerArgs: ProviderArgs = {
-    ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken },
+    ...provider, slice: { window, modelCalls: 0, toolCalls: 0 },
+    lease: { ...scope, runId, claimToken: step.claimToken },
     readTools: provider.readTools ?? assignmentReadTools,
     buildRequest: async (context, steering) => {
       const request = await provider.buildRequest(context, steering);
