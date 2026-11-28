@@ -164,15 +164,32 @@ The following inventories record package lookups in the integrity-checked archiv
 | Artifact imports | scheduler@0.27.0 | sha512-eNv+WrVbKu1f3vbYJT/xtiF5syA5HPIMtf9IgY/nKg0sWqzAUEvqY/xm7OcZc/qafLx/iO9FgOmeSAp4v5ti/Q== | {} |
 | Artifact imports | server-only@0.0.1 | sha512-qepMx2JxAa5jjfzxG79yPPq+8BuFToHd1hm7kI+Z4zAq1ftQiP7HcxMhDDItrbtwVeLg/cY2JnKnrcFkmiswNA== | {} |
 | Artifact imports | zod@4.6.7 | sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg== | {} |
+| Artifact imports | pg@8.23.0 | sha512-Ip2EQCngowJLGOfCwkFhPXU7/ljlhn6Rxlmy4XYfL2Y+vyRM59+8uR2xqRWKdYmbXmxCFOAmKxBuSUCdF34qLg== | {"lib":["pg-cloudflare","pg-connection-string","pg-pool","pg-protocol","pg-types","pgpass"],"lib/native":["pg-native"]} |
+| Artifact imports | pg-connection-string@2.14.0 | sha512-XwWDGcLRGCXAR8F/AM5bG7Q+A3Wm2s6QeEjlOKZLlH3UYcguiqCWKyWXVag5TLTIjR7oOJUY8kcADaZgWPyLeg== | {} |
+| Artifact imports | pg-pool@3.14.0 | sha512-gKtPkFdQPU3DksooVLi9LsjZxrsBUZIpa+7aVx+LV5pNh0KzP4Zleud2po+ConrxbuXGBJ6Hfer6hdgpIBpBaw== | {".":["pg"]} |
+| Artifact imports | pg-protocol@1.16.0 | sha512-sILXutLVjCLjcDuOmvhX5e2Z4cS5qG/6Bu3VkpFwdf/633ElGLpEh9bgmuI5I4sqKqkifQiGyiCcx1HdtrK7tg== | {} |
+| Artifact imports | pg-types@2.2.0 | sha512-qTAAlrEsl8s4OiEQY69wDvcMIdQN6wdz5ojQiOy6YRMuynxenON0O5oCpJI6lshc6scgAY8qvJ2On/p+CXY0GA== | {".":["tsd"],"lib":["pg-int8","postgres-array","postgres-bytea","postgres-date","postgres-interval"],"test":["pff","tape"]} |
+| Artifact imports | pgpass@1.0.5 | sha512-FdW9r/jQZhSeohs1Z3sI1yxFQNFvMcnmfuj4WBMUTxOrAyLMaTcE1aAMBiTlbMNaXvBCQuVi0R7hd8udDSP7ug== | {"lib":["split2"]} |
+| Artifact imports | pg-cloudflare@1.4.0 | sha512-Vo7z/6rrQYxpNRylp4Tlob2elzbh+N/MOQbxFVWCxS7oEx6jF53GTJFxK2WWpKuBRkmiin4Mt+xofFDjx09R0A== | {} |
+| Artifact imports | pg-int8@1.0.1 | sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw== | {} |
+| Artifact imports | postgres-array@2.0.0 | sha512-VpZrUqU5A69eQyW2c5CA1jtLecCsN2U/bD6VilrFDWq5+5UIEVO7nazS3TEcHf1zuPYO/sqGvUvW62g86RXZuA== | {} |
+| Artifact imports | postgres-bytea@1.0.1 | sha512-5+5HqXnsZPE65IJZSMkZtURARZelel2oXUEO8rH83VS/hxH5vv1uHquPg5wZs8yMAfdv971IU+kcPUczi7NVBQ== | {} |
+| Artifact imports | postgres-date@1.0.7 | sha512-suDmjLVQg78nMK2UZ454hAG+OAW+HQPZ6n++TNDUX+L0+uUlLywnoxJKDou51Zm+zTCjrCl0Nq6J9C5hP9vK/Q== | {} |
+| Artifact imports | postgres-interval@1.2.0 | sha512-9ZhXKM/rw350N1ovuWHbGxnGh/SNJ4cnxHiM0rxE4VN41wsg8P8zWn9hv/buK00RP4WvlOyr/RBDiptyxVbkZQ== | {".":["xtend"]} |
+| Artifact imports | split2@4.2.0 | sha512-UcjcJOWknrNkF6PLX83qcHM6KHgVKNkV62Y8a5uYDVv9ydGQVwAHMKqHdJje1VTWpljG0WYpCDhrCdAOYH4TWg== | {".":["binary-split","callback-stream","fastbench","tape"]} |
+| Artifact imports | xtend@4.0.2 | sha512-LKYU1iAXJXUgAXn9URjiu+MWhyUXHsvfp7mcuYm9dSUKK0/CjtrUwFAxD82/mCWbtLsGjFIad0wIsod4zrTAEQ== | {".":["tape"]} |
 
 | Grant | Package | Reviewed SHA-256 graph fingerprint |
 | --- | --- | --- |
 | Runtime package | date-fns | 85ca76a37d8388bb20438e2815ecc73c5fbcbcb2fa8c1c2d445eda66190c56d1 |
 | Runtime package | date-fns-tz | a72be8a4ee7490eb3e376be2ae10af9f7ee201e0a6e07158bc8ea3e8a5670f28 |
+| Runtime package | pg | 9313e7e7a780f232b9962074cef66820d47104dbd804976afc73185371f38047 |
 | Runtime package | react | a7c2ae6d621358ade5cd0ddb34e6ca293154db4df7ec296ef38eb42feaaaf7c8 |
 | Runtime package | react-dom | aa38c1ca39d097ba171b9779bb7776ee6bbf30cd78e359130f24506502748ecf |
 | Runtime package | server-only | b55e3f5cc1815f9e66f4559527389eaae760782ee3abd980a4d6662b53b601c6 |
 | Runtime package | zod | 41f01ed4d102a475a0c225441ca3193670d21c4fece5d8576b4600b8d00b55b7 |
+
+The `pg` graph supports reuse of the existing direct PostgreSQL research adapter in the replacement worker. The 14 archives match the SHA-512 values, versions and dependency declarations in lockfile blob `fb715d4ca844b5bf5b8512111cc492552b3d4437`. Their manifests declare zero install hooks. The inventory includes the absent native peer and absent package test lookups. `pg-cloudflare` selects its empty default export under Node and has a `workerd` export that imports the host's `cloudflare:sockets` API. The graph grants package imports only. The scoped research connection and the existing database authorization still govern data access.
 
 To propose an addition or upgrade, verify each archive against its SHA-512 integrity. Inspect its executable entry points, conditional exports and transitive sources. Record every external package lookup with the directory of the issuing module, including optional plugins and fallbacks absent from the manifest. Withhold the grant when the possible package names or lookup origins cannot be bounded. Include an inventory for every reachable archive. Commit the proposed inventory and lockfile on the working branch and run `node scripts/guards/luna-boundary.mjs --package-fingerprints PACKAGE`. An independent reviewer checks the intended capability, installed artifacts, executable entry points, install hooks and changes in transitive dependencies. Record that evidence on the PR. Land the reviewed grant on main through a documentation-only change before integrating the package into a Luna path. Both reviewed releases may coexist during an upgrade. Migrate consumers before removing the old grant. Unrelated lockfile entries do not change the grant. A fingerprint records which artifacts were selected. Runtime isolation and authorization continue to govern how they execute.
 
