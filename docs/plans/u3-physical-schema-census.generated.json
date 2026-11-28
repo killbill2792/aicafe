@@ -6042,6 +6042,39 @@
      true
     ],
     [
+     "employee_key",
+     "text",
+     true
+    ],
+    [
+     "display_name",
+     "text",
+     false
+    ],
+    [
+     "job_title",
+     "text",
+     false
+    ]
+   ],
+   "relation": "luna_workforce_profiles",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "luna_workforce_profiles_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
      "id",
      "uuid",
      true

@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
 import { verifyResult } from './assignment-result.mjs';
 import { verifySteering } from './assignment-inputs.mjs';
+import { verifyWorkforceProfiles } from './workforce-profiles.mjs';
 
 const connectionString = process.env.SUPERVISOR_RUN_DB_URL;
 const target = new URL(connectionString);
@@ -90,6 +91,7 @@ try {
     await db.query("set role service_role; set request.jwt.claim.role = 'service_role'");
   }
   const [a, b] = workers;
+  await verifyWorkforceProfiles({ admin, a, b, first: await fixture(), second: await fixture() });
   await verifyFleetDispatch(a, b);
   const legacy = await fixture();
   const replacement = await fixture();

@@ -1,4 +1,17 @@
 {
+    "Workforce": {
+        "title": "Management team",
+        "back": "Back to Operations",
+        "name": "Display name",
+        "jobTitle": "Job title",
+        "edit": "Edit profile",
+        "defaults": "Leave a field blank to use its default.",
+        "save": "Save profile",
+        "saving": "Saving…",
+        "saved": "Profile saved.",
+        "invalid": "Enter a valid name and job title. Leave either blank to use the default.",
+        "failed": "Could not save the profile. Check that this café is still selected and try again."
+    },
     "StaffQuestionApproval": {"title":"Ask an employee?","sourceNotice":"A scheduled shift identifies a candidate, not verified physical attendance. All answers are reported evidence, not inventory or roster changes.","followUp":"Review unanswered after:","awaitingApproval":"Awaiting your decision. No employee contacted.","savedNotRead":"Question saved in the employee work inbox. Not a read or delivery receipt.","ownerAnswered":"Owner answer recorded for Luna to verify. No employee contacted.","askEmployee":"Go ahead and ask","ignore":"Ignore","replyInChat":"Or simply type your answer in this chat. Luna will record it as your report, recheck the evidence and not contact the employee.","checkReceipt":"Check saved request","error":"Could not verify the decision. Please check the original saved record."},
     "StaffChannelHistory": {"historyAria":"Employee Supervisor communication history","historyHelp":"Every saved question and reply is available here, including older exchanges. An employee reply is evidence, not proof of a schedule or inventory change.","ownerHelp":"Every saved employee message and assigned request is shown with original wording and timestamps. Reports do not approve business changes.","emptyHistory":"No staff communications yet.","loadOlder":"Load older exchanges","loading":"Loading…","historyError":"Could not load older messages. Try again.","ownerRequested":"Owner requested","assignedRequest":"Assigned work request","employeeReported":"Employee reported","employeeReplied":"Employee replied","ownerReplied":"Owner replied","supervisorReplied":"Supervisor replied","requestStatus":"Request status","responseConfirm":"Employee confirmed the request — schedule not changed","responseDecline":"Employee declined / cannot work","responseComplete":"Employee reported task complete — not independently verified","responseMessage":"Employee message","responseReport":"Employee report","responseUnknown":"Employee response (unrecognized code)"},
     "StaffChannelLogin": {"intro":"Create an employee-only login or link an existing confirmed account. Share the","signInLink":"My work sign-in link","help":"separately from the password. Employees cannot access the owner Supervisor or café data.","createSuccess":"Staff login created and linked. Share the sign-in link and password separately. The password is not stored here.","createFailed":"Could not create this login. Check the email is unused and the employee is active. If an account already exists, link it below.","copied":"Staff sign-in link copied. Share the password separately.","copyFailed":"Use the My work sign-in link above. Never put passwords in a URL.","copyButton":"Copy staff sign-in link","emailLabel":"Employee login email","emailPlaceholder":"Employee account email","passwordLabel":"New password (12 characters minimum)","passwordPlaceholder":"Set employee password","createButton":"Create employee login"},
