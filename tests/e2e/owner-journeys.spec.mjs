@@ -66,6 +66,45 @@ test("@home management team defaults and edits stay scoped to the active café",
   }
 });
 
+test("@home workforce conversation opens privately and history survives rollout rollback",async({browser})=>{
+  test.setTimeout(100_000);
+  const owner=seededCafe(0),other=seededCafe(1);
+  const primary=await browser.newContext(),foreign=await browser.newContext();
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres"});
+  await db.connect();
+  let savedRollout,savedThread,threadId;
+  try{
+    [savedRollout]=(await db.query("select enabled,scope from public.luna_rollouts where business_id=$1",[owner.businessId])).rows;
+    [savedThread]=(await db.query("select thread_id from public.luna_employee_threads where business_id=$1 and employee_key='finance'",[owner.businessId])).rows;
+    await db.query("insert into public.luna_rollouts(business_id,enabled,scope) values($1,true,'workforce') on conflict(business_id) do update set enabled=true,scope='workforce'",[owner.businessId]);
+    const page=await primary.newPage();
+    await login(page,owner);
+    await openOwnedPage(page,owner,"operations/team");
+    const finance=page.getByRole("article").filter({has:page.getByRole("heading",{name:"Leo",exact:true})});
+    await finance.getByRole("button",{name:"Open conversation",exact:true}).click();
+    await expect(page).toHaveURL(/[?&]thread=[0-9a-f-]{36}/u);
+    threadId=new URL(page.url()).searchParams.get("thread");
+    expect((await db.query("select employee_key from public.luna_employee_threads where business_id=$1 and thread_id=$2",[owner.businessId,threadId])).rows)
+      .toEqual([{employee_key:"finance"}]);
+    expect((await primary.request.get("/api/ai/threads/"+threadId)).status()).toBe(200);
+    const second=await foreign.newPage();
+    await login(second,other);
+    expect([401,403,404]).toContain((await foreign.request.get("/api/ai/threads/"+threadId)).status());
+    await db.query("update public.luna_rollouts set enabled=false where business_id=$1",[owner.businessId]);
+    await openOwnedPage(page,owner,"operations/team");
+    await finance.getByRole("button",{name:"Open conversation history",exact:true}).click();
+    await expect(page).toHaveURL(new RegExp("[?&]thread="+threadId+"(?:&|$)","u"));
+    expect((await primary.request.get("/api/ai/threads/"+threadId)).status()).toBe(200);
+  }finally{
+    if(threadId&&!savedThread)await db.query("delete from public.ai_threads where business_id=$1 and id=$2",[owner.businessId,threadId]);
+    if(savedRollout)await db.query("update public.luna_rollouts set enabled=$2,scope=$3 where business_id=$1",[owner.businessId,savedRollout.enabled,savedRollout.scope]);
+    else await db.query("delete from public.luna_rollouts where business_id=$1",[owner.businessId]);
+    await db.end();
+    await primary.close();
+    await foreign.close();
+  }
+});
+
 test("@home fresh registration owns a private café and never inherits shared demo",async({browser})=>{
   test.setTimeout(100_000);
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL,secret=process.env.SUPABASE_SERVICE_ROLE_KEY;
