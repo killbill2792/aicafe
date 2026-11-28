@@ -257,4 +257,16 @@ describe("Toast published catalog adapter",()=>{
    posName:"Maria Lopez",role:"Barista",hourlyWageCents:1850,active:false
   }]);
  });
+ it("uses one observed roster for staging and the employee import",async()=>{
+  const person="ffffffff-ffff-4fff-8fff-ffffffffffff";
+  request.mockResolvedValueOnce([{guid:person,firstName:"Maria",lastName:"Lopez",jobReferences:[{guid:gid}]}])
+   .mockResolvedValueOnce([{guid:gid,title:"Barista",defaultWage:18.5,wageFrequency:"HOURLY"}]);
+  const roster=await adapter.fetchEmployeeRosterBundle();
+  expect(roster.facts).toEqual([{employee_guid:person,display_name:"Maria Lopez",deleted:false}]);
+  expect(request.mock.calls.map(([path])=>path)).toEqual(["/labor/v1/employees"]);
+  await expect(roster.fetchEmployees()).resolves.toMatchObject([{
+   posTeamMemberId:"toast:"+rg+":"+person,displayName:"Maria Lopez",hourlyWageCents:1850
+  }]);
+  expect(request.mock.calls.map(([path])=>path)).toEqual(["/labor/v1/employees","/labor/v1/jobs"]);
+ });
 });

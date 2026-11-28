@@ -52,7 +52,7 @@ function fakeDb(analytics:boolean){
    const q={
     select(_s:string){return q;},eq(k:string,v:unknown){filters[k]=v;return q;},
     in(_k:string,_v:unknown[]){return q;},
-    or(expr:string){if(table==="toast_raw_records")queryOr=expr;
+    or(expr:string){if(table==="external_records")queryOr=expr;
      if(table==="toast_day_status"&&!patch){selection.or.push(expr);queryOr=expr;}return q;},
     is(k:string){if(table==="toast_day_status"&&!patch)selection.is.push(k);return q;},
     order(_k:string,_opts?:unknown){return q;},limit(n:number){queryLimit=n;return q;},range(_s:number,_e:number){return q;},delete(){return q;},
@@ -93,7 +93,7 @@ function fakeDb(analytics:boolean){
        String(b.business_date).localeCompare(String(a.business_date))).slice(0,queryLimit);
      const data=table==="toast_day_status"&&!patch?eligible:
       table==="toast_internal_check_cache"?cacheRows:
-      table==="toast_raw_records"&&queryOr.includes("seen_run_id.eq."+item.last_import_run_id)?archive.map(payload=>({payload})):[];
+      table==="external_records"&&queryOr.includes("seen_run_id.eq."+item.last_import_run_id)?archive.map(payload=>({payload})):[];
      return Promise.resolve({data,error:null}).then(yes,no);
     }
    };return q;
