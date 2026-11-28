@@ -151,6 +151,23 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     if(error)throw new ToastApiError("unavailable");
     if(!response&&data)throw new ToastApiError("rate_limited",429,String(data));
   }
+  async function assertLocationAccess(restaurantGuid:string,allowUnverified=false) {
+    const {data:mapping,error}=await db.from("toast_location_mappings")
+      .select("verified_at").eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).maybeSingle();
+    if(error||!mapping||(!allowUnverified&&!mapping.verified_at))throw new ToastApiError("unauthorized_location");
+    return typeof mapping.verified_at==="string"?mapping.verified_at:undefined;
+  }
+  async function assertSourceAccess(restaurantGuid:string,permission:string) {
+    const [verification,credentials]=await Promise.all([
+      assertLocationAccess(restaurantGuid),
+      db.from("toast_api_credentials").select("configuration_version,scopes_available")
+        .eq("business_id",businessId).neq("state","disconnected").maybeSingle(),
+    ]);
+    if(credentials.error)throw new ToastApiError("unavailable");
+    if(!credentials.data)throw new ToastApiError("not_configured",401);
+    if(credentials.data.scopes_available?.[permission]===false)throw new ToastApiError("missing_permissions",403);
+    return JSON.stringify([verification,credentials.data.configuration_version]);
+  }
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
      opts:{allowUnverified?:boolean;deadlineAt?:number;stockSearchGuids?:string[];onResponse?:(meta:{status:number;nextPageToken:string|null})=>void}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
@@ -160,10 +177,7 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     if(!guid.success||!path.startsWith("/")||path.startsWith("//")||path.includes("..")||path.includes("://")||
       path.includes("#")||path.includes("\\"))
       throw new ToastApiError("unauthorized_location");
-    const {data:mapping,error:mapError}=await db.from("toast_location_mappings")
-      .select("verified_at").eq("business_id",businessId).eq("restaurant_guid",guid.data).maybeSingle();
-    if(mapError||!mapping||(!opts.allowUnverified&&!mapping.verified_at))
-      throw new ToastApiError("unauthorized_location");
+    await assertLocationAccess(guid.data,opts.allowUnverified);
     const credentials=await row(),origin=trustedToastOrigin(credentials.api_origin);
     if(credentials.retry_after&&Date.parse(credentials.retry_after)>Date.now())
       throw new ToastApiError("rate_limited",429,credentials.retry_after);
@@ -237,9 +251,9 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
   }
   async function fetchRestaurantInfo(restaurantGuid:string,allowUnverified=false,deadlineAt?:number) {
     return request("/restaurants/v1/restaurants/"+restaurantGuid,restaurantGuid,
-      z.object({guid:GUID,general:z.object({timeZone:z.string().min(1),
+      z.looseObject({guid:GUID,general:z.looseObject({timeZone:z.string().min(1),
       closeoutHour:z.number().int().min(0).max(12),
       name:z.string().nullish()})}),{allowUnverified,deadlineAt});
   }
-  return {request,fetchRestaurantInfo};
+  return {request,fetchRestaurantInfo,assertSourceAccess};
 }

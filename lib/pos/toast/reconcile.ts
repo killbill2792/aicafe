@@ -13,6 +13,7 @@ import {fromZonedTime} from "date-fns-tz";
 import {parseToastDayPage} from "./dayParser";
 import {nextDayCheckState,type DayCheckEvent,type DayCheckState} from "./dayCheckState";
 import {compareDayMoney,DAY_CHECK_TOLERANCE_CENTS} from "@/lib/data/canonical/dayCheck";
+import {paymentReceiptSchema,toastPaymentArchive} from "./paymentArchive.server";
 type Location={businessId:string;restaurantGuid:string;locationId:string;
  timeZone:string;closeoutHour:number;expectedImportedAt?:string|null};
 class StaleImportError extends Error{}
@@ -320,17 +321,24 @@ async function internalDay(db:SupabaseClient,p:Location,day:string,status:Status
   }
  }
  const client=createToastClient(db,p.businessId);
+ const payments=toastPaymentArchive(db,p,client);
+ const fromPaymentReceipt=async <T>(key:string,schema:z.ZodType<T>,
+  observe:(revision?:number)=>Promise<{value:unknown;externalRevision:number}>)=>{
+  const existing=cached.get(key),receipt=paymentReceiptSchema.safeParse(existing);
+  // Existing short-lived proof caches can finish an in-flight check.
+  if(cached.has(key)&&!receipt.success)return schema.parse(existing);
+  const {value,externalRevision}=await observe(receipt.data?.externalRevision);
+  const validated=schema.parse(value);
+  if(externalRevision!==receipt.data?.externalRevision)await cache.save(key,{externalRevision});
+  return validated;
+ };
  // Toast's documented endpoint returns the full GUID list, without paging parameters.
- const paid=cached.has("paid")?z.array(GUID).parse(cached.get("paid")):
-  await client.request("/orders/v2/payments?paidBusinessDate="+day8(day),p.restaurantGuid,z.array(GUID),{deadlineAt});
- if(!cached.has("paid"))await cache.save("paid",paid);
+ const paid=await fromPaymentReceipt("paid",z.array(GUID),
+  revision=>payments.list(day,"paidBusinessDate",20000,deadlineAt,revision));
  if(paid.length>20000)throw new ToastApiError("too_many_payments");
  const api=new Set(paid),details=z.object({guid:GUID,orderGuid:GUID,paidBusinessDate:z.number().int()});
  const paymentDetail=async(guid:string)=>{
-  const key="payment:"+guid;
-  if(cached.has(key))return details.parse(cached.get(key));
-  const result=await client.request("/orders/v2/payments/"+guid,p.restaurantGuid,details,{deadlineAt});
-  await cache.save(key,result);return result;
+  return fromPaymentReceipt("payment:"+guid,details,revision=>payments.detail(guid,deadlineAt,revision));
  };
  let paidOtherDay=0,unknownOrder=false;const otherDays=new Set<string>();
  // The paid-date GUID endpoint also lists declined/voided attempts. They

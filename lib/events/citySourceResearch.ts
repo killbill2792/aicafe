@@ -26,6 +26,8 @@ export type CitySourceCoverage={
   /** Retry failures or incompletely covered windows; never advance a complete cursor for these. */
   retryEligible:boolean;failure:CityResearchFailure|null;
   events:CityEventCandidate[];
+  /** The admitted provider report for this exact scan, before event projection. */
+  sourceReport?:unknown;
 };
 export type CitySourceResearchResult={
   events:CityEventCandidate[];sources:CitySourceCoverage[];
@@ -123,7 +125,11 @@ export function parseCityResearchEvents(text:string,from:string,to:string,source
   const rows=responseRows(text);
   // Bad dates, unsupported sources and out-of-window rows cannot count as completed coverage.
   // Deduplicated valid rows do not count as missing evidence.
-  const rejected=rows?.some(row=>parseNearbyEvents(JSON.stringify({events:[row]}),from,to)?.length!==1)??false;
+  const rejected=rows?.some(row=>{
+    const [listing]=parseNearbyEvents(JSON.stringify({events:[row]}),from,to)??[];
+    const url=listing?trustedUrl(listing.sourceUrl):null;
+    return !url||!officialHost(url,source);
+  })??false;
   const events:CityEventCandidate[]=[];let filtered=rejected;
   const seen=new Set<string>();
   for(const item of parsed){

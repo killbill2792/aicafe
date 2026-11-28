@@ -32,16 +32,14 @@ export async function readMenuCatalogRows(
   if (!businessId) throw new Error("Café access scope mismatch");
   try {
     return await readAllPosRows<MenuCatalogRow>(
-      (first, last) => client.from("cv_menu")
-        .select("id,name,base_name,size_label,price_cents,prep_seconds,category,menu_group,is_active,pos_item_id,catalog_source,catalog_last_synced_at,description,pos_visibility,pos_pricing_strategy")
-        .eq("business_id", businessId).like("source_ref","item:%")
-        .order("name").order("source_ref")
+      (first, last) => client.rpc("menu_catalog_for",{p_business_id:businessId})
+        .order("name").order("id")
         .range(first, last),
       "café menu items",
     );
   } catch {
     // Report only an error category, never row data or DB payloads.
-    logQueryError("readMenuCatalogRows:cv_menu", { message: "read_failed" });
+    logQueryError("readMenuCatalogRows:menu_catalog_for", { message: "read_failed" });
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
 }

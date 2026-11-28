@@ -52,7 +52,7 @@ Individual sold items
 
 ## cv_payments
 
-Sanitized Toast payments
+Toast payments from committed orders and retained historical evidence
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
@@ -147,16 +147,16 @@ Employee roster
 
 ## cv_shifts
 
-Published application shifts
+Application shifts and provider-planned shifts
 
 | Column | Meaning | Unit | Source | Example owner question |
 |---|---|---|---|---|
 | business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
-| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
+| source | Application, Toast, or Square. | label | app | Where did this number come from? |
 | source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
-| data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
+| data | Shift timing and scheduling details. Provider rows have paid=false and identify a completed observation or a retained historical projection. | JSON | app | Show the source detail. |
 
 ## cv_menu
 
@@ -212,20 +212,6 @@ Persisted owner answers
 | status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
 | business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
 | data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
-
-## cv_analytics
-
-Typed Toast ERA measurements
-
-| Column | Meaning | Unit | Source | Example owner question |
-|---|---|---|---|---|
-| business_id | Authenticated café UUID; never query other cafés. | UUID | app | What data does my café have? |
-| source | Data origin: Toast, owner, or application. | label | app | Where did this number come from? |
-| source_ref | Stable reference for the underlying fact. | identifier | app | Which record supports it? |
-| status | Actual, estimated, open, needs match or owner provided. | label | app | Which facts are incomplete? |
-| business_date | Café business date when recorded; null for undated reference facts. | local date | app | What happened last week? |
-| data | Restricted, non-sensitive attributes relevant to this canonical entity. | JSON | app | Show the source detail. |
-| value_numeric | Numeric ERA measurement; money metrics use cents. | metric-dependent | toast | What did Toast report? |
 
 ## cv_orders
 

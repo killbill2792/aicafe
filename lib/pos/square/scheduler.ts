@@ -1,3 +1,4 @@
+import {squareArchive} from "./sourceArchive.server";
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
@@ -56,6 +57,7 @@ export async function syncSquareTick(db:SupabaseClient,now=new Date()):Promise<T
     await syncPosData(db,{businessId:conn.business_id,locationId:location.id,
      timezone:business.timezone,allowCatalogArchive:locations.length===1,
       adapter:createSquareAdapter({
+      archive:squareArchive(db,conn.business_id,conn.merchant_id,location.pos_location_id),
       accessToken:token,locationId:location.pos_location_id}),since,until:now});
    }
    const {error:doneError}=await db.from("pos_connections").update({

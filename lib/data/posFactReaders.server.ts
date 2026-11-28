@@ -94,7 +94,7 @@ export function posFactReaders(db:SupabaseClient,businessId:string){
    checkPeriod(period);
    const coverage=await toastCoverage(period);
    const found=await readPages<{business_date:string;employee_id:string;net_sales_cents:unknown;orders_count:unknown}>((start,end)=>
-     db.from("employee_sales_rollup").select("business_date,employee_id,net_sales_cents,orders_count")
+     db.from("cv_employee_sales").select("business_date,employee_id,net_sales_cents,orders_count")
      .eq("business_id",businessId).gte("business_date",period.from).lte("business_date",period.to)
      .order("business_date").order("employee_id").order("net_sales_cents").order("orders_count").range(start,end));
    if(found.error&&!found.rows.length)return missing("employeeSalesUnavailable");

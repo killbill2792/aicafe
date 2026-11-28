@@ -5,11 +5,12 @@ import {getOwnerConfirmedProcessingFeePlans,ownerConfirmedPlanForDate} from "../
 import {upsertProcessingFeeDailyFact,setProcessingFeeCandidateEligibility} from "../processingFees";
 import {readAllPages} from "./readAllPages";
 
-type Row={payment_ref:string;payment_type:string|null;payment_status:string|null;card_type:string|null;
+type Row={source_ref:string;status:string;fee_write_allowed:string|null;payment_type:string|null;payment_status:string|null;card_type:string|null;
  card_entry_mode:string|null;amount_cents:number|null;
  original_processing_fee_cents:number|null;
  processing_fee_cents?:number|null;fee_status?:string|null;fee_basis?:string|null};
 type RawRule=Record<string,unknown>;
+class PaymentSourceNotInstalled extends Error {}
 const isRawRule=(x:unknown):x is RawRule=>!!x&&typeof x==="object"&&!Array.isArray(x);
 function parseCardRules(raw:unknown,defaultOne:boolean):ToastCardRule[]{
  if(!Array.isArray(raw))return [];
@@ -44,17 +45,22 @@ async function paymentCoverageComplete(db:SupabaseClient,businessId:string,busin
  */
 export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
  businessId:string,businessDate:string){
- const raw=await db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents")
-  .eq("business_id",businessId).eq("business_date",businessDate)
-  .order("payment_ref").range(0,0);
- if(raw.error && ["42P01","PGRST205"].includes(String(raw.error.code??"")))
-  return {status:"not_installed" as const};
- if(raw.error)throw raw.error;
- const rows=await readAllPages((start,end)=>db.from("toast_payment_facts").select(
-  "payment_ref,payment_type,payment_status,card_type,card_entry_mode,amount_cents,original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis")
-  .eq("business_id",businessId).eq("business_date",businessDate)
-  .order("payment_ref").range(start,end)) as Row[];
+ let rows:Row[];
+ try{
+  rows=await readAllPages(async(start,end)=>{
+   const result=await db.from("cv_payments").select(
+    "source_ref,status,payment_type,payment_status:data->>paymentStatus,card_type,card_entry_mode,amount_cents,"+
+    "original_processing_fee_cents,processing_fee_cents,fee_status,fee_basis:data->>feeBasis,fee_write_allowed:data->>feeCacheMatches")
+    .eq("business_id",businessId).eq("business_date",businessDate).eq("source","toast")
+    .in("data->>evidence",["committed_order","historical_projection"])
+    .order("source_ref").range(start,end).overrideTypes<Row[],{merge:false}>();
+   if(result.error&&["42P01","PGRST205"].includes(result.error.code))throw new PaymentSourceNotInstalled();
+   return result;
+  });
+ }catch(error){
+  if(error instanceof PaymentSourceNotInstalled)return {status:"not_installed" as const};
+  throw error;
+ }
  const plans=await getOwnerConfirmedProcessingFeePlans(db,businessId);
  const plan=ownerConfirmedPlanForDate(plans,businessDate);
  let rules:ToastCardRule[]=[];
@@ -75,6 +81,9 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   },rules)
  }));
  for(const {row,decision} of decisions){
+  // The canonical read can advance beyond its typed compatibility row.
+  // In that case keep the calculation and leave the older copy alone.
+  if(row.fee_write_allowed!=="true"||row.status==="needs_match")continue;
   // The stored basis list predates the default card rate; it is recorded as
   // an estimate with no rule basis (fee_status says "estimated").
   const next={processing_fee_cents:decision.amountCents,fee_status:decision.status,
@@ -83,13 +92,23 @@ export async function refreshToastPaymentFeeForDay(db:SupabaseClient,
   // day refresh flooded the database disk and made the whole app time out.
   if(row.processing_fee_cents===next.processing_fee_cents&&row.fee_status===next.fee_status
    &&row.fee_basis===next.fee_basis)continue;
-  const {error}=await db.from("toast_payment_facts").update(next)
+  const [,restaurantGuid,...reference]=row.source_ref.split(":");
+  let write=db.from("toast_payment_facts").update(next)
    .eq("business_id",businessId).eq("business_date",businessDate)
-   .eq("payment_ref",row.payment_ref);
+   .eq("restaurant_guid",restaurantGuid).eq("payment_ref",reference.join(":"));
+  // A new capture receipt can verify the fee during this refresh. Apply the
+  // decision only while its provider inputs are still the values we read.
+  for(const column of ["payment_type","payment_status","card_type","card_entry_mode",
+    "amount_cents","original_processing_fee_cents"] as const){
+   const value=row[column];
+   write=value==null?write.is(column,null):write.eq(column,value);
+  }
+  const {data,error}=await write.select("payment_ref");
   if(error)throw error;
+  if(data?.length!==1)throw new Error("Toast payment evidence changed during fee refresh");
  }
  const covered=decisions.length>0&&await paymentCoverageComplete(db,businessId,businessDate);
- const missing=!covered||decisions.some(x=>x.decision.amountCents===null);
+ const missing=!covered||decisions.some(x=>x.row.status==="needs_match"||x.decision.amountCents===null);
  if(missing){
   for(const sourceType of ["connected_pos_actual","owner_confirmed_estimate"] as const)
    await setProcessingFeeCandidateEligibility(db,{

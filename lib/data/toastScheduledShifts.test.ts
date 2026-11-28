@@ -11,13 +11,11 @@ const canonicalId="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 function db(){
  const scopeChecks:string[]=[];
  const sources:Record<string,Record<string,unknown>[]> = {
-  pos_scheduled_shifts:[
-   {business_id:cafe,location_id:location,external_shift_id:"toast-shift-1",
-    external_employee_id:employee,scheduled_start:"2026-10-27T18:00:00Z",
-    scheduled_end:"2026-10-27T20:00:00Z"},
-   {business_id:cafe,location_id:location,external_shift_id:"toast-shift-old",
-    external_employee_id:employee,scheduled_start:"2026-10-21T18:00:00Z",
-    scheduled_end:"2026-10-21T20:00:00Z"}
+  cv_shifts:[
+   {business_id:cafe,source_ref:"toast-shift:toast-shift-1",data:{location_id:location,
+    employee_id:employee,scheduled_start:"2026-10-27T18:00:00Z",scheduled_end:"2026-10-27T20:00:00Z"}},
+   {business_id:cafe,source_ref:"toast-shift:toast-shift-old",data:{location_id:location,
+    employee_id:employee,scheduled_start:"2026-10-21T18:00:00Z",scheduled_end:"2026-10-21T20:00:00Z"}}
   ],
   toast_location_mappings:[{business_id:cafe,location_id:location,restaurant_guid:restaurant}],
   toast_employee_directory:[{business_id:cafe,restaurant_guid:restaurant,
@@ -29,7 +27,7 @@ function db(){
   const chain={
    select:()=>chain,
    eq:(field:string,value:unknown)=>{if(field==="business_id"){scopeChecks.push(table);scoped=String(value);}return chain;},
-   gte:()=>chain,lte:()=>chain,order:()=>chain,limit:()=>chain,in:()=>chain,
+   gte:()=>chain,lt:()=>chain,order:()=>chain,limit:()=>chain,in:()=>chain,
    then:(cb:(value:{data:Record<string,unknown>[];error:null})=>unknown)=>
     Promise.resolve({data:(sources[table]??[]).filter(row=>row.business_id===scoped),error:null}).then(cb),
   };
@@ -46,6 +44,6 @@ describe("Toast planned shifts never become wages",()=>{
    locationId:location,source:"toast",paid:false,
    start:"2026-10-27T18:00:00Z",end:"2026-10-27T20:00:00Z"}]);
   expect(f.scopeChecks).toEqual([
-   "toast_location_mappings","pos_scheduled_shifts","toast_employee_directory","employees"]);
+   "toast_location_mappings","cv_shifts","toast_employee_directory","employees"]);
  });
 });

@@ -1,6 +1,7 @@
 import "server-only";
 import {createHash} from "node:crypto";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {readWithSourceAccess} from "@/lib/externalData/pages";
 import {activeBinding} from "./identity.server";
 import {consumeInboundOnce,dispatchOutboundOnce,enqueueWhatsApp,stableOwnerClientMessageId,
   type DispatchInbound} from "./queue.server";
@@ -41,10 +42,13 @@ export const dispatchVerifiedWhatsAppInbound:DispatchInbound=async(message)=>{
     inbound.owner_user_id!==message.scope.ownerUserId||inbound.thread_id!==message.threadId||
     inbound.kind!==message.kind||inbound.media_id!==message.mediaId)
     throw new Error("whatsapp_inbound_scope_mismatch");
-  const binding=await activeBinding(inbound.binding_id);
-  if(!binding||binding.businessId!==inbound.business_id||
-    binding.ownerUserId!==inbound.owner_user_id||binding.threadId!==inbound.thread_id)
-    throw new Error("whatsapp_binding_revoked");
+  const assertBinding=async()=>{
+    const binding=await activeBinding(inbound.binding_id);
+    if(!binding||binding.businessId!==inbound.business_id||
+      binding.ownerUserId!==inbound.owner_user_id||binding.threadId!==inbound.thread_id)
+      throw new Error("whatsapp_binding_revoked");
+  };
+  await assertBinding();
   if(!withinWhatsAppServiceWindow(inbound.provider_at))
     throw new Error("whatsapp_inbound_outside_reply_window");
   let input:WhatsAppOwnerInput;
@@ -64,9 +68,13 @@ export const dispatchVerifiedWhatsAppInbound:DispatchInbound=async(message)=>{
     const token=process.env.META_WHATSAPP_TOKEN||process.env.WHATSAPP_TOKEN;
     if(!token)throw new Error("whatsapp_media_token_not_configured");
     try{
+      const fetchMedia:typeof fetch=(url,init)=>readWithSourceAccess(assertBinding,()=>fetch(url,init),async response=>{
+        await response.body?.cancel().catch(()=>undefined);
+      });
       const media=await downloadWhatsAppMedia({
         mediaId:inbound.media_id,kind:inbound.kind,
-      },token);
+      },token,fetchMedia);
+      await assertBinding();
       const draft=await saveWhatsAppMediaDraft({
         scope:message.scope,threadId:message.threadId,wamid:inbound.wamid,media,
       });

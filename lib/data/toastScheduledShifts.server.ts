@@ -20,12 +20,12 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
  if(mappings.error)throw mappings.error;
  if(!mappings.data?.length)return [];
  const [planned,roster]=await Promise.all([
-  db.from("pos_scheduled_shifts")
-   .select("location_id,external_shift_id,external_employee_id,scheduled_start,scheduled_end")
-   .eq("business_id",businessId).eq("provider","toast").eq("deleted",false)
-   .gte("scheduled_end",new Date(first).toISOString())
-   .lte("scheduled_start",new Date(last).toISOString())
-   .order("scheduled_start").limit(1001),
+  db.from("cv_shifts").select("source_ref,data").eq("business_id",businessId).eq("source","toast")
+   // Restrict by date prefixes over the padded UTC window. The exact overlap
+   // check below uses dates in the café's own timezone.
+   .gte("data->>scheduled_end",new Date(first).toISOString().slice(0,10))
+   .lt("data->>scheduled_start",new Date(last+86400000).toISOString().slice(0,10))
+   .order("data->>scheduled_start").order("source_ref").limit(1001),
    db.from("toast_employee_directory")
    .select("restaurant_guid,employee_guid,display_name,linked_employee_id")
    .eq("business_id",businessId).limit(5001),
@@ -52,16 +52,13 @@ export async function readToastPlannedShifts(db:SupabaseClient,businessId:string
   row.restaurant_guid+":"+row.employee_guid,
   canonicalNames.get(row.linked_employee_id)??row.display_name
  ]));
- return (planned.data??[]).filter(row=>{
-  const start=formatInTimeZone(new Date(row.scheduled_start),timezone,"yyyy-MM-dd");
-  const end=formatInTimeZone(new Date(row.scheduled_end),timezone,"yyyy-MM-dd");
-  return start<=to&&end>=from;
- }).map(row=>({
-  id:row.external_shift_id,
-  employeeName:employeeNames.get((locationMap.get(row.location_id)??"")+":"+row.external_employee_id)
-   ??"Toast team member",
-  start:row.scheduled_start,end:row.scheduled_end,
-  employeeId:employeesByPos.get((locationMap.get(row.location_id)??"")+":"+row.external_employee_id)??null,
-  locationId:row.location_id,source:"toast" as const,paid:false as const,
- }));
+ return (planned.data??[]).flatMap(row=>{
+  const shift=row.data;
+  const start=new Date(shift.scheduled_start),end=new Date(shift.scheduled_end);
+  if(formatInTimeZone(start,timezone,"yyyy-MM-dd")>to||formatInTimeZone(end,timezone,"yyyy-MM-dd")<from)return [];
+  const employeeKey=(locationMap.get(shift.location_id)??"")+":"+shift.employee_id;
+  return [{id:row.source_ref.slice("toast-shift:".length),employeeName:employeeNames.get(employeeKey)??"Toast team member",
+   start:shift.scheduled_start,end:shift.scheduled_end,employeeId:employeesByPos.get(employeeKey)??null,
+   locationId:shift.location_id,source:"toast",paid:false}];
+ });
 }

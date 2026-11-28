@@ -1,9 +1,9 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** One transactional, date-scoped rebuild for both Toast paths and CSV imports.
- * The database owns the clock, cardinality and locking: no PostgREST row cap,
- * no delete/insert gap, and no synthetic CSV timestamp treated as a real hour.
+/** Reconcile saved historical buckets after promotion. Current sales are read
+ * from source and accepted order records. PostgreSQL removes a saved day
+ * only when it can reproduce every bucket and keeps non-reproducible history.
  */
 export async function rebuildSalesFactRollups(
   db: SupabaseClient,

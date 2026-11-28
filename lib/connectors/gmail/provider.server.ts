@@ -1,4 +1,5 @@
 import "server-only";
+import {readWithSourceAccess} from "@/lib/externalData/pages";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {decryptToken,encryptToken} from "@/lib/connectors/crypto.server";
 import {getConnectorAccount,assertGmailCapability,allowsGmail,type ConnectorOwner,type ConnectorOperation,type ConnectorAccount} from "@/lib/connectors/registry.server";
@@ -77,13 +78,11 @@ async function scopedGmailApi(scope:ConnectorOwner,account:ConnectorAccount,
   if(live?.id!==account.id||live.generation!==account.generation||live.provider_subject!==account.provider_subject||!allowsGmail(live,operation))
     throw new Error("gmail_permission_changed");
  };
+ if(!init?.method||init.method==="GET")return readWithSourceAccess(assertCurrent,()=>gmailApi(token,path,init));
  await assertCurrent();
- const response=await gmailApi(token,path,init);
- // A read that completed after revocation is never returned to the model.
- // Writes already accepted by the provider remain subject to durable receipt
- // reconciliation; do not erase an ambiguous provider effect.
- if(!init?.method||init.method==="GET")await assertCurrent();
- return response;
+ // A provider write uses the existing durable reconciliation path even if the
+ // account is revoked while the response is in flight.
+ return gmailApi(token,path,init);
 }
 export type GmailMessage={id:string;threadId?:string;snippet?:string;internalDate?:string;
   payload?:{headers?:Array<{name:string;value:string}>;mimeType?:string;body?:{data?:string;size?:number};

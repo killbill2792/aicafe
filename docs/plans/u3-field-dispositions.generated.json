@@ -3,8 +3,8 @@
   "generatedFrom": "migrated pg_catalog physical schema + reviewed U3 SQL manifest",
   "modelAuthorization": false,
   "productionRowsIncluded": false,
-  "physicalTables": 229,
-  "physicalFields": 2556,
+  "physicalTables": 233,
+  "physicalFields": 2656,
   "approvedSqlRelations": 41,
   "reviewedFields": 387,
   "additionalLogicalViews": [
@@ -15,13 +15,13 @@
   "dispositionCounts": {
     "admitted_masked_personal_field": 14,
     "admitted_research_field": 373,
-    "internal_or_specialized_service": 1323,
+    "internal_or_specialized_service": 1270,
     "not_admitted_from_source": 106,
-    "protected_operational_archive": 58,
+    "protected_operational_archive": 152,
     "restricted_secret_or_auth": 81,
     "scope_only": 36,
-    "specialist_or_review_pending": 422,
-    "unreviewed_not_admitted": 143
+    "specialist_or_review_pending": 424,
+    "unreviewed_not_admitted": 200
   },
   "relations": [
     {
@@ -2781,6 +2781,27 @@
           "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
         },
         {
+          "field": "source_report",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "specialist_or_review_pending",
+          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+        },
+        {
+          "field": "source_report_changes",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "specialist_or_review_pending",
+          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+        },
+        {
+          "field": "source_report_observed_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "specialist_or_review_pending",
+          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
+        },
+        {
           "field": "status",
           "type": "text",
           "notNull": true,
@@ -4259,6 +4280,1019 @@
           "notNull": false,
           "status": "admitted_research_field",
           "reason": "Reviewed model-visible field; access still requires signed scope, RLS and query admission"
+        }
+      ]
+    },
+    {
+      "relation": "external_changes_other",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_date",
+          "type": "date",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "changed_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "changes",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "delta_origin",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "id",
+          "type": "bigint",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "record_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "restaurant_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "run_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_key",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        }
+      ]
+    },
+    {
+      "relation": "external_identifiers",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "id",
+          "type": "bigint",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "namespace",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "record_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "relationship",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "selector",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "shared",
+          "type": "boolean",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "valid_from",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "valid_until",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "value",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        }
+      ]
+    },
+    {
+      "relation": "external_observation_members",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "observation_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "observed_sha256",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "record_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        }
+      ]
+    },
+    {
+      "relation": "external_record_changes",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_date",
+          "type": "date",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "changed_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "changes",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "delta_origin",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "id",
+          "type": "bigint",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "record_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "restaurant_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "run_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_key",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        }
+      ]
+    },
+    {
+      "relation": "external_record_links",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "evidence",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "id",
+          "type": "bigint",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "native_key",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "native_relation",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "observed_at",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "record_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "relation",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "selector",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "target_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "target_provider",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "valid_until",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        }
+      ]
+    },
+    {
+      "relation": "external_records",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_date",
+          "type": "date",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "capture_key",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "commit_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "first_seen",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "last_seen",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "live_projection",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload_origin",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload_sha256",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "restaurant_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "run_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "seen_run_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_context",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_index",
+          "type": "integer",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_key",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_page",
+          "type": "integer",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_updated_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "superseded_by",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        }
+      ]
+    },
+    {
+      "relation": "external_records_other",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_date",
+          "type": "date",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "capture_key",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "commit_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "entity_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "first_seen",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "last_seen",
+          "type": "timestamp with time zone",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "live_projection",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload",
+          "type": "jsonb",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload_origin",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload_sha256",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "restaurant_guid",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "run_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "seen_run_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_context",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_index",
+          "type": "integer",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_key",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_page",
+          "type": "integer",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_updated_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "superseded_by",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        }
+      ]
+    },
+    {
+      "relation": "external_resources",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_attempt_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_commit",
+          "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_scope",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_discovered_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_permission_loss_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "permission_granted",
+          "type": "boolean",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "required_permission",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "resource",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "retry_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "status",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        }
+      ]
+    },
+    {
+      "relation": "external_sync_checkpoints",
+      "sourceOwner": "Supervisor/data-platform source owner",
+      "fields": [
+        {
+          "field": "active_observation_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "business_id",
+          "type": "uuid",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "cursor_state",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_mode",
+          "type": "text",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_observation_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_revision",
+          "type": "bigint",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "last_complete_scope",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "resource",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "revision",
+          "type": "bigint",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
+        },
+        {
+          "field": "stream",
+          "type": "text",
+          "notNull": true,
+          "status": "unreviewed_not_admitted",
+          "reason": "Physical object alone cannot prove safe business meaning, source authority or tenant permission"
         }
       ]
     },
@@ -14491,68 +15525,6 @@
       ]
     },
     {
-      "relation": "toast_analytics_results",
-      "sourceOwner": "POS and menu domain",
-      "fields": [
-        {
-          "field": "business_date",
-          "type": "date",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "business_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "fetched_at",
-          "type": "timestamp with time zone",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "metric",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "report",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "restaurant_guid",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "value_json",
-          "type": "jsonb",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "value_numeric",
-          "type": "numeric",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        }
-      ]
-    },
-    {
       "relation": "toast_api_credentials",
       "sourceOwner": "POS and menu domain",
       "fields": [
@@ -15051,28 +16023,28 @@
           "type": "date",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "page",
           "type": "integer",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "payload",
           "type": "jsonb",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "run_id",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         }
       ]
     },
@@ -15833,146 +16805,56 @@
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "last_checked_at",
           "type": "timestamp with time zone",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "normalized_order",
           "type": "jsonb",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "order_guid",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "provider_modified_at",
           "type": "timestamp with time zone",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "restaurant_guid",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "source_event_guid",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "state",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
-        }
-      ]
-    },
-    {
-      "relation": "toast_open_labor_summaries",
-      "sourceOwner": "POS and menu domain",
-      "fields": [
-        {
-          "field": "business_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "clock_in",
-          "type": "timestamp with time zone",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "clock_out",
-          "type": "timestamp with time zone",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "deleted",
-          "type": "boolean",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "external_employee_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "external_time_entry_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "hourly_wage_cents",
-          "type": "bigint",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "provider_overtime_hours",
-          "type": "numeric",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "provider_regular_hours",
-          "type": "numeric",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "restaurant_guid",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "status",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "wage_status",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         }
       ]
     },
@@ -16066,13 +16948,6 @@
         },
         {
           "field": "roster_local_day",
-          "type": "date",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "void_reasons_local_day",
           "type": "date",
           "notNull": false,
           "status": "internal_or_specialized_service",
@@ -16324,117 +17199,6 @@
           "field": "run_id",
           "type": "uuid",
           "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        }
-      ]
-    },
-    {
-      "relation": "toast_order_typed_facts",
-      "sourceOwner": "POS and menu domain",
-      "fields": [
-        {
-          "field": "business_date",
-          "type": "date",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "business_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "captured_at",
-          "type": "timestamp with time zone",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "check_discounts",
-          "type": "jsonb",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "item_discounts",
-          "type": "jsonb",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "item_taxes",
-          "type": "jsonb",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "modifier_prices",
-          "type": "jsonb",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "order_duration_seconds",
-          "type": "bigint",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "order_guid",
-          "type": "uuid",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "raw_record_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "refund_details",
-          "type": "jsonb",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "restaurant_guid",
-          "type": "uuid",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "run_id",
-          "type": "uuid",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "source_seen_at",
-          "type": "timestamp with time zone",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "void_details",
-          "type": "jsonb",
-          "notNull": true,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         }
@@ -16705,89 +17469,6 @@
           "field": "restaurant_guid",
           "type": "uuid",
           "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "status",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "tip_cents",
-          "type": "bigint",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        }
-      ]
-    },
-    {
-      "relation": "toast_payment_summaries",
-      "sourceOwner": "POS and menu domain",
-      "fields": [
-        {
-          "field": "amount_cents",
-          "type": "bigint",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "business_date",
-          "type": "date",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "business_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "paid_at",
-          "type": "timestamp with time zone",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "payment_ref",
-          "type": "text",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "payment_status",
-          "type": "text",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "payment_type",
-          "type": "text",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "restaurant_guid",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "server_guid",
-          "type": "uuid",
-          "notNull": false,
           "status": "internal_or_specialized_service",
           "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
         },
@@ -17148,63 +17829,105 @@
           "type": "date",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "changed_at",
           "type": "timestamp with time zone",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "changes",
           "type": "jsonb",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "delta_origin",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "entity",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "entity_guid",
           "type": "uuid",
-          "notNull": true,
+          "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "id",
           "type": "bigint",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "record_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "restaurant_guid",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "run_id",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_key",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         }
       ]
     },
@@ -17217,119 +17940,175 @@
           "type": "date",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "capture_key",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "commit_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "entity",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "entity_guid",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "first_seen",
           "type": "timestamp with time zone",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "id",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "last_seen",
           "type": "timestamp with time zone",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "live_projection",
           "type": "jsonb",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "payload",
           "type": "jsonb",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "payload_origin",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "payload_sha256",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "provider",
+          "type": "text",
+          "notNull": true,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "reader_owner_user_id",
+          "type": "uuid",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "restaurant_guid",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "run_id",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "seen_run_id",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_account",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_context",
+          "type": "jsonb",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "source_index",
           "type": "integer",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_key",
+          "type": "text",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "source_page",
           "type": "integer",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
+        },
+        {
+          "field": "source_updated_at",
+          "type": "timestamp with time zone",
+          "notNull": false,
+          "status": "protected_operational_archive",
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "superseded_by",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         }
       ]
     },
@@ -17342,28 +18121,28 @@
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "lease_until",
           "type": "timestamp with time zone",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "nonce",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "restaurant_guid",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         }
       ]
     },
@@ -17376,112 +18155,112 @@
           "type": "date",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "business_id",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "capture_id",
           "type": "uuid",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "doc_url",
           "type": "text",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "endpoint",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "error_code",
           "type": "text",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "error_message",
           "type": "text",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "fetched_at",
           "type": "timestamp with time zone",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "field_paths",
           "type": "text[]",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "http_status",
           "type": "integer",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "id",
           "type": "uuid",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "identifier_counts",
           "type": "jsonb",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "item_count",
           "type": "integer",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "page_number",
           "type": "integer",
           "notNull": false,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "restaurant_guid",
           "type": "text",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         },
         {
           "field": "sample",
           "type": "jsonb",
           "notNull": true,
           "status": "protected_operational_archive",
-          "reason": "Raw current/delta/staging store; only approved scoped logical projections may read it"
+          "reason": "Current records, history or staging; access requires the separately reviewed SQL role and source scope"
         }
       ]
     },
@@ -18371,54 +19150,6 @@
       ]
     },
     {
-      "relation": "toast_void_reason_directory",
-      "sourceOwner": "POS and menu domain",
-      "fields": [
-        {
-          "field": "business_id",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "entity_type",
-          "type": "text",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "fetched_at",
-          "type": "timestamp with time zone",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "name",
-          "type": "text",
-          "notNull": false,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "reason_guid",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        },
-        {
-          "field": "restaurant_guid",
-          "type": "uuid",
-          "notNull": true,
-          "status": "internal_or_specialized_service",
-          "reason": "Operational workflow/audit/state; source-family tool or owner-specific review required"
-        }
-      ]
-    },
-    {
       "relation": "toast_void_repull_coverage",
       "sourceOwner": "POS and menu domain",
       "fields": [
@@ -18799,13 +19530,6 @@
         {
           "field": "financial_to",
           "type": "date",
-          "notNull": false,
-          "status": "specialist_or_review_pending",
-          "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"
-        },
-        {
-          "field": "financial_transactions",
-          "type": "jsonb",
           "notNull": false,
           "status": "specialist_or_review_pending",
           "reason": "Potential business fact; use existing authorized specialist or review before new SQL admission"

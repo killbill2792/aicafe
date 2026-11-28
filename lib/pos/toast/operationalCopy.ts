@@ -1,3 +1,5 @@
+import {readProviderPages} from "@/lib/externalData/pages";
+import {discoverSourceResources,noteAvailability,openSourceStream} from "@/lib/externalData/archive.server";
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
 import {z} from "zod";
@@ -20,10 +22,18 @@ export type ToastCopyScope={businessId:string;restaurantGuid:string;locationId:s
  * staging and canonical import; only its matching source receipt may update
  * publication state and existing connected_pos price-history provenance. */
 export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope){
- const adapter=createToastAdapter({db,...p});
+ const adapter=createToastAdapter({db,...p,captureSources:true});
+ const stream=await openSourceStream(db,{businessId:p.businessId,provider:"toast",account:p.restaurantGuid},
+   "menus/v2/menus","publication");
  const bundle=await adapter.fetchPublishedCatalogBundle();
  if(bundle.receipt.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
   throw new ToastApiError("unauthorized_location");
+ const identifiers=bundle.items.map(item=>({namespace:"pos_item_id",value:item.posItemId,selector:{
+   path:item.sourcePath,itemGuid:item.posMetadata?.itemGuid,sizeOptionGuid:item.posMetadata?.sizeOptionGuid,
+   sizeOptionPath:item.posMetadata?.sizeOptionPath
+ }}));
+ await stream.commit([{key:p.restaurantGuid,payload:bundle.source,updatedAt:bundle.receipt.publicationVersion,
+   identifiers}],null,true);
  const {data:previous,error:readError}=await db.from("toast_optional_sync_state")
   .select("menu_last_updated,menu_copied_at,menu_checked_local_day,menu_pending_observations")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
@@ -86,17 +96,20 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
  // same-version observed_at. Price proof requires that *stored* instant,
  // not the timestamp from a later retry of the same Toast publication.
  const observations=new Map<string,string>();
+ const bindings:{native_id:string;source_id:string}[]=[];
  for(let offset=0;offset<bundle.items.length;offset+=100){
   const ids=bundle.items.slice(offset,offset+100).map(item=>item.posItemId);
   const {data:rows,error:observationError}=await db.from("menu_items")
-   .select("pos_item_id,toast_publication_observed_at")
+   .select("id,pos_item_id,toast_publication_observed_at")
    .eq("business_id",p.businessId)
    .eq("toast_publication_version",bundle.receipt.publicationVersion)
    .eq("toast_publication_state","active").in("pos_item_id",ids);
   if(observationError)throw new ToastApiError("unavailable");
   for(const row of rows??[]){
-   if(row.pos_item_id&&row.toast_publication_observed_at)
+   if(row.pos_item_id&&row.toast_publication_observed_at){
     observations.set(row.pos_item_id,row.toast_publication_observed_at);
+    bindings.push({native_id:row.id,source_id:row.pos_item_id});
+   }
   }
  }
  let verifiedPriceChanges=0;
@@ -113,6 +126,11 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
   if(error)throw new ToastApiError("unavailable");
   if(data===true)verifiedPriceChanges++;
  }
+ const {error:identityError}=await db.rpc("external_bind_native_identities",{
+  p_business:p.businessId,p_provider:"toast",p_account:p.restaurantGuid,p_resource:"menus/v2/menus",
+  p_namespace:"pos_item_id",p_native_table:"public.menu_items",p_bindings:bindings,
+ });
+ if(identityError)throw new ToastApiError("unavailable");
  // This is the completion marker: only now can a matching version use the
  // cheap metadata-only path. A crash before this write leaves NULL pending.
  const {error:completeError}=await db.from("toast_optional_sync_state").update({
@@ -125,7 +143,7 @@ export async function copyToastPublishedMenu(db:SupabaseClient,p:ToastCopyScope)
 }
 export async function copyToastStaff(db:SupabaseClient,p:ToastCopyScope){
  await stageToastRoster(db,p); // keeps pilot links and usage checks consistent.
- return syncCanonicalEmployees(db,p.businessId,createToastAdapter({db,...p}),undefined,{restaurantGuid:p.restaurantGuid});
+ return syncCanonicalEmployees(db,p.businessId,createToastAdapter({db,...p,captureSources:true}),undefined,{restaurantGuid:p.restaurantGuid});
 }
 /** Only closed time entries are canonical; incomplete rates remain NULL, never zero. */
 export async function copyToastAttendance(db:SupabaseClient,p:ToastCopyScope,
@@ -243,6 +261,11 @@ export async function syncToastOperationalSources(db:SupabaseClient,
   .eq("business_id",p.businessId).maybeSingle();
  if(ce)throw new ToastApiError("unavailable");
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
+ const source={businessId:p.businessId,provider:"toast",account:p.restaurantGuid};
+ const plan=operationalPlan(now,p.timezone,p.closeoutHour);
+ await discoverSourceResources(db,source,plan.map(op=>({
+  resource:op.endpoint,permission:op.family,granted:scopes[op.family]??null,
+ })),now.toISOString());
  const {data:saved,error:se}=await db.from("toast_optional_sync_state")
   .select("operational_sources").eq("business_id",p.businessId)
   .eq("restaurant_guid",p.restaurantGuid).maybeSingle();
@@ -265,7 +288,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
   open=toastOpenOrUnknown(loc?.open_hours??null,p.timezone,now);
  }
  const attempts:string[]=[];
- for(const op of operationalPlan(now,p.timezone,p.closeoutHour)){
+ for(const op of plan){
   if(Date.now()>=deadlineAt)break;
   if(event&&op.family!==event.family)continue;
   const previous=states[op.key]??{};
@@ -283,35 +306,26 @@ export async function syncToastOperationalSources(db:SupabaseClient,
   const allowed=scopes[op.family]!==false;
   try{
    if(!allowed)throw new ToastApiError("missing_permissions",403);
-   let nextToken:string|null=null;
-   let cursor:string|null=null;
-   const data:Record<string,unknown>[]=[];
-   for(let page=0;page<(op.paginated?25:1);page++){
+   const data=await readProviderPages<Record<string,unknown>>(async cursor=>{
     if(Date.now()>=deadlineAt)throw new ToastApiError("timeout");
-    const query=op.queryDate&&op.businessDate?"?businessDate="+op.businessDate.replaceAll("-",""):
-     cursor?"?pageToken="+encodeURIComponent(cursor):"";
-    nextToken=null;
-    const response=await client.request(op.endpoint.startsWith("/")?op.endpoint+query:
-      "/"+op.endpoint+query,p.restaurantGuid,
-      op.single?op.schema:z.array(op.schema).max(15000),{
-       deadlineAt,onResponse:meta=>{nextToken=meta.nextPageToken;}
+    const params=new URLSearchParams();
+    if(op.queryDate&&op.businessDate)params.set("businessDate",op.businessDate.replaceAll("-",""));
+    if(cursor)params.set("pageToken",cursor);
+    const path=op.endpoint.startsWith("/")?op.endpoint:"/"+op.endpoint;
+    let next:string|null=null;
+    const response=await client.request(path+(params.size?"?"+params:""),p.restaurantGuid,
+      op.single?op.schema:z.array(op.schema),{
+        deadlineAt,onResponse:meta=>{next=meta.nextPageToken;}
       });
-    const rows=(op.single?[response]:response) as Array<Record<string,unknown>>;
-    if(!rows.length){if(page===0)break; /* Empty terminal page is normal. */}
+    const rows=(op.single?[response]:response) as Record<string,unknown>[];
     for(const row of rows){
-     if(!op.schema.safeParse(row).success)
-      throw new ToastApiError("invalid_response");
-     if(typeof row.restaurantGuid==="string"&&
-      row.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
-      throw new ToastApiError("unauthorized_location");
+     if(!op.schema.safeParse(row).success)throw new ToastApiError("invalid_response");
+     if(typeof row.restaurantGuid==="string"&&row.restaurantGuid.toLowerCase()!==p.restaurantGuid.toLowerCase())
+       throw new ToastApiError("unauthorized_location");
      nativeOperationalKey(op.endpoint,row,op.businessDate);
-     data.push(row);
     }
-    if(data.length>5000)throw new ToastApiError("invalid_response");
-    if(!op.paginated||!nextToken)break;
-    if(nextToken===cursor||page===24)throw new ToastApiError("invalid_response");
-    cursor=nextToken;
-   }
+    return {items:rows,next};
+   });
    // Toast's list omits fully in-stock items. Verify any formerly constrained
    // item missing from the list by GUID rather than retaining a false stockout.
    if(op.family==="stock"){
@@ -334,7 +348,7 @@ export async function syncToastOperationalSources(db:SupabaseClient,
    const rows=data.map(row=>{
      const key=nativeOperationalKey(op.endpoint,row,op.businessDate);
      const clean=redactToastRaw(row) as Record<string,unknown>;
-     return {...clean,business_id:p.businessId,restaurant_guid:p.restaurantGuid,
+     return {payload:clean,business_id:p.businessId,restaurant_guid:p.restaurantGuid,
       endpoint:op.endpoint,provider_key:key,
       source_key_kind:GUID.safeParse(row.guid).success?"provider_guid":
        op.single?"restaurant_singleton":"provider_composite",
@@ -362,6 +376,10 @@ export async function syncToastOperationalSources(db:SupabaseClient,
    const header=e instanceof ToastApiError&&e.retryAt?Date.parse(e.retryAt):NaN;
    const nextAt=Math.max(now.getTime()+retry,
     Number.isFinite(header)?header:0);
+   await noteAvailability(db,source,
+     op.endpoint,reason==="missing_permissions"||reason==="missing_scope_or_location"?"permission_required":
+       reason==="invalid_response"?"incomplete":e instanceof ToastApiError&&e.status===204?"unsupported":"unavailable",
+     checked,new Date(nextAt).toISOString());
    states[op.key]={...previous,last_checked_at:checked,
     status:e instanceof ToastApiError&&e.status===204?"subscription_unavailable":reason,
     error:reason,failures,next_at:new Date(nextAt).toISOString(),
@@ -393,10 +411,10 @@ export async function refreshToastOperationalEvent(db:SupabaseClient,p:ToastCopy
  const local=localClock(now,p.timezone);
  const day=local.minutes<p.closeoutHour*60?addCalendarDays(local.today,-1):local.today;
  const checked=now.toISOString();
- const payload={...redactToastRaw(rows[0]) as Record<string,unknown>,
+ const payload={payload:redactToastRaw(rows[0]),
   business_id:p.businessId,restaurant_guid:p.restaurantGuid,endpoint:"stock/v1/inventory",
   provider_key:rows[0].guid.toLowerCase(),source_key_kind:"provider_guid",business_date:day,
-  source_business_date_kind:"observed_cafe_day",fetched_at:checked,lastSuccessAt:checked};
+  observation_kind:"point",source_business_date_kind:"observed_cafe_day",fetched_at:checked,lastSuccessAt:checked};
  const {data,error}=await db.rpc("toast_stage_operational_batch",{p_business_id:p.businessId,
   p_restaurant_guid:p.restaurantGuid,p_endpoint:"stock/v1/inventory",p_business_date:day,p_objects:[payload]});
  if(error||data!==1)throw new ToastApiError("unavailable");

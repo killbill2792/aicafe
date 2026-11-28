@@ -70,12 +70,22 @@ export type PosCatalogModifierGroup = {
   posMetadata?: Record<string,unknown>;
   options: PosCatalogModifierOption[];
 };
+export type CatalogPriceSource = {
+  recordKey:string;
+  path:string[];
+  checks?:Array<{path:string[];value:string|number|boolean}>;
+};
+export type CatalogSourceBinding = {native_id:string;source_id:string;price_source?:CatalogPriceSource|null};
 export type PosCatalogItem = {
+  /** Location of this item inside the validated original publication. */
+  sourcePath?: string[];
   posItemId: string;
   name: string;
   baseName?: string;
   sizeLabel?: string | null;
   priceCents: number | null;
+  /** Exact source location of an admitted minor-unit price, or a verified open price. */
+  priceSource?: CatalogPriceSource | null;
   category: string | null;
   menuGroup?: string | null;
   description?: string | null;
@@ -109,17 +119,16 @@ export type PosTimecard = {
   breaks: PosTimecardBreak[];
 };
 
-export type PosScheduledShift = {externalShiftId:string;externalEmployeeId:string;
- externalJobId:string|null;scheduledStart:string;scheduledEnd:string;deleted:boolean};
 export type PosAdapter = {
   provider: PosProvider;
   /** Orders closed within [since, until), including their line items. */
   fetchOrders(range: { since: Date; until: Date }): Promise<PosOrder[]>;
   fetchCatalogItems(): Promise<PosCatalogItem[]>;
+  bindCatalogSources?: (bindings: CatalogSourceBinding[]) => Promise<void>;
   fetchEmployees(): Promise<PosEmployee[]>;
   fetchTimecards(range: { since: Date; until: Date }): Promise<PosTimecard[]>;
   /** Scheduled shifts never count as paid attendance. */
-  fetchPosScheduledShifts?: (range: {since:Date;until:Date}) => Promise<PosScheduledShift[]>;
+  syncPublishedSchedule?: (range: {since:Date;until:Date}) => Promise<void>;
 };
 
 export class PosNotConnectedError extends Error {

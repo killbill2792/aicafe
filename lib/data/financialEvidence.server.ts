@@ -8,14 +8,19 @@ type Scope={businessId:string;ownerUserId:string;verifiedReadClient?:SupabaseCli
 export type FinanceSelection={statementUploadId?:string|null;rowOffset?:number|null;horizonDays?:number|null;invoiceOffset?:number|null;invoiceReference?:string|null};
 export async function readFinancialStatement(scope:Scope,uploadId:string){
  const {client}=await simulationOwnerReader(scope);
- const {data,error}=await client.from("uploads").select("id,financial_source_sha256,financial_account_key,financial_currency,financial_transactions,financial_to")
+ const {data,error}=await client.from("uploads").select("id,financial_source_sha256,financial_account_key,financial_currency,financial_to")
   .eq("business_id",scope.businessId).eq("financial_owner_user_id",scope.ownerUserId)
   .eq("kind","statement").eq("status","done").eq("id",uploadId).maybeSingle();
- await simulationOwnerReader(scope);
- const transactions=statementTransactions(data?.financial_transactions);
- if(error||!data||!transactions||typeof data.financial_source_sha256!=="string"||
+ if(error||!data||typeof data.financial_source_sha256!=="string"||
    typeof data.financial_account_key!=="string"||typeof data.financial_currency!=="string")
   throw new Error("statement_source_unavailable");
+ const source=await client.from("external_records").select("payload")
+  .eq("business_id",scope.businessId).eq("reader_owner_user_id",scope.ownerUserId)
+  .eq("provider","owner_upload").eq("source_account",scope.ownerUserId)
+  .eq("entity","financial_statement").eq("source_key",data.id).maybeSingle();
+ await simulationOwnerReader(scope);
+ const transactions=statementTransactions(source.data?.payload);
+ if(source.error||!transactions)throw new Error("statement_source_unavailable");
  return {uploadId:data.id,sourceHash:data.financial_source_sha256,accountKey:data.financial_account_key,
   currency:data.financial_currency,asOf:data.financial_to,transactions};
 }

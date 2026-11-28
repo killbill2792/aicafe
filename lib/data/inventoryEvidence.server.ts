@@ -9,7 +9,7 @@ export type InventoryEvidenceRead={
  date:string;rows:InventoryEvidenceRow[];missing:string[];truncated:boolean
 };
 
-/** Pantry reads precisely the same invoker-RLS canonical view as Supervisor.
+/** Pantry reads scoped original inventory observations and native counts.
  * A session-selected café and owner membership are mandatory; no client or
  * model gets to select a business identity or read the private sync-state table.
  */

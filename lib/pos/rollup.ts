@@ -14,9 +14,8 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
 
 /**
- * Recomputes daily_rollups for one business_date from the raw orders/order_lines/timecards
- * already in the DB (docs/06-integrations.md: "After each sync, recompute daily_rollups for
- * affected business dates, then alerts"). Ingredients are theoretical, priced as of `businessDate`.
+ * Recomputes daily_rollups for one business_date from the shared order, line
+ * and timecard reads. Recipe usage is theoretical and priced as of businessDate.
  */
 export async function recomputeDailyRollup(
   supabase: SupabaseClient,
@@ -32,15 +31,12 @@ export async function recomputeDailyRollup(
   const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
   const timezone = business?.timezone ?? "America/Los_Angeles";
 
-  const orders = await readAllPosRows((first,last)=>supabase
-    .from("orders")
-    .select("id, net_sales_cents, pos_order_id, processing_fee_provider, toast_excluded, superseded_by")
-    .eq("business_id", businessId)
-    .eq("business_date", businessDate)
-    .order("id").range(first,last),"daily orders");
-
-  const effectiveOrders = orders.filter(o => !o.toast_excluded && !o.superseded_by);
-  const orderIds = effectiveOrders.map((o) => o.id);
+  const effectiveOrders = await readAllPosRows((first,last)=>supabase
+    .from("cv_orders")
+    .select("order_ref, net_sales_cents, pos_order_id, processing_fee_provider")
+    .eq("business_id", businessId).eq("business_date", businessDate).eq("status","actual")
+    .order("order_ref").range(first,last),"daily orders");
+  const orderIds = effectiveOrders.map((o) => o.order_ref);
   const netSalesCents = effectiveOrders.reduce((s, o) => s + o.net_sales_cents, 0);
   const ordersCount = orderIds.length;
 
@@ -76,16 +72,17 @@ export async function recomputeDailyRollup(
     status: processingFeeFact.status,
   } : null);
 
-  const lines: Array<{id:string;order_id:string;menu_item_id:string|null;
-    quantity:number;net_sales_cents:number;voided:boolean}> = [];
+  const nonVoidedLines=await readAllPosRows((first,last)=>supabase.from("cv_item_sales")
+    .select("menu_item_id:data->>menu_item_id,quantity")
+    .eq("business_id",businessId).eq("business_date",businessDate).eq("status","actual")
+    .order("source_ref").range(first,last),"daily sold items");
+  const voidedLines:Array<{net_sales_cents:number}>=[];
   for (const batch of posIdBatches(orderIds)) {
-    lines.push(...await readAllPosRows((first,last)=>supabase.from("order_lines")
-      .select("id, order_id, menu_item_id, quantity, net_sales_cents, voided")
-      .in("order_id",batch).order("id").range(first,last),"daily order lines"));
+    voidedLines.push(...await readAllPosRows((first,last)=>supabase.from("order_lines")
+      .select("net_sales_cents").in("order_id",batch).eq("voided",true)
+      .order("id").range(first,last),"daily voided lines"));
   }
 
-  const nonVoidedLines = lines.filter((l) => !l.voided);
-  const voidedLines = lines.filter((l) => l.voided);
   const drinksCount = nonVoidedLines.reduce((s, l) => s + Number(l.quantity), 0);
   // Only Toast reconciliation can certify complete void amounts. Ordinary rollups
   // must not replace a previously certified void total with voided-line net=0.

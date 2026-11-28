@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useSyncExternalStore, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseLaborCsv, type LaborColumnMapping, type LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
@@ -25,6 +25,7 @@ const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
 
 type Stage = "idle" | "working" | "done" | "error";
 type LaborRejectedReasonLabels = Record<LaborRejectReason, string> & { employee_creation_failed: string; duplicate_shift_in_file: string };
+const subscribeToHydration = () => () => {};
 
 function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) return template;
@@ -68,8 +69,10 @@ export default function LaborCsvImporter({
     errors: Record<ImportErrorCode, string>;
   };
 }) {
+  const canChooseFile = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   const [headers, setHeaders] = useState<string[] | null>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
+  const [source, setSource] = useState("");
   const [mapping, setMapping] = useState<Partial<LaborColumnMapping>>(initialMapping ?? {});
   const [employeeChoices, setEmployeeChoices] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
@@ -86,6 +89,7 @@ export default function LaborCsvImporter({
     const { headers: h, rows: r } = detectCsvColumns(text);
     setHeaders(h);
     setRows(r);
+    setSource(text);
     setStage("idle");
     setSummary(null);
     setError(null);
@@ -144,7 +148,10 @@ export default function LaborCsvImporter({
       const choices = Object.fromEntries(ambiguousNames.map((a) => [a.name.trim().toLowerCase(), choiceFor(a.name)]));
       setStage("working");
       setStatusMessage(labels.statusStarting);
-      const started = await startLaborImportJob(parsed.valid, choices, rows.length, parsed.rejected);
+      const upload = new FormData();
+      upload.set("source", new Blob([source], { type: "text/csv" }), "labor.csv");
+      const started = await startLaborImportJob(upload, mapping as LaborColumnMapping, choices)
+        .catch((): Awaited<ReturnType<typeof startLaborImportJob>> => ({ ok: false, errorCode: "staging_failed" }));
       if (!started.ok) {
         setStage("error");
         setStuckJobId(started.blockingJobId ?? null);
@@ -196,6 +203,7 @@ export default function LaborCsvImporter({
         <input
           type="file"
           accept={UPLOAD_FILE_ACCEPT}
+          disabled={!canChooseFile}
           className="sr-only"
           onChange={(e) => {
             const file = e.target.files?.[0];

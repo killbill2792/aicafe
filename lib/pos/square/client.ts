@@ -1,7 +1,18 @@
+import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import { squareApiBaseUrl } from "./oauth";
 
 const SQUARE_VERSION = "2025-05-21"; // Timecards (renamed from Shifts) needs this version or later.
+
+export class SquareRequestError extends Error {
+  constructor(readonly status: number, readonly retryAt?: string) {
+    super(`Square API error ${status}`);
+  }
+}
+
+export type SquarePageReader = <T>(query: Record<string, unknown>,
+  fetchPage: (query: Record<string, unknown>, cursor: string | null) => Promise<{items: T[]; next: string | null}>,
+) => Promise<T[]>;
 
 /** Idempotent-safe GET/POST wrapper with exponential backoff on 429/5xx (docs/06-integrations.md). */
 export async function squareRequest<T>(
@@ -26,14 +37,19 @@ export async function squareRequest<T>(
 
     if (res.ok) return res.json();
 
+    const header=res.headers.get("retry-after");
+    const retryAt=header===null?NaN:/^\d+$/.test(header)?Date.now()+Number(header)*1000:Date.parse(header);
+    const error=new SquareRequestError(res.status,Number.isFinite(retryAt)?new Date(retryAt).toISOString():undefined);
     if (res.status === 429 || res.status >= 500) {
-      lastError = new Error(`Square API ${res.status} on ${path}`);
-      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 500));
+      lastError = error;
+      const delay = 2 ** attempt * 500;
+      if (retryAt > Date.now()+delay || attempt===3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
       attempt += 1;
       continue;
     }
 
-    throw new Error(`Square API error ${res.status} on ${path}: ${await res.text()}`);
+    throw error;
   }
 
   throw lastError instanceof Error ? lastError : new Error(`Square API request to ${path} failed after retries`);
@@ -44,16 +60,20 @@ export async function squarePaginated<T>(
   path: string,
   body: Record<string, unknown>,
   itemsKey: string,
+  read?: SquarePageReader,
+  method: "GET" | "POST" = "POST",
 ): Promise<T[]> {
-  const items: T[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await squareRequest<{ cursor?: string } & Record<string, T[]>>(accessToken, path, {
-      method: "POST",
-      body: cursor ? { ...body, cursor } : body,
-    });
-    items.push(...(page[itemsKey] ?? []));
-    cursor = page.cursor;
-  } while (cursor);
-  return items;
+  const fetchPage = async (query: Record<string, unknown>, cursor: string | null) => {
+    const params = cursor ? {...query, cursor} : query;
+    const url = method === "GET" && Object.keys(params).length ? path + "?" + new URLSearchParams(
+      Object.entries(params).map(([key, value]) => [key, String(value)]),
+    ) : path;
+    const page = await squareRequest<Record<string, unknown>>(accessToken, url,
+      method === "GET" ? {method} : {method, body: params});
+    if (page.errors || (page[itemsKey] != null && !Array.isArray(page[itemsKey]))) {
+      throw new Error("Incomplete Square response");
+    }
+    return {items: (page[itemsKey] ?? []) as T[], next: (page.cursor ?? null) as string | null};
+  };
+  return read ? read(body,fetchPage) : readProviderPages(cursor=>fetchPage(body,cursor));
 }

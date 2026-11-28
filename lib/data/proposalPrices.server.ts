@@ -8,9 +8,9 @@ export async function ownerMenuPrice(
   client?:Awaited<ReturnType<typeof createServerSupabaseClient>>
 ):Promise<number|null>{
   const supabase=client??await createServerSupabaseClient();
-  const {data,error}=await supabase.from("menu_items").select("price_cents,is_active")
-    .eq("business_id",scope.businessId).eq("id",productId).maybeSingle();
+  const {data,error}=await supabase.rpc("menu_catalog_for",{p_business_id:scope.businessId})
+    .select("price_cents,is_active").eq("id",productId).maybeSingle();
   if(error)throw new Error("Menu price unavailable");
-  if(!data||!data.is_active)return null;
+  if(!data||!data.is_active||data.price_cents===null)return null;
   return Number(data.price_cents);
 }

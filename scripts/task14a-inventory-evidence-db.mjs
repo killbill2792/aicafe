@@ -20,25 +20,18 @@ const stamped=(n)=>new Date(Date.now()+n*60000).toISOString();
 let assertions=0;
 const check=(value,description)=>{assert.ok(value,description);assertions++;};
 const one=async(sql,params=[])=>((await db.query(sql,params)).rows[0]??null);
-const fail=async(fn,code)=>{let actual=null;try{await fn();}catch(e){actual=e.code;}
- assert.equal(actual,code);assertions++;};
 const stock=(quantity,asOf)=>({
  business_id:ids.cafe,restaurant_guid:ids.restaurant,
  endpoint:"stock/v1/inventory",provider_key:ids.stock,
  source_key_kind:"provider_guid",source_business_date_kind:"observed_cafe_day",
- guid:ids.stock,status:"QUANTITY",quantity,business_date:date,lastSuccessAt:asOf
+ business_date:date,lastSuccessAt:asOf,payload:{guid:ids.stock,status:"QUANTITY",quantity}
 });
-const receipt=async(time,successful,status,count)=>{
- await db.query(`insert into public.toast_optional_sync_state
- (business_id,restaurant_guid,operational_sources) values ($1,$2,$3::jsonb)
- on conflict (business_id,restaurant_guid) do update
- set operational_sources=excluded.operational_sources`,[
- ids.cafe,ids.restaurant,JSON.stringify({stock_inventory:{
- last_checked_at:time,last_success_at:successful,status,count}})]);
-};
-const stage=async(payload)=>db.query(
+const stage=async(...objects)=>db.query(
  "select public.toast_stage_operational_batch($1,$2,'stock/v1/inventory',$3,$4::jsonb)",
- [ids.cafe,ids.restaurant,date,JSON.stringify([payload])]);
+ [ids.cafe,ids.restaurant,date,JSON.stringify(objects)]);
+const sourceStatus=()=>one(`select status from public.external_resources
+ where business_id=$1 and provider='toast' and source_account=$2 and resource='stock/v1/inventory'`,
+ [ids.cafe,ids.restaurant]);
 const view=async()=>one(`select source,source_ref,stock_status,quantity,
   data->>'evidence_state' as evidence_state,data->>'source_as_of' as as_of,
   data->>'reported_stock_status' as reported
@@ -64,8 +57,8 @@ async function asRole(role,user,fn){
 try{
  await db.connect();
  await db.query("BEGIN");
- check((await one("select to_regprocedure('public.toast_stock_source_receipts(uuid)') is not null as ok")).ok,
-  "migration installed");
+ check((await one("select to_regprocedure('public.toast_stock_source_receipts(uuid)') is null as ok")).ok,
+  "legacy inventory receipt reader retired");
  await db.query(`insert into auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
  values ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','task14a-a@example.invalid','',now(),now()),
  ($2,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','task14a-b@example.invalid','',now(),now())`,[ids.owner,ids.otherOwner]);
@@ -93,8 +86,8 @@ try{
  check(Number(zero?.quantity)===0,"explicit owner-count zero is a known zero");
  check(zero?.ingredient_name==="Milk"&&zero?.base_unit==="ml",
   "canonical owner count includes trustworthy ingredient name and base unit for chat");
- const first=stamped(-10),second=stamped(-5),third=stamped(-1),fourth=stamped(0);
- await stage(stock(7,first));await receipt(first,first,"current",1);
+ const first=stamped(-10),second=stamped(-5);
+ await stage(stock(7,first));
  let row=await view();
  check(Number(row?.quantity)===7&&row?.evidence_state==="observed_current",
   "latest successful row has reported quantity");
@@ -114,59 +107,51 @@ try{
   "SQL retains a measured zero for one named owner ingredient");
  // A new complete empty GET must invalidate the retained item even if the
  // source repeats the previous observation instant at millisecond precision.
- await receipt(first,first,"empty",0);
+ await stage();
  row=await view();
  check(row?.quantity===null&&row?.evidence_state==="not_observed",
   "empty source receipt cannot resurrect a historical row at equal timestamps");
- await receipt(first,first,"current",0);
- row=await view();
- check(row?.quantity===null&&row?.evidence_state==="source_unverified",
-  "inconsistent current status with no observed objects cannot certify stock");
- await receipt(first,first,"current",1);
  // Replaying the same object preserves its unique operational identity.
  await stage(stock(7,first));
  check(Number((await one(`select count(*)::int as n from public.toast_raw_records
  where business_id=$1 and entity='stock/v1/inventory'`,[ids.cafe])).n)===1,
  "replay does not create a second source object");
- await stage(stock(4,second));await receipt(second,second,"current",1);
+ await stage(stock(4,second));
  row=await view();
  check(Number(row?.quantity)===4&&row?.evidence_state==="observed_current",
   "corrected version replaces current quantity, does not add 7 and 4");
  check(Number((await one(`select count(*)::int as n from public.toast_raw_records
  where business_id=$1 and entity='stock/v1/inventory'`,[ids.cafe])).n)===1,
  "one latest object after changed version");
- await receipt(third,third,"empty",0);
+ await stage();
  row=await view();
  check(row?.quantity===null&&row?.stock_status===null&&row?.evidence_state==="not_observed",
   "new successful empty family retains old row only as history");
  check(row?.reported==="QUANTITY"&&row?.as_of===second,
   "historical source status and timestamp are preserved");
- await receipt(fourth,third,"unavailable",0);
+ await db.query(`select public.external_note_availability($1,'toast',$2,'stock/v1/inventory',
+  'unavailable',clock_timestamp(),null)`,[ids.cafe,ids.restaurant]);
  row=await view();
  check(row?.quantity===null&&row?.evidence_state==="source_failed",
   "failed fetch cannot refresh last-good stock as current");
- const ownerReceipt=await asRole("authenticated",ids.owner,()=>one(
- "select source_status from public.toast_stock_source_receipts($1)",[ids.cafe]));
- check(ownerReceipt?.source_status==="failed","owner gets only allowlisted receipt");
- await fail(()=>asRole("authenticated",ids.otherOwner,()=>
-  db.query("select * from public.toast_stock_source_receipts($1)",[ids.cafe])),"42501");
+ const ownerReceipt=await asRole("authenticated",ids.owner,sourceStatus);
+ check(ownerReceipt?.status==="unavailable","owner gets current archive availability");
+ check(await asRole("authenticated",ids.otherOwner,sourceStatus)===null,
+  "foreign café cannot read archive availability");
  const otherRows=await asRole("authenticated",ids.otherOwner,()=>
   db.query("select * from public.cv_inventory where business_id=$1",[ids.cafe]));
  check(otherRows.rows.length===0,"foreign café cannot read inventory");
  const ownerRows=await asRole("authenticated",ids.owner,()=>
   db.query("select * from public.cv_inventory where business_id=$1",[ids.cafe]));
+ const pantryRows=await asRole("authenticated",ids.owner,()=>
+  db.query("select * from public.inventory_evidence_for($1,$2,$2)",[ids.cafe,date]));
  check(ownerRows.rows.some(r=>r.source==="app"&&Number(r.quantity)===0)&&
   ownerRows.rows.some(r=>r.source==="toast"&&r.quantity===null),
-  "Pantry and registered canonical query read identical bounded state");
+  "owner can read native quantities and historical source states");
+ assert.deepEqual(pantryRows.rows,ownerRows.rows);
  const def=(await one("select pg_get_viewdef('public.cv_inventory'::regclass) as definition")).definition;
- check(def.includes("toast_current_nonorders_for")&&def.includes("toast_stock_source_receipts"),
- "view must reuse stock-filtered safe operational current reader and scoped receipt");
- const helper=(await one("select pg_get_functiondef('public.toast_current_nonorders_for(uuid,date,date,text)'::regprocedure) as definition")).definition;
- check(helper.includes("toast_raw_records")&&helper.includes("toast_records_allowed")&&
-   helper.includes("ai_safe_retained_json"),
-   "shared current-object reader retains operational authority, owner isolation and secret scrub");
- check(Number((await one("select count(*)::int as n from public.toast_current_nonorders_for($1,null,null,'stock/v1/inventory')",[ids.cafe])).n)===1,
-   "stock-specific operational projection does not return unrelated order families");
+ check(def.includes("external_records")&&def.includes("external_current_observation"),
+ "inventory reads original stock and archive membership");
  check((await one(`select reloptions @> array['security_invoker=true'] as ok
  from pg_class where oid='public.cv_inventory'::regclass`)).ok,
  "view remains RLS invoker");

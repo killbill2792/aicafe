@@ -31,7 +31,7 @@ export type EventDemandEvidence={
   otherKnownEvents:string[];
   coverage:{dailyActualDays:number;hourlyReconciledDays:number;missing:string[];caveats:string[]};
   readiness?:{staffing:{date:string;source:"cv_shifts";coverage:"unknown"|"partial"|"recorded";
-      shifts:Array<{source:"app"|"toast";status:string;start:string|null;end:string|null}>};
+      shifts:Array<{source:"app"|"toast"|"square";status:string;start:string|null;end:string|null}>};
     inventory:{asOfDate:string;source:"cv_inventory";coverage:"unknown"|"partial"|"recorded";
       items:Array<Pick<import("../calc/inventoryEvidence").InventoryEvidenceRow,
         "source"|"ingredient_name"|"menu_item_ref"|"quantity"|"quantity_unit"|"stock_status"|"source_as_of"|"evidence_state">>;

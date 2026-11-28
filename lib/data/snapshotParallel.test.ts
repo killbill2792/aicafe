@@ -24,7 +24,7 @@ function mockDb(){
     locations:[{open_hours:null}],
     cv_bills:[{id:"rent-bill",frequency:"monthly",category_code:"rent",amount_cents:60000,is_estimate:false,
       active_from:"2026-01-01",active_to:null}],
-    cv_expenses:[],recovery_order:[],cv_menu:[],cv_staff_clock_entries:[],
+    cv_expenses:[],recovery_order:[],menu_catalog_for:[],cv_staff_clock_entries:[],
     alerts:[{id:"alert-1",impact_cents:240}],
   };
   const client={
@@ -48,6 +48,7 @@ function mockDb(){
       return q;
     },
     rpc(name:string,args:{p_business_id:string;p_month_start:string;p_as_of:string}){
+      if(name==="menu_catalog_for")return this.from(name).eq("business_id",args.p_business_id);
       if(name==="financial_periods_as_of")return Promise.resolve({data:fixtureFinancialPeriodRows(),error:null});
       if(name==="running_cost_lines_for_month"){
         if(args.p_business_id!=="cafe1")throw Error("wrong scope");
@@ -77,7 +78,7 @@ describe("canonical snapshot independent read phases",()=>{
       expect(mocks.days).toHaveBeenCalledOnce();
       expect(mocks.plans).toHaveBeenCalledOnce();
       expect(mocks.period).toHaveBeenCalledOnce();
-      expect(reads).toContain("cv_menu");
+      expect(reads).toContain("menu_catalog_for");
       expect(reads).toContain("cv_staff_clock_entries");
       expect(reads).toContain("alerts");
     });
@@ -100,7 +101,7 @@ describe("canonical snapshot independent read phases",()=>{
     });
     expect(snapshot.alerts).toEqual({count:1,leakingCents:240});
     expect(snapshot).toMatchObject({ownerFeePlans:[]});
-    expect(reads.filter(table=>table==="cv_menu")).toHaveLength(1);
+    expect(reads.filter(table=>table==="menu_catalog_for")).toHaveLength(1);
     expect(reads.filter(table=>table==="alerts")).toHaveLength(1);
     expect(scope.every(row=>row.businessId==="cafe1")).toBe(true);
   });

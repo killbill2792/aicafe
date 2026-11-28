@@ -20,9 +20,7 @@ function stable(value:Json,depth:number):Json{
    .sort((a,b)=>a.g<b.g?-1:a.g>b.g?1:a.i-b.i).map(x=>x.v);
  }
  if(value&&typeof value==="object"){
-  const out:Record<string,Json>={};
-  for(const [k,v] of Object.entries(value as Record<string,Json>))out[k]=stable(v,depth+1);
-  return out;
+  return Object.fromEntries(Object.entries(value).map(([k,v])=>[k,stable(v,depth+1)]));
  }
  return value;
 }

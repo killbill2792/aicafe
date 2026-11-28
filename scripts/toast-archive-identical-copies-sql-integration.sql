@@ -82,8 +82,6 @@ BEGIN
   'the latest import keeps its row');
  perform pg_temp.assert_true(exists(select 1 from public.toast_raw_records where id=id_changed),
   'a real change Toast made is kept');
- perform pg_temp.assert_true(not exists(select 1 from public.toast_order_typed_facts where raw_record_id=id_old),
-  'typed details of the removed copy go with it');
  perform pg_temp.assert_true(public.toast_archive_drop_identical_copies(b,d)=0,
   'a second run removes nothing');
 

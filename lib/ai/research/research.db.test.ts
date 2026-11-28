@@ -5,6 +5,7 @@ import {afterAll,beforeAll,describe,expect,it} from "vitest";
 import {executeResearchTool,type ResearchScope} from "./tools.server";
 import {runResearchTurn} from "./turn.server";
 import type {AgentProvider} from "@/lib/ai/agent/loop.server";
+import {readExternalArchiveCase,seedExternalArchiveCase} from "@/evals/acceptance/live/external-archive-research.mjs";
 
 // Migrated disposable local database only; never a real café database.
 const url=process.env.SUPERVISOR_RESEARCH_DB_URL??"";
@@ -91,6 +92,50 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
     expect(String((await sql(scope(otherCafe),"select count(*) from orders")).error)).toContain("supervisor_research_not_owner");
   });
 
+  it("discovers new provider resources and reads opaque JSON and revisions through native SQL",async()=>{
+    for(const [cafe,first,last] of [[cafeA,2,3],[cafeB,40,50]] as const){
+      for(const [revision,quantity] of [first,last].entries()){
+        await admin.query("select public.external_commit_page($1,'new-provider','merchant','observations','one',$2,null,true,$3::jsonb)",[
+          cafe,revision,JSON.stringify([{key:"same-key",payload:{"opaque property":{"a.b":[quantity]}}}]),
+        ]);
+      }
+    }
+    const discovery=await executeResearchTool(scope(cafeA),"describe_database",JSON.stringify({tables:null}));
+    expect(discovery.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({name:"external_resources"}),
+      expect.objectContaining({name:"external_records"}),
+      expect.objectContaining({name:"external_record_changes"}),
+    ]));
+    const records=await sql(scope(cafeA),`select (r.payload #>> array['opaque property','a.b','0'])::int as quantity
+      from external_records r join external_resources e on
+       (r.business_id,r.provider,r.source_account,r.entity)=(e.business_id,e.provider,e.source_account,e.resource)
+      where e.status='current' and r.provider='new-provider'`);
+    expect(records).toMatchObject({ok:true,rows:[{quantity:3}]});
+    const changes=await sql(scope(cafeA),`select (change->>'before')::int as before,(change->>'after')::int as after
+      from external_record_changes c cross join lateral jsonb_array_elements(c.changes) change
+      where c.provider='new-provider' and change->'segments'='["opaque property","a.b","0"]'`);
+    expect(changes).toMatchObject({ok:true,rows:[{before:2,after:3}]});
+  });
+
+  it("keeps archive availability, null, omission and revision evidence scoped to the selected café",async()=>{
+    const account="research-fixture-"+randomUUID();
+    await seedExternalArchiveCase(admin,cafeA,cafeB,account);
+    const {owner:truth,other}=await readExternalArchiveCase(admin,cafeA,cafeB,account);
+    const result=await sql(scope(cafeA),`select e.status,
+      (r.payload #>> '{inventory,unit count}')::int as quantity,
+      r.payload #> '{inventory,restockHint}'='null'::jsonb as explicit_null,
+      (r.payload->'inventory') ? 'lotNote' as has_lot_note,
+      (change->>'before')::int as previous
+      from external_records r join external_resources e on
+        (r.business_id,r.provider,r.source_account,r.entity)=(e.business_id,e.provider,e.source_account,e.resource)
+      join external_record_changes c on (c.business_id,c.provider,c.record_id)=(r.business_id,r.provider,r.id)
+      cross join lateral jsonb_array_elements(c.changes) change
+      where r.provider='clover' and r.source_account='${account}'`);
+    expect(truth.quantity).not.toBe(other.quantity);
+    expect(result).toMatchObject({ok:true,rows:[{status:"unavailable",quantity:truth.quantity,
+      explicit_null:true,has_lot_note:false,previous:truth.previous}]});
+  });
+
 
   it("reads the same canonical running cost rows as the screen, with same-owner cafe isolation",async()=>{
     for(const [cafe,cents] of [[cafeA,1500],[cafeB,4200]] as const)
@@ -140,10 +185,9 @@ describe.skipIf(!enabled)("direct SQL research on the migrated database",()=>{
       expect(ids.filter(id=>id!==cafeA)).toEqual([]);
       const other=await sql(scope(cafeA),"select count(*)::int as n from public.toast_records_for('"+otherCafe+"',null,null)");
       expect(other.ok?(other.rows as {n:number}[])[0].n:0).toBe(0);
-      const receipts=await sql(scope(cafeA),"select * from public.toast_stock_source_receipts('"+otherCafe+"')");
-      expect(receipts.ok).toBe(false);
-      expect(String(receipts.error)).toContain("stock_source_scope_denied");
-      expect((await sql(scope(cafeA),"select * from public.toast_stock_source_receipts('"+cafeA+"')")).ok).toBe(true);
+      const inventory=await sql(scope(cafeA),"select * from public.inventory_evidence_for('"+otherCafe+"',current_date,current_date)");
+      expect(inventory).toMatchObject({ok:true,rows:[]});
+      expect((await sql(scope(cafeA),"select * from public.inventory_evidence_for('"+cafeA+"',current_date,current_date)")).ok).toBe(true);
     }finally{
       await admin.query("delete from public.toast_raw_records where business_id = any($1)",[[cafeA,otherCafe]]);
     }

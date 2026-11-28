@@ -59,30 +59,19 @@ it("diagnostic GET waits for one exhausted ERA budget slot and retries",async()=
 });
 
 
-it("retains an ERA result as immutable raw evidence and six typed measurements",async()=>{
+it("commits only the scoped ERA source report and strips credentials before storage",async()=>{
  const f=fixture();
- const writes:Array<{table:string;data:unknown;options:unknown}>=[];
- const original=f.db.from.bind(f.db);
- const db={...f.db,from(table:string){
-  if(table==="toast_raw_records"||table==="toast_analytics_results")
-   return {upsert:async(data:unknown,options:unknown)=>{
-    writes.push({table,data,options});return {error:null};
-   }};
-  return original(table);
- }} as unknown as SupabaseClient;
  const report="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
  const row={restaurantGuid:g,businessDate:"20261020",
   netSalesAmount:10.25,ordersCount:2,discountAmount:1,
-  refundAmount:0,voidOrdersCount:0,voidOrdersAmount:null};
- await createToastAnalyticsClient(db,b,Date.now()+20000).persistDay(g,"2026-10-20",report,row);
- expect(writes).toHaveLength(2);
- expect(writes[0].table).toBe("toast_raw_records");
- expect(writes[1].table).toBe("toast_analytics_results");
- expect(writes[1].data).toEqual(expect.arrayContaining([
-  expect.objectContaining({metric:"net_sales_cents",value_numeric:1025})
- ]));
- await expect(createToastAnalyticsClient(db,b,Date.now()+20000).persistDay(
-  "dddddddd-dddd-4ddd-8ddd-dddddddddddd","2026-10-20",report,row))
+  refundAmount:0,voidOrdersCount:0,voidOrdersAmount:null,"new source field":true,accessToken:"discard"};
+ const client=createToastAnalyticsClient(f.db,b,Date.now()+20000);
+ await client.persistDay(g,"2026-10-20",report,row);
+ const {accessToken,...retained}=row;
+ expect(accessToken).toBeDefined();
+ expect(f.rpc).toHaveBeenCalledWith("toast_commit_analytics_report",{p_business_id:b,p_restaurant:g,
+  p_date:"2026-10-20",p_request:report,p_payload:retained});
+ await expect(client.persistDay("dddddddd-dddd-4ddd-8ddd-dddddddddddd","2026-10-20",report,row))
   .rejects.toMatchObject({category:"invalid_response"});
- expect(writes).toHaveLength(2);
+ expect(f.rpc).toHaveBeenCalledTimes(1);
 });

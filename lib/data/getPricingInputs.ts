@@ -13,6 +13,7 @@ import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menu
 import {readProductCosts} from "./productCosts.server";
 import { timeReader } from "@/lib/perf/timeReader.server";
 import { ordersMayAffectPricing } from "./pricingOrderGate";
+import type {MenuCatalogRow} from "./menuCatalog.server";
 
 /** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
  * otherwise (safe for the aggregate sums below — a NO_RECIPE/MISSING_INGREDIENT_COST item should
@@ -72,7 +73,8 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     return readOrders();
   })();
   const [itemsResult, days, runningCosts, ordersResult, ownerFeePlans] = await Promise.all([
-    supabase.from("cv_menu").select("id,name,price_cents,category,prep_seconds").like("source_ref","item:%").eq("business_id", businessId).eq("data->>is_active", "true"),
+    supabase.rpc("menu_catalog_for",{p_business_id:businessId})
+      .select("id,name,price_cents,category,prep_seconds").eq("is_active",true),
     daysPromise,
     measure("runningCosts", () => readRunningCostLines(supabase,businessId,firstOfMonth,todayDateStr)),
     ordersPromise,
@@ -80,7 +82,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   ]);
   if (itemsResult.error) throw itemsResult.error;
   if (ordersResult.error) throw ordersResult.error;
-  const rawItems = itemsResult.data ?? [];
+  const rawItems = (itemsResult.data ?? []) as Pick<MenuCatalogRow,"id"|"name"|"price_cents"|"category"|"prep_seconds">[];
   const itemIds = rawItems.map((item) => item.id);
   const [costs,quantitiesResult]=await measure("recipeAndUnits",()=>Promise.all([
     readProductCosts(supabase,businessId,itemIds),

@@ -10,7 +10,7 @@ if(start<0||end<0)throw Error("U3 reviewed source manifest unavailable");
 const admitted=JSON.parse(migration.slice(start+tag.length,end));
 const byTable=new Map(admitted.map(s=>[s.table,s]));
 if(byTable.size!==admitted.length)throw Error("Duplicate approved relation in manifest");
-const archiveName=/^(toast_raw_|toast_day_pages$|toast_modified_orders_staging$)/;
+const archiveName=/^(external_records(?:_other)?$|external_record_changes$|external_changes_other$|toast_raw_|toast_day_pages$|toast_modified_orders_staging$)/;
 const secretName=/(credential|oauth|token|password|access_code|secret|webhook_subscription|api_key|private_key|sealed_subscription|device_hash)/i;
 const platformName=/^(ai_|agent_|supervisor_|connector_|toast_|whatsapp_|csv_|scheduling_|staff_communication_|maintenance_case_|processing_fee_|purchase_order_dispatch|cafe_sync_|square_sync_|data_health_|u4_)/;
 const specialistName=/^(owner_facts|operating_tasks|operating_task_responses|alerts|staff_|scheduling_|city_|cafe_city_|cafe_event_|goals|decision_|supplier_|purchase_|product_|menu_|expense_|team_|uploads|vendor_|p1_)/;
@@ -34,7 +34,7 @@ function disposition(table,column){
  if(secretName.test(table)||secretName.test(column))return ["restricted_secret_or_auth",
   "Credential, authorization or sensitive internal identifier; no universal research permission"];
  if(archiveName.test(table))return ["protected_operational_archive",
-  "Raw current/delta/staging store; only approved scoped logical projections may read it"];
+  "Current records, history or staging; access requires the separately reviewed SQL role and source scope"];
  if(reviewed)return ["not_admitted_from_source",
   "Existing physical source column requires separate field semantics/privacy review"];
  if(platformName.test(table))return ["internal_or_specialized_service",

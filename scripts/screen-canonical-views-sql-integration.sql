@@ -4,7 +4,10 @@ BEGIN;
 SELECT gen_random_uuid() AS a,gen_random_uuid() AS b,
  gen_random_uuid() AS oa,gen_random_uuid() AS ob,
  gen_random_uuid() AS bill,gen_random_uuid() AS item,
- gen_random_uuid() AS order_a,gen_random_uuid() AS order_b \gset
+ gen_random_uuid() AS loc_a,gen_random_uuid() AS loc_b,
+ gen_random_uuid() AS toast_loc,gen_random_uuid() AS shift_id,gen_random_uuid() AS employee_key,
+ gen_random_uuid() AS order_a,gen_random_uuid() AS order_b,
+ gen_random_uuid() AS app_employee,gen_random_uuid() AS app_shift \gset
 INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
 VALUES(:'oa','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
  'screen-a-'||:'oa'||'@example.invalid','',now(),now()),
@@ -14,6 +17,33 @@ INSERT INTO public.businesses(id,name,is_demo,timezone,currency)
 VALUES(:'a','Disposable Screen A',false,'UTC','CAD'),(:'b','Disposable Screen B',false,'UTC','CAD');
 INSERT INTO public.memberships(business_id,user_id,role)
 VALUES(:'a',:'oa','owner'),(:'b',:'ob','owner');
+INSERT INTO public.locations(id,business_id,name)
+VALUES(:'loc_a',:'a','Fixture A'),(:'loc_b',:'b','Fixture B');
+UPDATE public.locations SET pos_location_id='fixture-square-location' WHERE id=:'loc_a';
+INSERT INTO public.employees(id,business_id,display_name)
+VALUES(:'app_employee',:'a','Scheduled employee');
+INSERT INTO public.scheduled_shifts(id,business_id,employee_id,local_date,start_local,end_local,source,status)
+VALUES(:'app_shift',:'a',:'app_employee',current_date-1,time '07:30',time '09:30','owner','sent');
+INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,
+ external_employee_id,scheduled_start,scheduled_end,deleted)
+VALUES (:'a',:'loc_a','toast',:'shift_id','toast-employee',current_date-1+time '08:00',current_date-1+time '10:00',false),
+ (:'a',:'loc_a','toast','older','toast-employee',current_date-5+time '08:00',current_date-5+time '10:00',false),
+ (:'a',:'loc_a','square',:'shift_id','square-employee',current_date-1+time '11:00',current_date-1+time '14:00',false),
+ (:'a',:'loc_a','square','removed','square-employee',current_date-1+time '15:00',current_date-1+time '16:00',true),
+ (:'b',:'loc_b','square',:'shift_id','foreign-employee',current_date-1+time '08:00',current_date-1+time '10:00',false);
+SELECT public.external_commit_page(:'a','toast',:'toast_loc','labor/v1/shifts','range',0,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('locationId',:'loc_a',
+  'from',to_jsonb((current_date-2)::timestamptz),'until',to_jsonb(current_date::timestamptz))),true,
+ jsonb_build_array(jsonb_build_object('key',:'shift_id','payload',jsonb_build_object('guid',:'shift_id',
+  'employeeReference',jsonb_build_object('guid',:'employee_key'),
+  'inDate',(current_date-1+time '09:00')::timestamptz,'outDate',(current_date-1+time '10:00')::timestamptz))));
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',0,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location',
+  'query',jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+   'start',jsonb_build_object('end_at',current_date::timestamptz),'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text)),true,
+ jsonb_build_array(jsonb_build_object('key',:'shift_id','payload',jsonb_build_object('id',:'shift_id',
+  'published_shift_details',jsonb_build_object('location_id','fixture-square-location','team_member_id','square-employee',
+  'start_at',(current_date-1+time '12:00')::timestamptz,'end_at',(current_date-1+time '14:00')::timestamptz)))));
 INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,
  staff_wages_cents,staff_tax_cents,card_fees_cents,voids_cents,sales_data_status,card_fees_status,labor_wage_status)
 VALUES(:'a',current_date-1,1200,2,3,250,NULL,NULL,30,0,'actual','actual','missing'),
@@ -106,6 +136,16 @@ SELECT (
  AND (SELECT count(*) FROM public.cv_item_sales WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_orders WHERE business_id=:'b')=0
  AND (SELECT count(*) FROM public.cv_staff_clock_entries WHERE business_id=:'b')=0
+ AND (SELECT array_agg(source_ref order by source_ref)=array['square-shift:'||:'shift_id','toast-shift:'||:'shift_id']
+   AND bool_and(data->>'provider'=source AND data->'paid'='false'::jsonb AND data->>'evidence'='completed_observation')
+ FROM public.cv_shifts WHERE business_id=:'a' AND business_date=current_date-1 AND source IN ('toast','square'))
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='app'
+  AND source_ref='shift:'||:'app_shift' AND (data->>'start_local')::time=time '07:30')
+ AND (SELECT (data->>'scheduled_start')::timestamptz=(current_date-1+time '09:00')::timestamptz
+  FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:'||:'shift_id')
+ AND (SELECT (data->>'scheduled_start')::timestamptz=(current_date-1+time '12:00')::timestamptz
+  FROM public.cv_shifts WHERE business_id=:'a' AND source='square')
+ AND (SELECT count(*) FROM public.cv_shifts WHERE business_id=:'b')=0
  AND (SELECT wages_cents=3500 AND loaded_cost_cents=3920 AND day_loaded_cost_cents=3920
  FROM public.cv_staff_clock_entries WHERE business_id=:'a' AND business_date=current_date-1)
  AND (SELECT wages_cents IS NULL AND day_loaded_cost_cents IS NULL
@@ -140,4 +180,231 @@ SELECT (
 SELECT 1/0;
 \endif
 RESET ROLE;
+INSERT INTO public.locations(business_id,name,pos_location_id)
+VALUES(:'a','Fixture A second store','fixture-square-location-2');
+SELECT jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location-2',
+  'query',jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+   'start',jsonb_build_object('end_at',current_date::timestamptz),'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text)) AS square_scope,
+ jsonb_build_array(jsonb_build_object('key','second-square-shift','payload',jsonb_build_object('id','second-square-shift',
+  'published_shift_details',jsonb_build_object('location_id','fixture-square-location-2','team_member_id','second-store-worker',
+  'start_at',(current_date-1+time '15:00')::timestamptz,'end_at',(current_date-1+time '17:00')::timestamptz)))) AS square_payload \gset
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location-2',0,
+ :'square_scope'::jsonb,true,:'square_payload'::jsonb);
+SET LOCAL ROLE authenticated;
+SELECT ((SELECT count(*)=2 AND bool_and(data->>'evidence'='completed_observation')
+ FROM public.cv_shifts WHERE business_id=:'a' AND source='square') IS TRUE
+ AND NOT has_column_privilege('authenticated','public.external_sync_checkpoints','cursor_state','SELECT')) AS square_windows \gset
+\if :square_windows
+\echo Both Square locations retained their own completed evidence. Cursor access stayed service-only.
+\else
+SELECT 1/0;
+\endif
+SET LOCAL ROLE service_role;
+SELECT public.external_note_availability(:'a','square','fixture-square-merchant','scheduled_shifts','permission_required',clock_timestamp(),null);
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location-2',1,
+ :'square_scope'::jsonb,true,:'square_payload'::jsonb);
+SET LOCAL ROLE authenticated;
+SELECT ((SELECT count(*)=2 and count(*) filter(where data->>'evidence'='completed_observation')=1
+  and bool_and((data->>'evidence'='completed_observation')=(source_ref='square-shift:second-square-shift'))
+  FROM public.cv_shifts WHERE business_id=:'a' AND source='square') IS TRUE) AS square_regain \gset
+\if :square_regain
+\echo Restored access certifies only the Square location observed under the new grant.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+SELECT jsonb_build_object('mode','window','scope',jsonb_build_object('locationId',:'loc_a',
+ 'from',to_jsonb((current_date-2)::timestamptz),'until',to_jsonb(current_date::timestamptz))) AS schedule_scope \gset
+SELECT public.external_commit_page(:'a','toast',:'toast_loc','labor/v1/shifts','range',1,
+ :'schedule_scope'::jsonb||'{"cursor":"next"}',false,
+ jsonb_build_array(jsonb_build_object('key',:'shift_id','payload',jsonb_build_object('guid',:'shift_id',
+  'employeeReference',jsonb_build_object('guid',:'employee_key'),
+  'inDate',(current_date-1+time '09:30')::timestamptz,'outDate',(current_date-1+time '10:00')::timestamptz))));
+SELECT ((SELECT data->>'evidence'='historical_projection' AND
+  (data->>'scheduled_start')::timestamptz=(current_date-1+time '08:00')::timestamptz
+  FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:'||:'shift_id') IS TRUE) AS planned_incomplete \gset
+\if :planned_incomplete
+\echo A partial revision leaves the last planned shift readable as historical evidence.
+\else
+SELECT 1/0;
+\endif
+-- A complete empty traversal marks absence only through the existing typed
+-- application of the exact Toast interval. Other source scopes remain intact.
+SELECT public.external_commit_page(:'a','toast',:'toast_loc','labor/v1/shifts','range',2,null,false,'[]');
+SELECT public.external_commit_page(:'a','toast',:'toast_loc','labor/v1/shifts','range',3,:'schedule_scope',true,'[]');
+SELECT public.toast_save_configuration(:'a','https://ws-api.toasttab.com','fixture-client','fixture-ciphertext',
+ jsonb_build_array(jsonb_build_object('location_id',:'loc_a','restaurant_guid',:'toast_loc')));
+UPDATE public.toast_location_mappings SET verified_at=now() WHERE business_id=:'a';
+SELECT public.toast_apply_schedule_window(:'a',:'toast_loc',:'loc_a',(current_date-2)::timestamptz,current_date::timestamptz,'[]');
+SELECT (NOT EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='toast-shift:older')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='square-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source_ref='shift:'||:'app_shift')) AS planned_empty \gset
+\if :planned_empty
+\echo Completed empty schedule evidence removed only the covered Toast shift.
+\else
+SELECT 1/0;
+\endif
+
+-- A complete day may replace stale saved hours only when every accepted order
+-- matches its committed original, including the close and reconciled totals.
+SELECT gen_random_uuid() AS hourly_run,gen_random_uuid() AS hourly_order,
+ gen_random_uuid() AS hourly_thread,gen_random_uuid() AS provider_actor,current_date-9 AS hourly_day \gset
+INSERT INTO public.toast_sync_runs(id,business_id,restaurant_guid,kind,state,requested_from,requested_to)
+VALUES(:'hourly_run',:'a',:'toast_loc','daily','running',:'hourly_day',:'hourly_day');
+INSERT INTO public.toast_day_status(business_id,restaurant_guid,business_date,import_state,coverage_complete,
+ unparsed_count,order_count,last_import_run_id)
+VALUES(:'a',:'toast_loc',:'hourly_day','imported',true,0,1,:'hourly_run');
+UPDATE public.toast_sync_runs SET state='completed' WHERE id=:'hourly_run';
+INSERT INTO public.daily_rollups(business_id,business_date,net_sales_cents,orders_count,drinks_count,
+ ingredients_cents,card_fees_cents,voids_cents,sales_data_status)
+VALUES(:'a',:'hourly_day',1200,1,0,0,0,0,'actual');
+INSERT INTO public.hourly_sales_rollup(business_id,location_id,business_date,hour_local,net_sales_cents,orders_count)
+VALUES(:'a',:'loc_a',:'hourly_day',12,1200,1),(:'b',:'loc_b',:'hourly_day',12,9900,1);
+INSERT INTO public.employees(id,business_id,display_name,pos_team_member_id)
+VALUES(:'employee_key',:'a','First shift','toast:'||:'toast_loc'||':'||:'provider_actor');
+INSERT INTO public.employee_sales_rollup(business_id,employee_id,business_date,net_sales_cents,orders_count)
+VALUES(:'a',:'employee_key',:'hourly_day',900,1);
+INSERT INTO public.orders(business_id,location_id,employee_id,pos_order_id,closed_at,business_date,gross_sales_cents,net_sales_cents)
+VALUES(:'a',:'loc_a',:'employee_key','toast:'||:'toast_loc'||':'||:'hourly_order',
+ (:'hourly_day'::date + time '11:05') AT TIME ZONE 'UTC',:'hourly_day',1200,1200);
+INSERT INTO public.external_records(business_id,restaurant_guid,entity,entity_guid,business_date,
+ run_id,seen_run_id,payload,payload_sha256,capture_key,source_account,source_key)
+VALUES(:'a',:'toast_loc','order',:'hourly_order',:'hourly_day',:'hourly_run',:'hourly_run',
+ jsonb_build_object('guid',:'hourly_order','closedDate',:'hourly_day'||'T11:05:00Z',
+  'server',jsonb_build_object('guid',:'provider_actor'),'checks','[{"amount":12}]'::jsonb),
+ repeat('a',64),'fixture-hourly-order',:'toast_loc',:'hourly_order');
+INSERT INTO public.ai_threads(id,business_id,owner_user_id,client_request_id)
+VALUES(:'hourly_thread',:'a',:'oa',gen_random_uuid());
+SELECT set_config('request.jwt.claim.role','service_role',true);
+SELECT public.u3_issue_research_scope(:'a',:'oa',:'hourly_thread','owner') AS hourly_ticket \gset
+GRANT aicafe_research TO postgres WITH INHERIT FALSE, SET TRUE;
+SET LOCAL ROLE aicafe_research;
+SELECT set_config('aicafe.u3_research_scope',:'hourly_ticket',true) IS NOT NULL AS scope_set \gset
+SELECT (count(*)=1 AND min(hour_local)=11 AND sum(net_sales_cents)=1200 AND sum(orders_count)=1)
+ AS hourly_research FROM u3_research.hourly_sales_rollup WHERE business_date=:'hourly_day' \gset
+\if :hourly_research
+\echo Governed SQL uses original hourly data within the signed café.
+\else
+SELECT 1/0;
+\endif
+SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=1200 AND sum(orders_count)=1)
+ AS employee_research FROM u3_research.employee_sales_rollup WHERE business_date=:'hourly_day' \gset
+\if :employee_research
+\echo Governed SQL reconciles employee sales from the original order and the existing employee association.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.role','authenticated',true);
+SELECT (count(*)=1 AND min((data->>'hour_local')::int)=11 AND sum(net_sales_cents)=1200
+ AND bool_and(data->>'evidence'='committed_orders')) AS hourly_app
+FROM public.cv_sales_hours WHERE business_date=:'hourly_day' \gset
+\if :hourly_app
+\echo The app uses the complete committed order instead of stale saved hours.
+\else
+SELECT 1/0;
+\endif
+SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=1200 AND sum(orders_count)=1)
+ AS employee_app FROM public.cv_employee_sales WHERE business_date=:'hourly_day' \gset
+\if :employee_app
+\echo The app uses the original sale under its verified employee association.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+UPDATE public.external_records SET payload=payload-'closedDate'-'server' WHERE business_id=:'a' AND entity_guid=:'hourly_order';
+SET LOCAL ROLE authenticated;
+SELECT (count(*)=1 AND min((data->>'hour_local')::int)=12 AND sum(net_sales_cents)=1200
+ AND bool_and(data->>'evidence'='saved_hourly_rollup')) AS hourly_fallback
+FROM public.cv_sales_hours WHERE business_date=:'hourly_day' \gset
+\if :hourly_fallback
+\echo An original with no close preserves the entire saved day.
+\else
+SELECT 1/0;
+\endif
+SELECT (count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=900 AND sum(orders_count)=1)
+ AS employee_fallback FROM public.cv_employee_sales WHERE business_date=:'hourly_day' \gset
+\if :employee_fallback
+\echo Missing provider attribution leaves the saved employee amounts readable.
+\else
+SELECT 1/0;
+\endif
+SELECT public.pos_rebuild_sales_fact_rollups_v1(:'a',:'hourly_day');
+SELECT (
+ EXISTS(SELECT FROM public.hourly_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day' AND hour_local=12)
+ AND EXISTS(SELECT FROM public.employee_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day' AND net_sales_cents=900)
+) AS divergent_saved \gset
+\if :divergent_saved
+\echo A day that cannot be reconstructed keeps each historical bucket.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+UPDATE public.hourly_sales_rollup SET hour_local=11 WHERE business_id=:'a' AND business_date=:'hourly_day';
+UPDATE public.employee_sales_rollup SET net_sales_cents=1200 WHERE business_id=:'a' AND business_date=:'hourly_day';
+SET LOCAL ROLE authenticated;
+SELECT public.pos_rebuild_sales_fact_rollups_v1(:'a',:'hourly_day');
+SELECT public.pos_rebuild_sales_fact_rollups_v1(:'a',:'hourly_day');
+SELECT (
+ NOT EXISTS(SELECT FROM public.hourly_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day')
+ AND NOT EXISTS(SELECT FROM public.employee_sales_rollup WHERE business_id=:'a' AND business_date=:'hourly_day')
+ AND (SELECT count(*)=1 AND min((data->>'hour_local')::int)=11 AND sum(net_sales_cents)=1200
+      AND bool_and(data->>'evidence'='accepted_orders') FROM public.cv_sales_hours WHERE business_date=:'hourly_day')
+ AND (SELECT count(*)=1 AND bool_and(employee_id=:'employee_key') AND sum(net_sales_cents)=1200
+      FROM public.cv_employee_sales WHERE business_date=:'hourly_day')
+) AS regenerated_sales \gset
+\if :regenerated_sales
+\echo Rebuild retires matching copies without writing new rollups or losing readable sales.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+-- Deletion in Square removes the published shift from the API. An exact
+-- completed empty receipt retires the saved row without erasing older history.
+INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,
+ external_employee_id,scheduled_start,scheduled_end,deleted)
+VALUES(:'a',:'loc_a','square','older-square','square-employee',current_date-5+time '08:00',current_date-5+time '10:00',false);
+SELECT jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+ 'location_ids',jsonb_build_array('fixture-square-location'),'scheduled_shift_statuses',jsonb_build_array('PUBLISHED'),
+ 'start',jsonb_build_object('end_at',current_date::timestamptz),
+ 'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text AS square_window \gset
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',1,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location','query',:'square_window')),true,
+ jsonb_build_array(jsonb_build_object('key',:'shift_id','payload',jsonb_build_object('id',:'shift_id',
+  'published_shift_details',jsonb_build_object('location_id','fixture-square-location','team_member_id','square-employee',
+  'start_at',(current_date-1+time '13:00')::timestamptz,'end_at',(current_date-1+time '15:00')::timestamptz)))));
+SET LOCAL ROLE service_role;
+SELECT public.square_apply_published_schedule(:'a','fixture-square-merchant','fixture-square-location',:'square_window');
+SELECT (count(*)=1 AND bool_and(scheduled_start=(current_date-1+time '13:00')::timestamptz AND NOT deleted)) AS square_revision_kept
+FROM public.pos_scheduled_shifts WHERE business_id=:'a' AND provider='square' AND external_shift_id=:'shift_id' \gset
+\if :square_revision_kept
+\echo The certified Square revision replaces the saved shift under the same identity.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',2,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location','query',:'square_window')),true,'[]');
+SET LOCAL ROLE service_role;
+SELECT public.square_apply_published_schedule(:'a','fixture-square-merchant','fixture-square-location',:'square_window');
+SELECT public.square_apply_published_schedule(:'a','fixture-square-merchant','fixture-square-location',:'square_window');
+RESET ROLE;
+SELECT jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+ 'location_ids',jsonb_build_array('fixture-square-location'),'scheduled_shift_statuses',jsonb_build_array('PUBLISHED'),
+ 'start',jsonb_build_object('end_at',(current_date+2)::timestamptz),
+ 'end',jsonb_build_object('start_at',(current_date+1)::timestamptz))))::text AS square_later_window \gset
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',3,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location','query',:'square_later_window')),true,'[]');
+SELECT (NOT EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='square' AND source_ref='square-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='square' AND source_ref='square-shift:older-square')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'b' AND source='square' AND source_ref='square-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='app' AND source_ref='shift:'||:'app_shift')
+ AND NOT has_function_privilege('authenticated','public.square_apply_published_schedule(uuid,text,text,text)','execute')) AS square_deletion_kept \gset
+\if :square_deletion_kept
+\echo An empty certified Square window retires missing shifts across later windows and preserves unrelated schedule history.
+\else
+SELECT 1/0;
+\endif
 ROLLBACK;

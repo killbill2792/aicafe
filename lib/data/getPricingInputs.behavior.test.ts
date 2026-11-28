@@ -21,7 +21,7 @@ import { getPricingInputs } from "./getPricingInputs";
 function dbWithOrders(spy: string[], orderError = false) {
   const values: Record<string, unknown> = {
     businesses: { timezone: "America/Los_Angeles", currency: "EUR" },
-    cv_menu: [{ id: "latte", name: "Latte", category: "drink", price_cents: 350, prep_seconds: 60 }],
+    menu_catalog_for: [{ id: "latte", name: "Latte", category: "drink", price_cents: 350, prep_seconds: 60 }],
     cv_orders:[{ business_date: "2026-10-30", pos_order_id: "real-1", net_sales_cents: 1000, processing_fee_provider: "toast" }],
     cv_expenses: [], cv_bills: [], recipe_lines: [], menu_item_cost_fallbacks: [],
   };
@@ -42,7 +42,8 @@ function dbWithOrders(spy: string[], orderError = false) {
     return builder;
   };
   return {
-    from, rpc: async () => ({ data: [{ menu_item_id: "latte", total_quantity: 10 }], error: null }),
+    from, rpc: (name:string) => name==="menu_catalog_for"?from(name):
+      Promise.resolve({ data: [{ menu_item_id: "latte", total_quantity: 10 }], error: null }),
   } as unknown as SupabaseClient;
 }
 

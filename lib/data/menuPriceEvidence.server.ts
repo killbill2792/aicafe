@@ -3,6 +3,7 @@ import type {SupabaseClient} from "@supabase/supabase-js";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {dateOffset} from "@/lib/calc/periods";
 import {priceCheck,priceSource,realizedUnitAverage,type PriceCheck,type PriceEvidenceStatus} from "@/lib/calc/menuPriceCheck";
+import type {MenuCatalogRow} from "./menuCatalog.server";
 export type MenuPriceEvidence={
  priceSource:"owner_manual"|"connected_pos"|"imported_avg"|"initial";
  realizedAvgCents:number|null;priceCheck:PriceCheck;
@@ -16,7 +17,7 @@ export async function readMenuPriceEvidence(businessId:string,
  const [history,catalog,coverage]=await Promise.all([
   db.from("menu_price_history").select("menu_item_id,source_type,changed_at")
     .eq("business_id",businessId).in("menu_item_id",ids).order("changed_at",{ascending:false}),
-  db.from("cv_menu").select("id,catalog_source").like("source_ref","item:%").eq("business_id",businessId).in("id",ids),
+  db.rpc("menu_catalog_for",{p_business_id:businessId}).select("id,catalog_source").in("id",ids),
   db.from("cv_sales_days").select("business_date").eq("business_id",businessId)
     .eq("data->>sales_data_status","actual").lte("business_date",asOf)
     .order("business_date",{ascending:false}).limit(1).maybeSingle(),
@@ -24,7 +25,8 @@ export async function readMenuPriceEvidence(businessId:string,
  if(history.error||catalog.error||coverage.error)throw new Error("Menu price evidence unavailable");
  const latest=new Map<string,string>();
  for(const row of history.data??[])if(!latest.has(row.menu_item_id))latest.set(row.menu_item_id,row.source_type);
- const sources=new Map((catalog.data??[]).map(row=>[row.id,row.catalog_source]));
+ const catalogRows=(catalog.data??[]) as Pick<MenuCatalogRow,"id"|"catalog_source">[];
+ const sources=new Map(catalogRows.map(row=>[row.id,row.catalog_source]));
  const to=coverage.data?.business_date??null;
  const period=to?{from:dateOffset(to,-29),to}:null;
  const rows:Array<{menu_item_id:string|null;net_sales_cents:number;quantity:number}>=[];

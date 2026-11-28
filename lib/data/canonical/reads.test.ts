@@ -14,7 +14,9 @@ function db(rows:Record<string,unknown>[]=[],err:unknown=null){
   limit(n:number){calls.push(["limit",n]);return Promise.resolve({data:rows,error:err});},
   range(start:number,end:number){calls.push(["range",[start,end]]);return Promise.resolve({data:rows.slice(start,end+1),error:err});}
  };
- return {client:{from(t:string){table=t;return query;}} as never,calls,get table(){return table;}};
+ return {client:{from(t:string){table=t;return query;},rpc(t:string,args:unknown){
+  calls.push([t,args]);return query;
+ }} as never,calls,get table(){return table;}};
 }
 describe("canonical authenticated read path",()=>{
  it("always scopes daily sales by café and date",async()=>{
@@ -66,6 +68,7 @@ it("paginates canonical inventory without a silent 100-row limit",async()=>{
  expect([first.rows.length,middle.rows.length,last.rows.length]).toEqual([100,100,1]);
  expect([first.truncated,middle.truncated,last.truncated]).toEqual([true,true,false]);
  expect(x.calls).toContainEqual(["range",[100,200]]);
+ expect(x.calls).toContainEqual(["inventory_evidence_for",{p_business_id:business,p_from:range.dateFrom,p_to:range.dateTo}]);
  expect(x.calls).toContainEqual(["business_id",business]);
  const bad=await readCanonicalView(x.client,business,"cv_inventory",range,100,{offset:-1});
  expect(bad.error).toBe("invalid_scope");

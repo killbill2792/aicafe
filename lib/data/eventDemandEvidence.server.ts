@@ -93,16 +93,15 @@ export async function readEventDemandEvidence(db:SupabaseClient,scope:OwnerScope
     (samples.value.data??[]) as EventDemandSample[]:[];
   const saved=ok(live,null);
   const scheduled=ok(shifts,null),stock=ok(inventory,null);
-  // The two scheduling sources may overlap. Keep them separate; a draft or
-  // scheduled shift is not proof of attendance, availability or sufficient staff.
-  const shiftRows=(scheduled?.rows??[]).flatMap<{source:"app"|"toast";status:string;start:string|null;end:string|null}>(row=>{
+  // Schedule evidence can overlap across sources and describes planned staffing.
+  const shiftRows=(scheduled?.rows??[]).flatMap<{source:"app"|"toast"|"square";status:string;start:string|null;end:string|null}>(row=>{
     const d=row.data as Record<string,unknown>|null;
     if(!d||row.business_date!==request.eventDate)return [];
     if(row.source==="app"&&["published","confirmed","draft"].includes(String(d.shift_status)))
       return [{source:"app" as const,status:String(d.shift_status),
         start:typeof d.start_local==="string"?d.start_local:null,
         end:typeof d.end_local==="string"?d.end_local:null}];
-    if(row.source==="toast")return [{source:"toast" as const,status:"scheduled",
+    if(row.source==="toast"||row.source==="square")return [{source:row.source,status:"scheduled",
       start:typeof d.scheduled_start==="string"?d.scheduled_start:null,
       end:typeof d.scheduled_end==="string"?d.scheduled_end:null}];
     return [];

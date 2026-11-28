@@ -31,7 +31,7 @@ describe("owner-agreed N-day price experiment duration",()=>{
   expect(result.effect).toMatchObject({durationDays:10,newPriceCents:510});
   expect(priceExperimentCapability.parseEffect(result.effect)).toMatchObject({
    durationDays:10});
-  expect(result.baseline).toMatchObject({source:"daily_rollups+order_lines",
+  expect(result.baseline).toMatchObject({source:"daily_rollups+cv_item_sales",
    assumption:"unchanged_unit_demand"});
  });
  it("keeps old approved drafts on the original seven-day default",async()=>{

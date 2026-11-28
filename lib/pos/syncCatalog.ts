@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import type {PosAdapter,PosCatalogItem} from "./types";
+import type {CatalogSourceBinding,PosAdapter,PosCatalogItem} from "./types";
 import {matchCatalogItem,type CanonicalMenuCandidate} from "./catalogMatching";
 import {recordInitialMenuPrice,setCanonicalMenuPrice} from "@/lib/menu/priceHistory";
 import {readAllPosRows} from "./pagedReads";
@@ -23,27 +23,24 @@ const same=(a:unknown,b:unknown)=>JSON.stringify(canonicalJson(a??null))===
 const pick=(current:object,desired:object)=>
  Object.fromEntries(Object.entries(desired).filter(([k,v])=>!same((current as Record<string,unknown>)[k],v)));
 const resultError=(error:unknown)=>{if(error)throw error;};
-const normalized=(v:string|null|undefined)=>(v??"").normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();
 
 /** Never let provider identity replace the owner/CSV identity without an alias. */
 export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,adapter:PosAdapter,
  options:{restaurantGuid?:string;archiveMissing?:boolean}={}){
  const imported=await adapter.fetchCatalogItems();
- const {data,error}=await db.from("menu_items")
- .select("id,pos_item_id,name,base_name,size_label,price_cents,category,catalog_source,pos_name,is_active,description,menu_group,pos_visibility,pos_pricing_strategy,pos_archived_at,pos_metadata")
- .eq("business_id",businessId);
- resultError(error);
- const rows=(data??[]) as Row[];
+ const rows=await readAllPosRows<Row>((from,to)=>db.from("menu_items")
+  .select("id,pos_item_id,name,base_name,size_label,price_cents,category,catalog_source,pos_name,is_active,description,menu_group,pos_visibility,pos_pricing_strategy,pos_archived_at,pos_metadata")
+  .eq("business_id",businessId).order("id").range(from,to),"POS menu items");
  // Read all existing options once; preserve owner recipes and quantities.
  const currentOptions=await readAllPosRows((from,to)=>db.from("modifier_recipes")
   .select("id,pos_modifier_id,name,price_cents,pos_group_id,pos_group_name,pos_pricing_strategy,pos_metadata,is_active")
   .eq("business_id",businessId).not("pos_modifier_id","is",null)
   .order("id").range(from,to),"POS modifier options");
  const optionsById=new Map(currentOptions.map(option=>[option.pos_modifier_id,option]));
- const {data:aliasRows,error:aliasesError}=await db.from("pos_item_aliases")
- .select("menu_item_id,provider,pos_item_id").eq("business_id",businessId);
- resultError(aliasesError);
- const alias=new Map((aliasRows??[]).map(r=>[r.provider+":"+r.pos_item_id,r.menu_item_id]));
+ const aliasRows=await readAllPosRows((from,to)=>db.from("pos_item_aliases")
+  .select("menu_item_id,provider,pos_item_id").eq("business_id",businessId)
+  .order("provider").order("pos_item_id").range(from,to),"POS item aliases");
+ const alias=new Map(aliasRows.map(r=>[r.provider+":"+r.pos_item_id,r.menu_item_id]));
  const byId=new Map(rows.map(r=>[r.id,r]));
  const candidates=():CanonicalMenuCandidate[]=>([...byId.values()].map(r=>({
   id:r.id,name:r.name,baseName:r.base_name,sizeLabel:r.size_label,priceCents:r.price_cents,
@@ -51,6 +48,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
  })));
  let matched=0,needsReview=0,created=0,changed=0;
  const seen=new Set<string>();
+ const bindings:CatalogSourceBinding[]=[];
 
  for(const item of imported){
   if(seen.has(item.posItemId))continue;
@@ -125,6 +123,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
     businessId,menuItemId:itemId,priceCents:item.priceCents,sourceProvider:adapter.provider
    });
   }
+  if(adapter.bindCatalogSources)bindings.push({native_id:itemId,source_id:item.posItemId,price_source:item.priceSource});
   if(row&&item.priceCents===null&&row.price_cents!==null){
    // Toast OPEN_PRICE means unknown, not a stale historical fixed price.
    const {error:clearPriceError}=await db.from("menu_items").update({
@@ -229,6 +228,7 @@ export async function syncCanonicalCatalog(db:SupabaseClient,businessId:string,a
    p_business_id:businessId,p_restaurant_guid:restaurantGuid
   });resultError(relinkError);
  }
+ await adapter.bindCatalogSources?.(bindings);
  return {imported:imported.length,matched,needsReview,created,changed};
 }
 

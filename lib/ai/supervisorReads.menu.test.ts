@@ -9,8 +9,8 @@ const business="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const group="toast:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:milk";
 function fakeDb(){
  const reads:string[]=[];
- const from=(table:string)=>{
-  let businessFilter:string|null=null;
+ const from=(table:string,scope:string|null=null)=>{
+  let businessFilter=scope;
   const q={
    select:()=>q,
    eq:(key:string,value:string)=>{if(key==="business_id")businessFilter=value;return q;},
@@ -19,7 +19,7 @@ function fakeDb(){
    range:async(_from:number=0,_to:number=10000)=>{
     reads.push(table);
     if(businessFilter!==business)throw new Error("Unscoped menu reader");
-    if(table==="cv_menu")return {error:null,data:[
+    if(table==="menu_catalog_for")return {error:null,data:[
      {id:"open",name:"Custom Drink",base_name:"Custom Drink",size_label:null,
       category:"drink",is_active:true,price_cents:null,description:"Made to order",
       menu_group:"Drinks / Custom",pos_visibility:"POS",pos_pricing_strategy:"OPEN_PRICE"},
@@ -43,7 +43,8 @@ function fakeDb(){
   };
   return q;
  };
- return {client:{from} as unknown as SupabaseClient,reads};
+ const rpc=(name:string,args:{p_business_id:string})=>from(name,args.p_business_id);
+ return {client:{from,rpc} as unknown as SupabaseClient,reads};
 }
 describe("Supervisor published POS menu evidence",()=>{
  it("keeps OPEN_PRICE unknown and exposes per-item group and add-on prices",async()=>{
@@ -59,7 +60,7 @@ describe("Supervisor published POS menu evidence",()=>{
    ]}]});
   expect(result.value.find(x=>x.id==="priced")).toMatchObject({
    priceCents:500,sizeLabel:"Large",modifierGroups:[{name:"Milk"}]});
-  expect(reads).toEqual(["cv_menu","menu_item_modifier_groups","modifier_recipes"]);
+  expect(reads).toEqual(["menu_catalog_for","menu_item_modifier_groups","modifier_recipes"]);
  });
  it("matches the Menu screen's priced item IDs and exact cents, retaining open prices",async()=>{
   const {client}=fakeDb();
@@ -88,13 +89,17 @@ describe("Supervisor published POS menu evidence",()=>{
       in:()=>q,like:()=>q,order:()=>q,
       range:async(first:number,last:number)=>{
         calls.push(table);
-        return {data:table==="cv_menu"?rows.slice(first,last+1):[],error:null};
+        return {data:table==="menu_catalog_for"?rows.slice(first,last+1):[],error:null};
       },
       limit:async()=>({data:[],error:null})
     };
     return q;
   };
-  const client={from} as unknown as SupabaseClient;
+  const rpc=(name:string,args:{p_business_id:string})=>{
+    expect(args.p_business_id).toBe(business);
+    return from(name);
+  };
+  const client={from,rpc} as unknown as SupabaseClient;
   const screen=visiblePricedMenuItems(await readMenuCatalogRows(client,business));
   const chat=await supervisorHistoricalReaders(client,business).menuCatalog(business);
   expect(chat.available).toBe(true);
@@ -103,7 +108,7 @@ describe("Supervisor published POS menu evidence",()=>{
     .toEqual(screen.map(row=>[row.id,row.price_cents]));
   expect(chat.value).toHaveLength(501);
   expect(chat.value[500].priceCents).toBe(1000);
-  expect(calls.filter(table=>table==="cv_menu")).toHaveLength(4);
+  expect(calls.filter(table=>table==="menu_catalog_for")).toHaveLength(4);
  });
  it("rejects cross-business readers before touching database",async()=>{
   const {client,reads}=fakeDb();

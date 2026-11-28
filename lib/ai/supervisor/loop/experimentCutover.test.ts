@@ -182,7 +182,7 @@ describe("verified new-mode daily delivery",()=>{
   const scope={businessId,ownerUserId:row.owner_user_id,threadId:row.thread_id,locale:"en" as const};
   testReader.elapsed.mockReset().mockImplementation(async(_db:unknown,_biz:unknown,
    _item:unknown,window:unknown)=>({window,status:"actual",units:4,revenueCents:2000,
-    countedLines:1,unknownTimeLines:0,source:"order_lines.ordered_at",asOf:now}));
+    countedLines:1,unknownTimeLines:0,source:"cv_item_sales.ordered_at",asOf:now}));
   const run=(tick:string)=>runVerifiedToastPriceTick(db,repo,row,scope,tick,
    "America/Los_Angeles",{} as LoopProposal);
   expect(await run("2026-11-03T19:00:00Z")).toBe("monitoring");
@@ -238,7 +238,11 @@ describe("Task 8a observation worker provisional publication recovery",()=>{
     table==="supervisor_toast_price_context_changes"?{data:[],count:0,error:null}:
     table==="supervisor_experiment_notice_receipts"?{data:null,error:null}: {data:null,error:{message:"not needed"}};
    return query(response);
-  }}),rpc:async(name:string,args:Record<string,unknown>)=>{
+  }}),rpc:(name:string,args:Record<string,unknown>)=>{
+   if(name==="menu_catalog_for"){
+    expect(args.p_business_id).toBe(businessId);
+    return query({data:[{id:itemId,name:"Latte",price_cents:500,category:"drink",prep_seconds:null}],error:null});
+   }
    if(name==="supervisor_8a_due_toast_observations")return {data:[{history_id:historyId,business_id:businessId,enabled_at:"2026-10-31T00:00:00Z"}],error:null};
    if(name==="supervisor_8a_claim_observation_work")return {data:"worker-token",error:null};
    if(name==="supervisor_8a_observation_thread")return {data:"owner-thread",error:null};
@@ -248,7 +252,7 @@ describe("Task 8a observation worker provisional publication recovery",()=>{
   }} as unknown as SupabaseClient;
   testReader.notice.mockReset().mockResolvedValue("posted");
   testReader.elapsed.mockReset().mockImplementation(async(_db:unknown,_biz:unknown,_item:unknown,window:unknown,asOf:string)=>({
-   window,status:"actual",units:4,revenueCents:2000,countedLines:1,unknownTimeLines:0,source:"order_lines.ordered_at",asOf
+   window,status:"actual",units:4,revenueCents:2000,countedLines:1,unknownTimeLines:0,source:"cv_item_sales.ordered_at",asOf
   }));
   const first=await runToastObservationBatch(db,"2026-11-04T19:00:00Z");
   expect(first.failed).toBe(0);
