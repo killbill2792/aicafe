@@ -9,6 +9,7 @@ import {
   type ProcessingFeeRateRule,
 } from "./processingFeeEstimate";
 import { setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
+import { readAllPosRows } from "./pagedReads";
 
 export const OWNER_CONFIRMED_ESTIMATE_PROVIDER = "owner_confirmed";
 
@@ -211,7 +212,7 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
   params: { businessId: string; fromDate: string; toDate: string },
 ): Promise<ProcessingFeeEstimateRefreshSummary> {
   const { businessId, fromDate, toDate } = params;
-  const [plans, rollupsResult, ordersResult] = await Promise.all([
+  const [plans, rollupsResult, orders] = await Promise.all([
     getOwnerConfirmedProcessingFeePlans(supabase, businessId),
     supabase
       .from("daily_rollups")
@@ -222,19 +223,21 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
       .gte("business_date", fromDate)
       .lte("business_date", toDate)
       .order("business_date", { ascending: true }),
-    supabase
-      .from("orders")
+    readAllPosRows((first, last) => supabase
+      .from("cv_orders")
       .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
-      .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
+      .eq("business_id", businessId)
+      .eq("status", "actual")
       .gte("business_date", fromDate)
-      .lte("business_date", toDate),
+      .lte("business_date", toDate)
+      .order("order_ref")
+      .range(first, last), "processing fee estimate orders"),
   ]);
   if (rollupsResult.error) throw rollupsResult.error;
-  if (ordersResult.error) throw ordersResult.error;
 
   const rollups = (rollupsResult.data ?? []) as RollupRefreshRow[];
   const ordersByDate = new Map<string, ProcessingFeeOrderEvidence[]>();
-  for (const order of ordersResult.data ?? []) {
+  for (const order of orders) {
     const evidence: ProcessingFeeOrderEvidence = {
       posOrderId: order.pos_order_id,
       netSalesCents: Number(order.net_sales_cents),
