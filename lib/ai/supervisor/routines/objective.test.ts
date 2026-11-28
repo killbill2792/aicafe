@@ -9,6 +9,7 @@ vi.mock("@/lib/ai/cafeTools.server",()=>({
 }));
 vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({
   assertDurablePaidTurnAllowed:vi.fn(),
+  configuredBudget:vi.fn(()=>({maxModelCalls:6,maxToolCalls:8})),
 }));
 vi.mock("@/lib/ai/supervisor/runs/usage.server",()=>({
   loadModelExecutionCap:vi.fn(async()=>1200),
@@ -25,9 +26,10 @@ vi.mock("@/lib/data/financialEvidence.server",()=>({
 }));
 vi.mock("@/lib/ai/agent/loop.server",()=>({openAIProvider:vi.fn()}));
 vi.mock("@/lib/ai/research/turn.server",()=>({runResearchTurn:vi.fn()}));
+vi.mock("./luna-objective.server",()=>({runLunaScheduledResearch:vi.fn()}));
 vi.mock("./investigationUsage.server",()=>({
   meteredInvestigationProvider:vi.fn((_db,_scope,provider)=>({
-    provider,problem:()=>null,
+    provider,problem:()=>null,reserve:vi.fn(async()=>vi.fn()),
   })),
 }));
 vi.mock("@/lib/connectors/registry.server",()=>({
@@ -48,6 +50,7 @@ vi.mock("@/lib/operating/notifyOwner.server",()=>({
   })),
 }));
 
+import {runLunaScheduledResearch} from "./luna-objective.server";
 import {runResearchTurn as runAgentTurn} from "@/lib/ai/research/turn.server";
 import {verifyObjectiveTurn,executeClaimedObjective,objectiveReadTools,
   observedObjectiveEvidence,routineObjectiveCheckpoint,watchReadTools} from "./objective.server";
@@ -299,6 +302,27 @@ describe("U4 scheduled model execution persists only verified outcomes",()=>{
     expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",
       expect.objectContaining({p_run_id:lease.runId,p_attention:"attention"}));
     expect(notifyOwner).toHaveBeenCalled();
+  });
+  it("runs a pinned workforce objective through the replacement and existing verified report writer",async()=>{
+    const previousLegacyCalls=vi.mocked(runAgentTurn).mock.calls.length;
+    const provider=async function*(){};
+    const rpc=vi.fn(async()=>({data:true,error:null}));
+    vi.mocked(runLunaScheduledResearch).mockImplementationOnce(async args=>{
+      expect(args.provider).toBe(provider);
+      expect(args.scope).toEqual({businessId:objective.businessId,ownerUserId:objective.ownerUserId,threadId:objective.threadId});
+      expect(args.request.instructions).toContain("Finance");
+      expect(JSON.stringify(args.request.input)).toContain(objective.objectiveText);
+      await args.authorize();
+      await (await args.reserve({model:args.request.model})).complete({} as never);
+      return turn("Review the saved workforce evidence.");
+    });
+    await expect(executeClaimedObjective({rpc,...mockRoutineHistory()} as never,{
+      routine:objective,lease:{...lease,engine:"replacement",employeeKey:"finance"},localDate:"2026-11-20",provider,
+    })).resolves.toMatchObject({report:"Review the saved workforce evidence.",sourceCount:1});
+    expect(vi.mocked(runAgentTurn).mock.calls).toHaveLength(previousLegacyCalls);
+    expect(rpc).toHaveBeenCalledWith("u4_publish_objective_report",expect.objectContaining({
+      p_run_id:lease.runId,p_lease_token:lease.leaseToken,p_attention:"attention",
+    }));
   });
   it("gives the model earlier conclusions as hypotheses, not new verified source facts",async()=>{
     vi.mocked(runAgentTurn).mockResolvedValueOnce(turn("Evidence changed; revise last conclusion."));

@@ -10,7 +10,7 @@ import {runResearchTurn} from "@/lib/ai/research/turn.server";
 import {backgroundResearchContinuation} from "@/lib/ai/research/backgroundContinuation.server";
 import {agentToolDefinitions,gmailToolDefinitions} from "@/lib/ai/agent/tools";
 import type {AgentToolName,AgentToolResult} from "@/lib/ai/agent/tools";
-import {assertDurablePaidTurnAllowed} from "@/lib/ai/supervisor/runs/worker.server";
+import {assertDurablePaidTurnAllowed,configuredBudget} from "@/lib/ai/supervisor/runs/worker.server";
 import type {OwnerRunCheckpoint} from "@/lib/ai/supervisor/runs/contracts";
 import {loadModelExecutionCap} from "@/lib/ai/supervisor/runs/usage.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
@@ -27,6 +27,9 @@ import {assertExternalAccess,WEB_RESOURCE} from "@/lib/connectors/access.server"
 import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {scoutingSearchTerms} from "@/lib/ai/agent/tools/webSearch";
 import type {RoutineRecord} from "./contracts";
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {assignmentInstructions} from "@/lib/luna/runtime/assignment-worker.server";
+import {runLunaScheduledResearch} from "./luna-objective.server";
 import type {ClaimedRoutine} from "./repository.server";
 
 /** A service-claimed routine is NOT a current owner instruction. No effects,
@@ -152,7 +155,7 @@ export type ObjectiveOutcome={
 };
 /** Check technical completion, authorized tool use and action claims.
  * Sources are optional audit metadata, not a condition of publishing. */
-export function verifyObjectiveTurn(turn:AgentTurn,routine:RoutineRecord):ObjectiveOutcome{
+export function verifyObjectiveTurn(turn:Pick<AgentTurn,"text"|"endReason"|"toolInvocations"|"results">,routine:RoutineRecord):ObjectiveOutcome{
   const reportText=backgroundReportText(turn);
   if(turn.endReason!=="complete"||
     unsupportedExternalEffectClaim(reportText)||
@@ -362,7 +365,19 @@ export async function executeClaimedObjective(db:SupabaseClient,params:{
     }}:{}),
   };
   const continuation=await backgroundResearchContinuation(db,{...scope,threadId:routine.threadId,sourceType:"routine",sourceId:lease.runId,revision:String(lease.revision),leaseToken:lease.leaseToken,parentDeadline:params.executionDeadline});
-  const turn=await runResearchTurn({
+  const turn=lease.engine==="replacement" ? await runLunaScheduledResearch({
+    scope:{...scope,threadId:routine.threadId},continuation,executionDeadline:continuation.executionDeadline,
+    budget:configuredBudget(cap>1200),provider:params.provider,authorize:async()=>{
+      await assertLease();
+      await assertDurablePaidTurnAllowed({...scope,threadId:routine.threadId},db);
+    },
+    request:{model:configuredSupervisorModel(),max_output_tokens:cap,
+      instructions:assignmentInstructions("Use authorized café evidence. Report its source and gaps. External actions are unavailable.",
+        lease.employeeKey??""),
+      input:[{role:"developer",content:JSON.stringify({name:identity.cafeName,currency:identity.currency,
+        timezone:identity.timezone,localDate:identity.asOf})},{role:"user",content:prompt}]},
+    reserve:async request=>({launched:()=>undefined,complete:await metered.reserve(request)}),
+  }) : await runResearchTurn({
     continuation,continuationIdentity:"routine:"+lease.runId+":"+lease.revision,executionDeadline:continuation.executionDeadline,
     captureSourceVersions:()=>({...webRevision!==undefined?{web:webRevision}:{},...usedGmailIdentity?{gmail:JSON.stringify(usedGmailIdentity)}:{}}),
     restoreSourceVersions:async versions=>{webRevision=versions.web;usedGmailIdentity=versions.gmail?JSON.parse(versions.gmail):null;await recheckGmail();},
