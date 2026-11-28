@@ -6,9 +6,15 @@ const NEXT = "66666666-6666-4666-8666-666666666666";
 const job = (id: string, owner = "msg-1") => ({ id, threadId: THREAD, ownerMessageId: owner, status: "running", attempt: 1,
   errorCode: null, replyMessageId: null, progress: [], inbox: [], consumed: [], heartbeatAt: "", createdAt: "" });
 const answerRpc=vi.hoisted(()=>vi.fn());
-vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>({rpc:answerRpc})}));
-const durable = vi.hoisted(() => ({admit:vi.fn(), process:vi.fn()}));
-vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({admitDurableChat:durable.admit,processDurableRun:durable.process}));
+const durable = vi.hoisted(() => ({admit:vi.fn(), process:vi.fn(), replacement:vi.fn(), readResult:vi.fn(), completedReply:vi.fn()}));
+vi.mock("@/lib/supabase/admin",()=>({createAdminSupabaseClient:()=>{
+  const query={select:()=>query,eq:()=>query,maybeSingle:durable.readResult};
+  return {rpc:answerRpc,from:()=>query};
+}}));
+vi.mock("@/lib/ai/supervisor/runs/worker.server",()=>({
+  admitDurableChat:durable.admit,processDurableRun:durable.process,configuredBudget:vi.fn(),
+}));
+vi.mock("@/lib/ai/supervisor/runs/luna-entry.server",()=>({runScopedLunaAssignment:durable.replacement}));
 const fake = vi.hoisted(() => ({
   mode: "started" as string, startFails: false, accessAllowed: true, continuation: null as unknown,
   finished: [] as Array<{ id: string; status: string; errorCode?: string }>,
@@ -51,11 +57,15 @@ vi.mock("@/lib/access/access.server", () => ({
 }));
 vi.mock("@/lib/ai/conversations/enabled.server", () => ({
   isSupervisorChatConfigured: () => true, getSupervisorChatReadiness: async () => ({ enabled: true, reason: null }) }));
-vi.mock("@/lib/ai/conversations/replyWriter.server", () => ({ getExistingSupervisorReply: async () => null }));
+vi.mock("@/lib/ai/conversations/replyWriter.server", () => ({
+  getExistingSupervisorReply: async () => null, getCompletedDurableReply:durable.completedReply,
+}));
 vi.mock("@/lib/ai/cafeTools.server", () => ({
   createAuthenticatedCafeTools: async () => ({}),
   readSupervisorCafeIdentity: async () => ({ asOf: "2026-10-21", timezone: "UTC", cafeName: "Test" }) }));
-vi.mock("@/lib/ai/conversations/usage.server", () => ({ labelSupervisorThread: async () => {}, assertOwnerAgentTurnAvailable: async () => {} }));
+vi.mock("@/lib/ai/conversations/usage.server", () => ({
+  labelSupervisorThread: async () => {}, assertOwnerAgentTurnAvailable: async () => {}, ownerModelCallsLimit:()=>null,
+}));
 vi.mock("@/lib/ai/agent/loop.server", () => ({
   runAgentTurn: async (args: Record<string, unknown> & { onTool?: (n: string, a: string) => void;
     onDelta?: (d: string) => void; takeFollowUps?: (max: number) => Promise<Array<{ id: string }>> }) => {
@@ -98,6 +108,7 @@ beforeEach(() => {
   vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","false");vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","false");
   answerRpc.mockReset();answerRpc.mockResolvedValue({data:null,error:null});
   durable.admit.mockReset();durable.process.mockReset();
+  durable.replacement.mockReset();durable.readResult.mockReset();durable.completedReply.mockReset();
   fake.mode = "started"; fake.startFails = false; fake.accessAllowed = true; fake.continuation = null; fake.finished = [];
   fake.steps = []; fake.loopArgs = []; fake.followUps = []; fake.kept = 0;
   vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -164,6 +175,18 @@ describe("durable owner admission",()=>{
     vi.stubEnv("SUPERVISOR_RUN_WORKER_ENABLED","true");
     vi.stubEnv("SUPERVISOR_DURABLE_CHAT_ENABLED","true");
     durable.admit.mockResolvedValue({id:NEXT});
+  });
+  it("uses the stored replacement engine and publishes the canonical completed reply",async()=>{
+    durable.admit.mockResolvedValueOnce({id:NEXT,engine:"replacement",requestKey:"msg-1"});
+    durable.replacement.mockResolvedValueOnce("completed");
+    durable.readResult.mockResolvedValueOnce({data:{final_report_ref:JOB},error:null});
+    durable.completedReply.mockResolvedValueOnce({id:JOB});
+    const out=events(await (await post()).text());
+    expect(out.map(event=>event.type)).toEqual(["ack","done"]);
+    expect(out.at(-1)?.data.reply.id).toBe(JOB);
+    expect(durable.replacement).toHaveBeenCalledWith(
+      {businessId:"business-1",ownerUserId:"owner-1",threadId:THREAD},NEXT,expect.any(Object));
+    expect(durable.process).not.toHaveBeenCalled();
   });
   it("admits the saved owner and immutable input before the same worker starts",async()=>{
     durable.process.mockImplementation(async(id,emit)=>{

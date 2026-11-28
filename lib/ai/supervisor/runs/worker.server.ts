@@ -162,7 +162,7 @@ export async function reconcileVerifiedOwnerStep(
   if (!receipt || receipt.endReason !== "complete" ||
     receipt.ref !== supervisorReplyIdFor(run.requestKey)) return false;
   await repository.reconcile(run.scope, run.id, "owner_turn", receipt.ref); return true; }
-function configuredBudget(expanded=false): WorkerBudget { const limit = (value: string | undefined, fallback: number) => {
+export function configuredBudget(expanded=false): WorkerBudget { const limit = (value: string | undefined, fallback: number) => {
     if (value === undefined) return fallback;
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))
       throw new Error("invalid_worker_budget_setting"); return Number(value); }; return {

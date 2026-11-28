@@ -196,6 +196,7 @@ supabase_lane() {
   fi
   check supabase "Luna assignment admission, engine ownership and lease recovery" env \
     SUPERVISOR_RUN_DB_URL="$supabase_url" node scripts/db/luna-integration/assignment-claims.mjs
+  sql_step luna-workforce-pilot-sql-integration.sql "Luna workforce pilot preserves general chat, tenant scope and rollback"
   check supabase "Luna provider checkpoint: direct and due entry, recovery and café isolation" env \
     SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/luna/runtime/assignment-provider.db.test.ts --reporter=verbose
   check supabase "U1 historical replay evaluator fail-closed checks" node --test scripts/acceptance/u1-incident-replay.test.mjs
