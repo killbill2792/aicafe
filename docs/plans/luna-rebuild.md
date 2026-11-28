@@ -197,6 +197,13 @@ Use `Legacy exception` for a protected legacy file, or `Safeguard change` for ma
 | Legacy exception | path | base blob | proposed blob | reason and scope | regression.test.ts | regression blob | exit condition |
 ```
 
+The two entry changes for draft #595 are proposed at [`3a9ff06f`](https://github.com/killbill2792/aicafe/commit/3a9ff06f781338a6a9e1d8234070c4a177ef9e80). Review their exact hunks and run `npx vitest run lib/luna/shared/legacyEntry.test.ts` on that commit before merging these rows. The first path owns the existing paid-budget hook and Responses error classification. The second can inspect or stop a run before reaching the shared SQL claim.
+
+| Kind | Path | Main blob | Proposed blob | Reason and scope | Regression | Regression blob | Exit condition |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Legacy exception | lib/ai/agent/loop.server.ts | 90cc6e407e11ed09ec7d9d222b854b8806f502bf | de2832230fdc302f7c52552f45f1c22cd235ea4a | Extract the existing Responses HTTP and stream transport. Keep the paid reservation before transport and preserve fallback errors. | lib/luna/shared/legacyEntry.test.ts | b4caf64c034b87ca829f4f3e85a96f76080dada5 | Retire the legacy adapter after accepted cutover. |
+| Legacy exception | lib/ai/supervisor/runs/worker.server.ts | 55c9c4a521516f8605878d1529799c78143e5c76 | 5a3022d1eadcf08121ccbf0a1ac8074b68d0ec6a | Read the immutable engine at legacy entry and detach before inspecting steps, stopping work or starting a provider. | lib/luna/shared/legacyEntry.test.ts | b4caf64c034b87ca829f4f3e85a96f76080dada5 | Retire the legacy worker after accepted cutover and drain. |
+
 ### Runtime package approvals
 
 These grants cover existing dependencies for date and timezone calculations, React rendering, server-only imports and schema validation. The bootstrap review used the production declarations and lockfile at `28622880e664cba2b9396546e551806eb66f7c80`. The seven downloaded registry archives (including scheduler through React DOM) matched their SHA-512 values. Their package manifests matched the locked versions and dependency declarations and declared no install hooks. The fingerprint binds the package’s install location, artifact version, HTTPS source, SHA-512 integrity and resolved regular, peer and optional dependencies, including nested versions. It also binds each lookup from the reviewed archive to the available installations in Node lookup order, including an absent optional plugin and ancestor fallbacks. A package without complete artifact provenance remains outside the approved list. For example, the current parser's lock entry lacks integrity and the current Next.js closure includes an installed optional peer without it.
