@@ -86,6 +86,9 @@ test("historical attribution preserves original JSON and proves access through L
     await addChange({key: recentOrder, body: cleanOld});
     await addChange({key: recentOrder, body: cleanExact});
     await addChange({key: recentOrder, body: sensitive});
+    await addChange({key: recentOrder, body: JSON.stringify([
+      {path: ".checks[0].payment.method.account.number", before: "private", after: "revised"},
+    ])});
     await addChange({key: recentOrder, recordId: otherRecord, body: cleanOld});
     await addChange({entity: "employee", key: ambiguousEntry, body: cleanOld});
     await addChange({entity: "time_entry", key: projectedEntry, body: cleanOld});
@@ -98,7 +101,7 @@ test("historical attribution preserves original JSON and proves access through L
     assert.equal(forecast.records.unverified, 2);
     assert.equal(forecast.changes.eligible, 4);
     assert.equal(forecast.changes.unresolved, 2);
-    assert.equal(forecast.changes.retention, 1);
+    assert.equal(forecast.changes.retention, 2);
     assert.equal(forecast.changes.unverified, 1);
     assert.deepEqual(await fingerprint(), before);
 

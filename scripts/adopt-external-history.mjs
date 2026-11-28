@@ -4,7 +4,7 @@ import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 import {pathToFileURL} from "node:url";
 import pg from "pg";
-import {retainProviderPayload} from "../lib/externalData/retainPayload.ts";
+import {retainedProviderFieldContext, retainProviderPayload} from "../lib/externalData/retainPayload.ts";
 
 // Never let JSON.parse round an original amount into a different value when
 // deciding whether a record or historical change already conforms to retention.
@@ -17,13 +17,34 @@ const guid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const legacyPath = /^(?:\.[A-Za-z0-9_-]+(?:\[(?:[0-9]+|[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\])*)+$/i;
 const deltaFields = new Set(["path", "segments", "before", "after", "before_present", "after_present"]);
 
-function safePayload(value) {
+function safePayload(value, context) {
   try {
-    return isDeepStrictEqual(value, retainProviderPayload(value));
+    return isDeepStrictEqual(value, retainProviderPayload(value, context));
   } catch (error) {
     if (error instanceof RangeError) return false;
     throw error;
   }
+}
+
+// The old display path did not escape punctuation. Each run of tokens may be
+// one literal key. Carry the possible retention contexts forward and withhold
+// the delta if any interpretation would omit a key or scrub a value.
+function safeLegacyPathValues(segments, values) {
+  if (segments.length > 128) return false;
+  const contexts = Array.from({length: segments.length + 1}, () => new Set());
+  contexts[0].add("business");
+  for (let start = 0; start < segments.length; start++) {
+    let key = "";
+    for (let end = start; end < segments.length; end++) {
+      key += segments[end];
+      for (const context of contexts[start]) {
+        const next = retainedProviderFieldContext(key, context);
+        if (next === null) return false;
+        contexts[end + 1].add(next);
+      }
+    }
+  }
+  return [...contexts.at(-1)].every(context => values.every(value => safePayload(value, context)));
 }
 
 function safeChange(change) {
@@ -31,21 +52,22 @@ function safeChange(change) {
       Object.keys(change).some(key => !deltaFields.has(key)) ||
       !["before", "after"].some(side => Object.hasOwn(change, side))) return false;
 
-  const segments = Object.hasOwn(change, "segments") ? change.segments
+  const exact = Object.hasOwn(change, "segments");
+  const segments = exact ? change.segments
     : change.path === "$" ? []
     : typeof change.path === "string" && legacyPath.test(change.path) ? change.path.match(/[^.[\]]+/g)
     : null;
   if (!Array.isArray(segments) || !segments.every(segment => typeof segment === "string" && safePayload(segment))) return false;
   if (Object.hasOwn(change, "path") && (typeof change.path !== "string" || !safePayload(change.path))) return false;
 
-  // Check each value in its original path context, including payment and card
-  // containers. Preserve legacy path notation and presence markers verbatim.
-  return ["before", "after"].every(side => {
-    if (Object.hasOwn(change, side + "_present") &&
-        typeof change[side + "_present"] !== "boolean") return false;
-    if (!Object.hasOwn(change, side)) return !Object.hasOwn(change, side + "_present");
-    return safePayload(segments.reduceRight((child, key) => ({[key]: child}), change[side]));
-  });
+  const sides = ["before", "after"];
+  if (sides.some(side => Object.hasOwn(change, side + "_present") &&
+      (!Object.hasOwn(change, side) || typeof change[side + "_present"] !== "boolean"))) return false;
+  const values = sides.filter(side => Object.hasOwn(change, side)).map(side => change[side]);
+  // Retain the original path and presence markers verbatim.
+  return exact
+    ? values.every(value => safePayload(segments.reduceRight((child, key) => ({[key]: child}), value)))
+    : safeLegacyPathValues(segments, values);
 }
 
 const mapped = (alias, account = "restaurant_guid") => `exists (
