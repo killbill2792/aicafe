@@ -17,6 +17,7 @@ test("historical attribution preserves original JSON and proves access through L
   const restaurant = randomUUID();
   const unverified = randomUUID();
   const recentOrder = randomUUID();
+  const stockGuid = randomUUID();
   const projectedEntry = randomUUID();
   const selection = randomUUID();
   const unmatchedSelection = randomUUID();
@@ -38,11 +39,12 @@ test("historical attribution preserves original JSON and proves access through L
     return record.id;
   }
 
-  async function addChange({entity = "order", key, recordId, body, account = restaurant}) {
+  async function addChange({entity = "order", key, recordId, body, account = restaurant, daysAgo = 0}) {
     await db.query(`
       insert into public.external_record_changes (business_id, provider, restaurant_guid, entity, entity_guid,
         business_date, record_id, changes)
-      values ($1, 'toast', $2, $3, $4, current_date, $5, $6::jsonb)`, [cafe, account, entity, key, recordId, body]);
+      values ($1, 'toast', $2, $3, $4, current_date - $7::integer, $5, $6::jsonb)`,
+    [cafe, account, entity, key, recordId, body, daysAgo]);
   }
 
   const fingerprint = async () => (await db.query(`
@@ -79,6 +81,8 @@ test("historical attribution preserves original JSON and proves access through L
         body: JSON.stringify({order_guid: voidOrder, selection_guid: key, location_id: location.id})});
     }
 
+    await addRecord({entity: "stock/v1/inventory", key: stockGuid, existing: true, body: '{"quantity":0}'});
+    await addChange({entity: "stock/v1/inventory", key: stockGuid, body: cleanOld, daysAgo: 1});
     await addChange({key: recentOrder, body: cleanOld});
     await addChange({key: recentOrder, body: cleanExact});
     await addChange({key: recentOrder, body: sensitive});
@@ -92,7 +96,7 @@ test("historical attribution preserves original JSON and proves access through L
     assert.equal(forecast.records.eligible, 5);
     assert.equal(forecast.records.retention, 1);
     assert.equal(forecast.records.unverified, 2);
-    assert.equal(forecast.changes.eligible, 3);
+    assert.equal(forecast.changes.eligible, 4);
     assert.equal(forecast.changes.unresolved, 2);
     assert.equal(forecast.changes.retention, 1);
     assert.equal(forecast.changes.unverified, 1);
@@ -100,7 +104,7 @@ test("historical attribution preserves original JSON and proves access through L
 
     const actual = await adoptExternalHistory(db, {apply: true, batchSize: 2});
     assert.equal(actual.records.adopted, 5);
-    assert.equal(actual.changes.adopted, 3);
+    assert.equal(actual.changes.adopted, 4);
     assert.deepEqual(await fingerprint(), before);
     const {rows: voids} = await db.query(`select entity_guid, restaurant_guid, source_account, payload_origin
       from public.external_records where business_id = $1 and entity = 'void' and source_account is not null`, [cafe]);
@@ -120,6 +124,7 @@ test("historical attribution preserves original JSON and proves access through L
     assert.deepEqual((await forOwner(cafe, owner)).rows, [
       {payload_origin: "historical_projection", delta_origin: "historical_projection", n: 1},
       {payload_origin: "historical_provider", delta_origin: "historical_provider", n: 2},
+      {payload_origin: "provider", delta_origin: "historical_provider", n: 1},
     ]);
     const foreign = await forOwner(otherCafe, otherOwner);
     assert.equal(foreign.ok, true);

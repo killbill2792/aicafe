@@ -161,6 +161,7 @@ supabase_lane() {
   sql_step rls-all-public-tables.sql "Every public table has row level security"
   sql_step u3-research-security-db.sql "U3 governed SQL: two-café RLS, signed scope, tamper and revocation"
   sql_step external-source-archive-db.sql "External archive: opaque fields, history, checkpoints, authority and café isolation"
+  check supabase "Historical Toast attribution and preservation" env SUPABASE_DB_URL="$supabase_url" node --test scripts/adopt-external-history.test.mjs
   sql_step pos-order-promotion-db.sql "POS order revision rollback, whole-day fees and manual fallback"
   sql_step external-intake-db.sql "External intake: owner-only CSV originals and shared public report revisions"
   sql_step screen-canonical-views-sql-integration.sql "Canonical screen amounts and two-café isolation"

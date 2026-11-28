@@ -95,7 +95,9 @@ const records = lock => `
   from scoped p order by p.id`;
 
 // Check all candidates, including unscoped rows. An existing explicit ID must
-// match exactly. An inferred link must be unique within the original object scope.
+// match exactly. A stock GUID identifies the same inventory item across observation
+// dates. Other inferred links require the original date as well as a unique match.
+const stock = "stock/v1/inventory";
 const changes = lock => `
   with page as materialized (
     select business_id, id, restaurant_guid, entity, entity_guid, business_date,
@@ -118,7 +120,7 @@ const changes = lock => `
       where r.provider = 'toast'
         and (r.business_id, r.restaurant_guid, r.entity) = (p.business_id, p.restaurant_guid, p.entity)
         and p.record_id is null and r.entity_guid = p.entity_guid
-        and r.business_date is not distinct from p.business_date
+        and (p.entity = '${stock}' or r.business_date is not distinct from p.business_date)
       limit 2
     ) candidate
   ) matches on true order by p.id`;
@@ -139,6 +141,7 @@ function assessChange(row, proposed) {
   const record = proposed.get(candidate.id) ?? candidate;
   if (record.source_account !== row.restaurant_guid || !record.source_key ||
       (row.source_key !== null && row.source_key !== record.source_key) ||
+      (row.record_id === null && row.entity === stock && record.source_key !== row.entity_guid) ||
       !safePayload(record.source_key)) return "unresolved";
   const body = parseExactJson(row.body);
   if (!Array.isArray(body) || !body.length || !body.every(safeChange)) return "retention";
@@ -186,12 +189,14 @@ async function saveChanges(db, rows) {
           (c.restaurant_guid, c.entity, c.restaurant_guid::text, a.matched_key)
       and (c.source_key is null or c.source_key = a.matched_key) and ${mapped("c")}
       and (c.record_id = r.id or (c.record_id is null and r.entity_guid = c.entity_guid
-        and r.business_date is not distinct from c.business_date and not exists(
+        and (case when c.entity = '${stock}' then r.source_key = c.entity_guid::text
+            else r.business_date is not distinct from c.business_date end) and not exists(
           select from public.external_records other
           where other.provider = 'toast'
             and (other.business_id, other.restaurant_guid, other.entity, other.entity_guid) =
               (c.business_id, c.restaurant_guid, c.entity, c.entity_guid)
-            and other.business_date is not distinct from c.business_date and other.id <> r.id
+            and (c.entity = '${stock}' or other.business_date is not distinct from c.business_date)
+            and other.id <> r.id
         )))`,
   [JSON.stringify(rows.map(row => ({business_id: row.business_id, id: row.id,
     payload_hash: sha256(row.body),
