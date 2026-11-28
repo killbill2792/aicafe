@@ -120,6 +120,8 @@ The direct SQL adapter requires a reviewed `pg` runtime package graph. The legac
 
 Direct employee conversation admission now reuses the private thread store and binds one thread to the café, owner and stable employee key. Replacement runs inherit that key. The migrated tests verified concurrent opens, different employees, cross-café denial, display-name changes, scope revocation and opt-out behavior. Direct employee UI, scoped tool continuation, delegation and unattended operation require additional integration.
 
+**Read-only tool continuation checkpoint.** The replacement worker uses the pinned employee's existing responsibilities in its provider request and exposes the existing `calculate` contract. It saves each read result in the fenced continuation before finalizing its receipt. The simulated provider requested canonical arithmetic in a direct Operations conversation. A replacement worker recovered the saved output after loss of the original lease, incorporated steering in arrival order, and published one verified reply without redoing the tool call. The scoped PostgreSQL and action adapters require independent package and boundary authorizations before broader tool coverage.
+
 **Continue in this order.**
 
 1. Compose the proven entry with the existing scoped request and paid-reservation services. Supply the original owner or scheduled input and pin the employee key at admission. Continue tool discovery, authorized execution and completed tool receipts across slices. Use #585's direct SQL, cancellation and rich-report contracts. Keep launches opt-in until these paths and their real accounting are verified.

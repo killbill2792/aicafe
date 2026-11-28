@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { expect, it, vi } from "vitest";
+import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
 import { runClaimedAssignmentProvider } from "./assignment-provider.server";
+import { processLunaAssignment } from "./assignment-worker.server";
 
 const database = process.env.SUPERVISOR_RUN_DB_URL;
 
@@ -27,7 +29,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
           return `${key} => $${index + 1}`;
         }).join(", ");
         if (!/^[a-z_0-9]+$/.test(name)) throw new Error("unexpected test RPC name");
-        const values = Object.values(args);
+        const values = Object.entries(args).map(([key, value]) => key === "p_blocks" ? JSON.stringify(value) : value);
         if (name === "luna_provider_inputs") return (await db.query(`select * from public.${name}(${params})`, values)).rows;
         return (await db.query(`select public.${name}(${params}) as result`, values)).rows[0]?.result;
       };
@@ -41,18 +43,20 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       authorize: async () => undefined, // Postgres independently checks current owner membership and the lease.
     });
 
-    async function admit(replacement: boolean, question: string) {
-      const [businessId, ownerUserId, threadId, messageId] = Array.from({ length: 4 }, () => randomUUID());
+    async function admit(replacement: boolean, question: string, employeeKey?: "operations") {
+      const [businessId, ownerUserId, messageId] = Array.from({ length: 3 }, () => randomUUID());
       cleanup.push({ businessId, ownerUserId });
       await admin.query("insert into auth.users(id,aud,role,email) values ($1,'authenticated','authenticated',$2)",
         [ownerUserId, `${ownerUserId}@example.invalid`]);
       await admin.query("insert into public.businesses(id,name,timezone) values ($1,'Disposable provider café',current_setting('TimeZone'))", [businessId]);
       await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')", [businessId, ownerUserId]);
-      await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values ($1,$2,$3,$4)",
-        [threadId, businessId, ownerUserId, randomUUID()]);
+      if (replacement) await firstWorker.query("insert into public.luna_rollouts(business_id,enabled) values ($1,true)", [businessId]);
+      const threadId: string = employeeKey
+        ? (await firstWorker.query("select public.luna_open_employee_thread($1,$2,$3) as id", [businessId, ownerUserId, employeeKey])).rows[0].id
+        : (await admin.query("insert into public.ai_threads(business_id,owner_user_id,client_request_id) values ($1,$2,$3) returning id",
+          [businessId, ownerUserId, randomUUID()])).rows[0].id;
       await admin.query(`insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id)
         values ($1,$2,$3,$4,$3,'owner','text',$5,$6)`, [messageId, businessId, ownerUserId, threadId, question, randomUUID()]);
-      if (replacement) await firstWorker.query("insert into public.luna_rollouts(business_id,enabled) values ($1,true)", [businessId]);
       const scope = [businessId, ownerUserId, threadId];
       const { id: runId, engine } = (await firstWorker.query(`select public.supervisor_admit_owner_run_v2($1,$2,$3,$4,$5,'en','{}') as run`,
         [...scope, messageId, "a".repeat(64)])).rows[0].run;
@@ -178,6 +182,63 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
     expect(transport).toHaveBeenCalledTimes(2);
     expect((await admin.query(`select attempt_id from public.supervisor_system_usage_events
       where source_type='durable_run' and source_id=$1`, [nextRunId])).rows).toEqual([]);
+
+    const calculation = await admit(true, "Add 125 cents and 220 cents.", "operations");
+    const calculationScope = { businessId: calculation.businessId, ownerUserId: calculation.ownerUserId, threadId: calculation.threadId };
+    const steer = (text: string) => firstWorker.query("select public.luna_steer_assignment($1,$2,$3,$4,$5,$6)",
+      [...calculation.scope, calculation.runId, randomUUID(), text]);
+    await steer("Keep the unit as cents.");
+    const args = {
+      inputs: [{ name: "a", value: "125", unit: "cents" }, { name: "b", value: "220", unit: "cents" }],
+      steps: [{ id: "total", op: "add", args: ["a", "b"] }],
+    };
+    const call = { type: "function_call", name: "calculate", call_id: "call_disposable_sum", arguments: JSON.stringify(args) };
+    const finalText = "The total is 345 cents.";
+    const finalResponse = { ...response, id: "resp_disposable_final", output: [{
+      type: "message", role: "assistant", content: [{ type: "output_text", text: finalText }],
+    }] };
+    const reply = (result: unknown) => new Response(`data: ${JSON.stringify({ type: "response.completed", response: result })}\n\n`);
+    const toolTransport = vi.fn<typeof fetch>()
+      .mockImplementationOnce(async () => reply({ ...response, output: [call] }))
+      .mockImplementationOnce(async () => reply(finalResponse));
+    const execute = vi.fn((_: unknown, input: Record<string, unknown>) => executeCalculationTool(input));
+    const toolAccounting = (db: Client) => ({ ...accounting(db), ownerDailyCap: 2, budget: { ...accounting(db).budget, maxModelCalls: 2 } });
+    const calculationRequest: typeof buildRequest = async context => {
+      expect(context.employeeKey).toBe("operations");
+      return { model, max_output_tokens: 100, instructions: "Answer the scoped owner request.",
+        input: [{ role: "user", content: context.originalInput.text }] };
+    };
+    const assignment = { scope: calculationScope, runId: calculation.runId, signal, request: toolTransport, buildRequest: calculationRequest,
+      readTools: [{ definition: calculationToolDefinition, execute }] };
+    await expect(processLunaAssignment({ ...assignment, accounting: toolAccounting(firstWorker), rpc: rpc(firstWorker, (name, params) => {
+      if (name === "supervisor_checkpoint_owner_run_v2" && String(params.p_receipt_ref).startsWith("read:")) {
+        throw new Error("simulated loss after tool output save");
+      }
+    }) })).rejects.toThrow("simulated loss after tool output save");
+    expect(toolTransport).toHaveBeenCalledTimes(1);
+    expect(execute).toHaveBeenCalledTimes(1);
+    await steer("Show the exact result.");
+    await admin.query("update public.supervisor_run_steps set lease_until=clock_timestamp() where run_id=$1 and step_key='owner_turn'", [calculation.runId]);
+    await expect(processLunaAssignment({ ...assignment, accounting: toolAccounting(secondWorker), rpc: rpc(secondWorker) })).resolves.toBe("completed");
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(toolTransport).toHaveBeenCalledTimes(2);
+    const firstPayload = JSON.parse(String(toolTransport.mock.calls[0][1]?.body));
+    expect(firstPayload.tools).toEqual([calculationToolDefinition]);
+    expect(firstPayload.instructions).toContain("Your assigned role is Operations and Supply Manager.");
+    expect(firstPayload.continuation).toBeUndefined();
+    const finalPayload = JSON.parse(String(toolTransport.mock.calls[1][1]?.body));
+    expect(finalPayload).toMatchObject({ tools: [], tool_choice: "none", input: [
+      { role: "user", content: calculation.question },
+      { type: "message", role: "user", content: "Keep the unit as cents." },
+      call,
+      { type: "function_call_output", call_id: call.call_id, output: JSON.stringify(executeCalculationTool(args)) },
+      { type: "message", role: "user", content: "Show the exact result." },
+    ] });
+    const toolState = await admin.query(`select r.status, m.structured_content, s.checkpoint_receipts
+      from public.supervisor_runs r join public.ai_messages m on m.id::text=r.final_report_ref
+      join public.supervisor_run_steps s on s.run_id=r.id and s.step_key='owner_turn' where r.id=$1`, [calculation.runId]);
+    expect(toolState.rows[0]).toMatchObject({ status: "completed", structured_content: [{ type: "text", text: finalText }] });
+    expect(toolState.rows[0].checkpoint_receipts.map((item: { phase: string }) => item.phase)).toEqual(["provider_pending", "read_pending", "provider_pending"]);
   } finally {
     for (const { businessId, ownerUserId } of cleanup) {
       await admin.query("delete from public.businesses where id=$1", [businessId]);

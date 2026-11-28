@@ -1,7 +1,9 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
+import { workforceRoster } from "../workforce/roster";
 import { runClaimedAssignmentProvider } from "./assignment-provider.server";
 
 const textPart = z.object({ type: z.literal("output_text"), text: z.string() });
@@ -40,7 +42,17 @@ export async function processLunaAssignment({
   if (step.kind === "completed" || step.kind === "busy" || step.kind === "blocked") return step.kind;
   if (step.kind !== "claimed" || step.key !== "owner_turn") throw new Error("luna_assignment_step_unrecognized");
 
-  const turn = await runClaimedAssignmentProvider({ ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken } });
+  const turn = await runClaimedAssignmentProvider({
+    ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken },
+    readTools: provider.readTools ?? [{ definition: calculationToolDefinition, execute: (_, args) => executeCalculationTool(args) }],
+    buildRequest: async (context, steering) => {
+      const request = await provider.buildRequest(context, steering);
+      const employee = workforceRoster().find(profile => profile.key === context.employeeKey);
+      if (!employee) throw new Error("luna_assignment_employee_unavailable");
+      return { ...request, instructions: [request.instructions, `Your assigned role is ${employee.title}.`,
+        employee.communicationStyle, ...employee.responsibilities].join("\n") };
+    },
+  });
   if (!turn) return "busy";
   const items = turn.result.response.output.filter(item => item.type !== "reasoning");
   const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)
