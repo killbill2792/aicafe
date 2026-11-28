@@ -61,7 +61,8 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       const { id: runId, engine } = (await firstWorker.query(`select public.supervisor_admit_owner_run_v2($1,$2,$3,$4,$5,'en','{}') as run`,
         [...scope, messageId, "a".repeat(64)])).rows[0].run;
       expect(engine).toBe(replacement ? "replacement" : "legacy");
-      return { businessId, ownerUserId, threadId, runId: String(runId), scope, question };
+      return { businessId, ownerUserId, threadId, runId: String(runId), scope, question,
+        workerScope: { businessId, ownerUserId, threadId } };
     }
 
     const claim = async (db: Client, run: Awaited<ReturnType<typeof admit>>) =>
@@ -184,7 +185,6 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       where source_type='durable_run' and source_id=$1`, [nextRunId])).rows).toEqual([]);
 
     const calculation = await admit(true, "Add 125 cents and 220 cents.", "operations");
-    const calculationScope = { businessId: calculation.businessId, ownerUserId: calculation.ownerUserId, threadId: calculation.threadId };
     const steer = (text: string) => firstWorker.query("select public.luna_steer_assignment($1,$2,$3,$4,$5,$6)",
       [...calculation.scope, calculation.runId, randomUUID(), text]);
     await steer("Keep the unit as cents.");
@@ -208,7 +208,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       return { model, max_output_tokens: 100, instructions: "Answer the scoped owner request.",
         input: [{ role: "user", content: context.originalInput.text }] };
     };
-    const assignment = { scope: calculationScope, runId: calculation.runId, signal, request: toolTransport, buildRequest: calculationRequest,
+    const assignment = { scope: calculation.workerScope, runId: calculation.runId, signal, request: toolTransport, buildRequest: calculationRequest,
       readTools: [{ definition: calculationToolDefinition, execute }] };
     await expect(processLunaAssignment({ ...assignment, accounting: toolAccounting(firstWorker), rpc: rpc(firstWorker, (name, params) => {
       if (name === "supervisor_checkpoint_owner_run_v2" && String(params.p_receipt_ref).startsWith("read:")) {
@@ -239,6 +239,79 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       join public.supervisor_run_steps s on s.run_id=r.id and s.step_key='owner_turn' where r.id=$1`, [calculation.runId]);
     expect(toolState.rows[0]).toMatchObject({ status: "completed", structured_content: [{ type: "text", text: finalText }] });
     expect(toolState.rows[0].checkpoint_receipts.map((item: { phase: string }) => item.phase)).toEqual(["provider_pending", "read_pending", "provider_pending"]);
+
+    const discovery = await admit(true, "Which fields describe order totals and where are original provider records stored?");
+    const role = `luna_discovery_${randomUUID().replaceAll("-", "")}`;
+    const password = randomUUID();
+    await admin.query(`create role ${role} login password '${password}' in role supervisor_research_transport`);
+    const directUrl = new URL(url);
+    directUrl.username = role;
+    directUrl.password = password;
+    try {
+      const permissions = await admin.query(`select has_table_privilege($1, 'public.orders', 'select') as reads_orders,
+        has_function_privilege($1, 'public.supervisor_research_sql(uuid,uuid,text)', 'execute') as can_research`, [role]);
+      expect(permissions.rows).toEqual([{ reads_orders: false, can_research: true }]);
+      vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", directUrl.toString());
+      const metadataCall = { type: "function_call", name: "describe_database", call_id: "call_disposable_catalog",
+        arguments: JSON.stringify({ tables: ["orders", "external_records", "external_record_links",
+          "toast_raw_samples", "toast_client_budgets"] }) };
+      const catalogText = "The catalog lists net sales in cents and a JSONB column for original provider records.";
+      const catalogReply = (text: string) => reply({ ...finalResponse, output: [{
+        type: "message", role: "assistant", content: [{ type: "output_text", text }],
+      }] });
+      const metadataTransport = vi.fn<typeof fetch>()
+        .mockImplementationOnce(async () => reply({ ...response, output: [metadataCall] }))
+        .mockImplementationOnce(async () => catalogReply(catalogText));
+      const metadataAssignment = { scope: discovery.workerScope, runId: discovery.runId, signal, request: metadataTransport, buildRequest };
+      await expect(processLunaAssignment({ ...metadataAssignment, accounting: toolAccounting(firstWorker),
+        rpc: rpc(firstWorker, (name, params) => {
+          if (name === "supervisor_checkpoint_owner_run_v2" && String(params.p_receipt_ref).startsWith("read:")) {
+            throw new Error("simulated loss after metadata save");
+          }
+        }),
+      })).rejects.toThrow("simulated loss after metadata save");
+      const metadataPayload = JSON.parse(String(metadataTransport.mock.calls[0][1]?.body));
+      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database"]);
+      const checkpoint = await admin.query(`select state from public.supervisor_research_continuations where run_id=$1`, [discovery.runId]);
+      const [savedMetadata] = checkpoint.rows[0].state.toolReceipts;
+      expect(savedMetadata.callId).toBe(metadataCall.call_id);
+      const output = JSON.parse(savedMetadata.output);
+      expect(output).toMatchObject({ columns: { ok: true }, constraints: { ok: true } });
+      expect(output.columns.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: "orders", column: "net_sales_cents" }),
+        expect.objectContaining({ table: "external_records", column: "payload", type: "jsonb" }),
+      ]));
+      expect(output.constraints.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ kind: "foreign_key", table: "orders", references: "businesses" }),
+        expect.objectContaining({ kind: "foreign_key", table: "external_record_links", references: "external_records" }),
+      ]));
+      expect(savedMetadata.output).not.toMatch(/toast_raw_samples|toast_client_budgets/u);
+
+      vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", undefined);
+      await admin.query("update public.supervisor_run_steps set lease_until=clock_timestamp() where run_id=$1 and step_key='owner_turn'", [discovery.runId]);
+      await expect(processLunaAssignment({ ...metadataAssignment, accounting: toolAccounting(secondWorker), rpc: rpc(secondWorker) })).resolves.toBe("completed");
+      expect(metadataTransport).toHaveBeenCalledTimes(2);
+      const continuedInput = JSON.parse(String(metadataTransport.mock.calls[1][1]?.body)).input;
+      expect(continuedInput).toContainEqual({ type: "function_call_output", call_id: metadataCall.call_id, output: savedMetadata.output });
+      const publishedMetadata = await admin.query(`select r.status, m.structured_content from public.supervisor_runs r
+        join public.ai_messages m on m.id::text=r.final_report_ref where r.id=$1`, [discovery.runId]);
+      expect(publishedMetadata.rows).toEqual([{ status: "completed", structured_content: [{ type: "text", text: catalogText }] }]);
+
+      const unavailable = await admit(true, "Which database fields are available?");
+      const unavailableTransport = vi.fn<typeof fetch>()
+        .mockImplementationOnce(async () => reply({ ...response, output: [metadataCall] }))
+        .mockImplementationOnce(async () => catalogReply("The database catalog is unavailable."));
+      await expect(processLunaAssignment({ ...metadataAssignment, scope: unavailable.workerScope, runId: unavailable.runId,
+        request: unavailableTransport, accounting: toolAccounting(secondWorker), rpc: rpc(secondWorker),
+      })).resolves.toBe("completed");
+      expect(JSON.parse(String(unavailableTransport.mock.calls[1][1]?.body)).input).toContainEqual({
+        type: "function_call_output", call_id: metadataCall.call_id,
+        output: JSON.stringify({ ok: false, error: "research_database_connection_unavailable" }),
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      await admin.query(`drop role ${role}`);
+    }
   } finally {
     for (const { businessId, ownerUserId } of cleanup) {
       await admin.query("delete from public.businesses where id=$1", [businessId]);

@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
+import { researchToolDefinitions } from "@/lib/ai/research/tools.server";
 import { advanceAssignmentProvider, type AssignmentProviderPort } from "./assignment-provider.server";
+import * as assignmentProvider from "./assignment-provider.server";
+import { processLunaAssignment } from "./assignment-worker.server";
 
 const ready = { phase: "ready", sequence: 0, operation: null, lastReceipt: null } as const;
 const response = {
@@ -70,4 +73,36 @@ it("does not restart a provider while a tool boundary still needs recovery", asy
     .rejects.toThrow("luna_provider_requires_recovered_tool_boundary");
   expect(port.load).not.toHaveBeenCalled();
   expect(fetch).not.toHaveBeenCalled();
+});
+
+it("offers scoped metadata discovery and reports absent direct transport", async () => {
+  vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", undefined);
+  const workerProvider = vi.spyOn(assignmentProvider, "runClaimedAssignmentProvider").mockResolvedValue(null);
+  try {
+    const scope = { businessId: randomUUID(), ownerUserId: randomUUID(), threadId: randomUUID() };
+    const runId = randomUUID(), claimToken = randomUUID();
+    const budget = { maxElapsedMs: 1000, maxModelCalls: 2, maxToolCalls: 1, maxInputTokens: 4000, maxOutputTokens: 100 };
+    const rpc = vi.fn(async () => ({ kind: "claimed", idempotency_key: runId, step: {
+      step_key: "owner_turn", retry_mode: "idempotent", claim_token: claimToken, lease_until: new Date().toISOString(), attempts: 1,
+    } }));
+    await expect(processLunaAssignment({ scope, runId, rpc, signal: new AbortController().signal,
+      accounting: { db: { rpc: vi.fn() }, budget, ownerDailyCap: null, authorize: vi.fn() },
+      buildRequest: vi.fn(),
+    })).resolves.toBe("busy");
+    const [{ lease, readTools, signal }] = workerProvider.mock.calls[0];
+    expect(readTools?.map(tool => tool.definition.name)).toEqual(["calculate", "describe_database"]);
+    const metadata = readTools!.find(tool => tool.definition.name === "describe_database")!;
+    expect(metadata.definition.description).toContain("column's type");
+    expect(metadata.definition.description).not.toContain("external_records.payload");
+    const legacyMetadata = researchToolDefinitions.find(tool => tool.name === "describe_database")!;
+    expect(legacyMetadata.description).toContain("Inspect representative scoped external_records.payload values");
+    expect(legacyMetadata.parameters).toEqual(metadata.definition.parameters);
+    const context = { ...lease, jobId: randomUUID(), ownerMessageId: randomUUID(), employeeKey: "general_manager" as const,
+      originalInput: { text: "Describe the catalog.", receivedAt: new Date().toISOString(), locale: "en" as const, attachmentIds: [] } };
+    await expect(metadata.execute(context, { tables: null }, signal)).resolves.toEqual({ ok: false, error: "research_database_connection_unavailable" });
+    await expect(metadata.execute(context, { tables: null, businessId: randomUUID() }, signal)).resolves.toEqual({ ok: false, error: "invalid_tool_arguments" });
+  } finally {
+    workerProvider.mockRestore();
+    vi.unstubAllEnvs();
+  }
 });
