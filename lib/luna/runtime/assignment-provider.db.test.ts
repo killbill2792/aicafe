@@ -336,6 +336,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       });
       const foreignRead = sql("call_foreign", `select payload from external_records where business_id='${legacy.businessId}'`);
       const write = sql("call_write", "update external_records set payload='{}' where provider='toast'");
+      const oversized = sql("call_oversized", "select repeat('☕', 100000) as payload");
       const reconcile = sql("call_reconcile", `with sales as (
         select o.business_id,o.source_account,o.source_key,sum((c->>'amount')::numeric*100) as cents
         from external_records o cross join lateral jsonb_array_elements(o.payload->'checks') c
@@ -357,7 +358,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       const correction = "Report cents and explicitly say the observed fees were on split tenders.";
       const toastTransport = vi.fn<typeof fetch>()
         .mockImplementationOnce(async () => reply({ ...response, output: [metadataCall] }))
-        .mockImplementationOnce(async () => reply({ ...response, output: [foreignRead, write, reconcile] }))
+        .mockImplementationOnce(async () => reply({ ...response, output: [foreignRead, write, oversized, reconcile] }))
         .mockImplementationOnce(async () => catalogReply("Net sales were 2,125 cents and observed fees were 55 cents."))
         .mockImplementationOnce(async () => catalogReply(revisedAnswer));
       const toastAssignment = { ...metadataAssignment, scope: toast.workerScope, runId: toast.runId, request: toastTransport };
@@ -375,6 +376,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       expect(reads.map(({ callId, output }) => [callId, JSON.parse(output)])).toEqual([
         [foreignRead.call_id, { ok: true, row_count: 0, rows: [] }],
         [write.call_id, expect.objectContaining({ ok: false })],
+        [oversized.call_id, expect.objectContaining({ ok: false, error: "tool_result_exceeds_provider_capacity" })],
         [reconcile.call_id, { ok: true, row_count: 1, rows: [{ sales_cents: 2125, observed_fee_cents: 55, orders_with_missing_fees: 1 }] }],
       ]);
       expect((await sourceSnapshot()).rows).toEqual(original);
@@ -402,6 +404,38 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       }
       const replies = await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'", [toast.threadId]);
       expect(replies.rows).toEqual([{ structured_content: [{ type: "text", text: revisedAnswer }] }]);
+
+      const capped = await admit(true, "Report the results for the morning.");
+      const firstReply = "Here are the morning results.";
+      const newInstruction = "Use the afternoon instead.";
+      const correctedReply = "Here are the afternoon results.";
+      const cappedTransport = vi.fn<typeof fetch>()
+        .mockImplementationOnce(async () => catalogReply(firstReply))
+        .mockImplementationOnce(async () => catalogReply(correctedReply));
+      const cappedAccounting = (worker: Client) => ({ ...accounting(worker), ownerDailyCap: 2,
+        budget: { ...accounting(worker).budget, maxModelCalls: 1 } });
+      const cappedAssignment = { ...metadataAssignment, scope: capped.workerScope, runId: capped.runId, request: cappedTransport };
+      await expect(processLunaAssignment({ ...cappedAssignment, accounting: cappedAccounting(firstWorker),
+        rpc: rpc(firstWorker, async name => {
+          if (name === "luna_commit_assignment_result") await secondWorker.query(
+            "select public.luna_steer_assignment($1,$2,$3,$4,$5,$6)", [...capped.scope, capped.runId, randomUUID(), newInstruction]);
+        }),
+      })).resolves.toBe("busy");
+      expect(cappedTransport).toHaveBeenCalledTimes(1);
+      const pending = (await admin.query(`select r.status, s.checkpoint_phase, s.checkpoint_operation, s.claim_token, r.final_report_ref
+        from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id
+        where r.id=$1 and s.step_key='owner_turn'`, [capped.runId])).rows[0];
+      expect(pending).toMatchObject({ status: "pending", checkpoint_phase: "provider_pending",
+        checkpoint_operation: expect.any(String), claim_token: null, final_report_ref: null });
+      await admin.query("update public.supervisor_run_steps set next_retry_at=clock_timestamp() where run_id=$1 and step_key='owner_turn'", [capped.runId]);
+      await expect(processLunaAssignment({ ...cappedAssignment, accounting: cappedAccounting(secondWorker),
+        rpc: rpc(secondWorker),
+      })).resolves.toBe("completed");
+      expect(cappedTransport).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(cappedTransport.mock.calls[1][1]?.body)).input.at(-1))
+        .toEqual({ type: "message", role: "user", content: newInstruction });
+      expect((await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'",
+        [capped.threadId])).rows).toEqual([{ structured_content: [{ type: "text", text: correctedReply }] }]);
     } finally {
       vi.unstubAllEnvs();
       await admin.query(`drop role ${role}`);

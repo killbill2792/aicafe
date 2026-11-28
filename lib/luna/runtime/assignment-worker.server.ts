@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/research/tools.server";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
 import { workforceRoster } from "../workforce/roster";
-import { runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
+import { LunaAssignmentYielded, runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
 
 const textPart = z.object({ type: z.literal("output_text"), text: z.string() });
 const assistantMessage = z.object({
@@ -80,7 +80,10 @@ export async function processLunaAssignment({
   };
   let supersedeOperation: string | undefined;
   for (;;) {
-    const turn = await runClaimedAssignmentProvider({ ...providerArgs, supersedeOperation });
+    const turn = await runClaimedAssignmentProvider({ ...providerArgs, supersedeOperation }).catch(error => {
+      if (error instanceof LunaAssignmentYielded) return null;
+      throw error;
+    });
     if (!turn) return "busy";
     const items = turn.result.response.output.filter(item => item.type !== "reasoning");
     const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)

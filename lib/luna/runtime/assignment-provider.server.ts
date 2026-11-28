@@ -2,7 +2,8 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import {
-  loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn, type DurableProviderScope,
+  durableProviderRequestByteLimit, loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn,
+  type DurableProviderScope,
 } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { streamResponses } from "../shared/responses.server";
 import { employeeKeys, type EmployeeKey } from "../workforce/roster";
@@ -28,10 +29,12 @@ const savedResponse = z.object({
   response: completedResponse,
   transcript: z.array(wireItem).optional(),
   round: z.number().int().positive().optional(),
+  requestBytes: z.number().int().nonnegative().optional(),
   toolReceipts: z.array(toolReceipt).optional(),
 });
 
 export type SavedProviderResponse = z.infer<typeof savedResponse>;
+export class LunaAssignmentYielded extends Error {}
 
 export type ProviderCheckpoint = {
   phase: "ready" | "provider_pending" | "read_pending" | "effect_pending";
@@ -97,6 +100,9 @@ function requestedCalls(state: SavedProviderResponse) {
   return calls;
 }
 
+const toolOutput = ({ callId, output }: z.infer<typeof toolReceipt>) =>
+  ({ type: "function_call_output", call_id: callId, output });
+
 function toolTranscript(previous: SavedProviderResponse) {
   const receipts = previous.toolReceipts ?? [];
   const calls = requestedCalls(previous);
@@ -106,7 +112,21 @@ function toolTranscript(previous: SavedProviderResponse) {
   // A draft rejected at publication leaves its prior instructions and tool evidence usable.
   if (!calls.length) return previous.transcript ?? [];
   return [...previous.transcript ?? [], ...previous.response.output,
-    ...receipts.map(receipt => ({ type: "function_call_output", call_id: receipt.callId, output: receipt.output }))];
+    ...receipts.map(toolOutput)];
+}
+
+const overCapacity = JSON.stringify({
+  ok: false, error: "tool_result_exceeds_provider_capacity",
+  detail: "Request a smaller result. For SQL, select the relevant fields and aggregate or page the results.",
+});
+
+function fitReadReceipt(state: SavedProviderResponse, previous: readonly z.infer<typeof toolReceipt>[],
+  receipt: z.infer<typeof toolReceipt>, remainingCalls: readonly z.infer<typeof toolCall>[]) {
+  const requestBytes = state.requestBytes ?? Buffer.byteLength(JSON.stringify(state.transcript ?? []));
+  const continuation = [...state.response.output, ...previous.map(toolOutput), toolOutput(receipt),
+    ...remainingCalls.map(call => toolOutput({ callId: call.call_id, output: overCapacity }))];
+  if (requestBytes + Buffer.byteLength(JSON.stringify(continuation)) <= durableProviderRequestByteLimit) return receipt;
+  return { ...receipt, output: overCapacity };
 }
 
 async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string, context: ProviderContext, signal: AbortSignal) {
@@ -197,10 +217,22 @@ export async function runClaimedAssignmentProvider({
         throw new Error("luna_assignment_requires_separate_paid_acceptance");
       }
       const outputCap = await loadModelExecutionCap(accounting.db, String(payload.model));
-      const reservation = await withDurableProviderTurn({ ...accounting, ...lease, jobId: context.jobId, ownerMessageId: context.ownerMessageId },
-        () => reserveDurableProviderRequest(payload, "responses", outputCap));
-      if (!reservation) throw new Error("luna_assignment_reservation_unavailable");
-      return reservation;
+      try {
+        const reservation = await withDurableProviderTurn({ ...accounting, ...lease, jobId: context.jobId, ownerMessageId: context.ownerMessageId },
+          () => reserveDurableProviderRequest(payload, "responses", outputCap));
+        if (!reservation) throw new Error("luna_assignment_reservation_unavailable");
+        return reservation;
+      } catch (error) {
+        if (!supersedeOperation || !(error instanceof Error) || error.message !== "durable_provider_reservation_denied" ||
+            !z.object({ message: z.literal("durable_provider_budget_exhausted") }).safeParse(error.cause).success) throw error;
+        // The reservation ledger applies technical caps to this claim. Release
+        // the lease with the correction already bound to the pending operation.
+        const yielded = await rpc("supervisor_yield_owner_run_v2", {
+          ...scope, p_expected_seq: checkpoint.sequence, p_delay_seconds: 15, p_yield_kind: "technical",
+        });
+        if (yielded !== true) throw error;
+        throw new LunaAssignmentYielded();
+      }
     },
     complete: async (sequence, operation) => {
       await transition(sequence, operation, "complete", null, `provider:${operation}`);
@@ -231,7 +263,7 @@ export async function runClaimedAssignmentProvider({
           ? readTools.find(item => item.definition.name === call.name) : undefined;
         const output = await readToolOutput(tool, call.arguments, context, signal);
         signal.throwIfAborted();
-        const receipt = { operation, callId: call.call_id, output };
+        const receipt = fitReadReceipt(result, receipts, { operation, callId: call.call_id, output }, calls.slice(index + 1));
         receipts.push(receipt);
         await save(checkpoint.sequence, { ...result, toolReceipts: receipts });
         await completeRead(receipt);
@@ -285,7 +317,8 @@ export async function advanceAssignmentProvider(
     if (event.type !== "response.completed") continue;
     const response = completedResponse.parse(event.response);
     await reservation.complete(response);
-    const state: SavedProviderResponse = { version: 1, operation, response, ...continuation };
+    const state: SavedProviderResponse = { version: 1, operation, response, ...continuation,
+      requestBytes: Buffer.byteLength(serialized) };
     await port.save(sequence, state);
     await port.complete(sequence, operation);
     return state;
