@@ -158,9 +158,10 @@ CREATE FUNCTION pg_temp.stored(b uuid) RETURNS jsonb LANGUAGE sql AS $$
   'archive',(select jsonb_agg(jsonb_build_array(r.entity_guid,md5(public.toast_stable_json(r.payload)::text))
     order by r.entity_guid) from public.toast_raw_records r where r.business_id=b and r.entity='order'),
   -- List order inside typed details follows the stored payload and carries no meaning.
-  'typed',(select jsonb_agg(jsonb_build_array(t.order_guid,pg_temp.bag(t.check_discounts),pg_temp.bag(t.item_taxes),
-    pg_temp.bag(t.modifier_prices),pg_temp.bag(t.void_details),pg_temp.bag(t.refund_details)) order by t.order_guid)
-    from public.toast_order_typed_facts t where t.business_id=b),
+  'typed',(select jsonb_agg(jsonb_build_array(r.entity_guid,pg_temp.bag(t.check_discounts),pg_temp.bag(t.item_taxes),
+    pg_temp.bag(t.modifier_prices),pg_temp.bag(t.void_details),pg_temp.bag(t.refund_details)) order by r.entity_guid)
+    from public.external_records r cross join lateral public.toast_order_details(r.payload) t
+    where r.provider='toast' and r.entity='order' and r.business_id=b),
   'voids',(select jsonb_agg(jsonb_build_array(v.selection_guid,v.amount_cents,v.void_business_date)
     order by v.selection_guid) from public.toast_void_facts v where v.business_id=b),
   'refunds',(select jsonb_agg(jsonb_build_array(f.payment_guid,f.amount_cents,f.refund_business_date)
@@ -205,7 +206,13 @@ BEGIN
  perform pg_temp.import_day(shuffled,jsonb_build_array(pg_temp.raw_orders(1,true)),
   pg_temp.app_orders(pg_temp.rest(shuffled),1,false,true),pg_temp.app_summary(1,false));
  got:=pg_temp.stored(shuffled);
- perform pg_temp.assert_true(got=ref,'a shuffled re-pull changes nothing and logs nothing: '||got::text);
+ perform pg_temp.assert_true((got-'changes')=(ref-'changes') and (got->>'changes')::int=1,
+  'a shuffled re-pull records source order and preserves financial parity: '||got::text);
+ perform pg_temp.assert_true(not exists(
+  select from jsonb_array_elements(pg_temp.raw_orders(1,true)) p
+  where not exists(select from public.external_records r where r.business_id=shuffled
+    and r.entity='order' and r.entity_guid::text=p->>'guid' and r.payload->'checks'=p->'checks')),
+  'archive preserves the latest provider array order');
 
  -- One order on two pages.
  perform pg_temp.import_day(two_pages,jsonb_build_array(raw,jsonb_build_array(raw->1)),
@@ -233,7 +240,7 @@ BEGIN
  -- Control: a real change (tip 1.00 -> 2.50) gives the new data plus one change line.
  perform pg_temp.import_day(changed,jsonb_build_array(raw),pg_temp.app_orders(pg_temp.rest(changed),1,false,false),
   pg_temp.app_summary(1,false));
- perform pg_temp.import_day(changed,jsonb_build_array(pg_temp.raw_orders(2.5,true)),
+ perform pg_temp.import_day(changed,jsonb_build_array(pg_temp.raw_orders(2.5,false)),
   pg_temp.app_orders(pg_temp.rest(changed),2.5,false,true),pg_temp.app_summary(2.5,false));
  perform pg_temp.import_day(clean_new,jsonb_build_array(pg_temp.raw_orders(2.5,false)),
   pg_temp.app_orders(pg_temp.rest(clean_new),2.5,false,false),pg_temp.app_summary(2.5,false));

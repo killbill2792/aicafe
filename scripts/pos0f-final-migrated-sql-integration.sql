@@ -232,6 +232,8 @@ BEGIN
     (a,restaurant_a,'config/v2/diningOptions',
      'e6e6e6e6-6666-4666-8666-666666666666',null,
      '{"guid":"dining-current-a","name":"Patio","behavior":"DINE_IN"}',repeat('d',64),'pos0f:config');
+  UPDATE public.external_records SET source_account=restaurant_a::text,source_key='stock-current-a',
+    payload_origin='historical_provider' WHERE business_id=a AND provider='toast' AND capture_key='pos0f:stock';
 
   INSERT INTO public.toast_raw_samples
     (business_id,restaurant_guid,endpoint,business_date,fetched_at,
@@ -331,7 +333,8 @@ BEGIN
 
   PERFORM pg_temp.pos0f_assert(
     (SELECT sum(amount_cents)=1250 FROM public.cv_cash WHERE business_id=a AND business_date='2026-10-26')
-    AND (SELECT count(*)=1 AND bool_and(quantity IS NULL AND stock_status='QUANTITY')
+    AND (SELECT count(*)=1 AND bool_and(quantity IS NULL AND stock_status IS NULL
+      AND data->>'reported_stock_status'='QUANTITY')
       FROM public.cv_inventory WHERE business_id=a AND source='toast' AND business_date='2026-10-26')
     AND (SELECT count(*)=1 AND bool_and(dining_option_name='Patio' AND business_date IS NULL)
       FROM public.cv_dining_options WHERE business_id=a AND dining_option_ref='dining-current-a')

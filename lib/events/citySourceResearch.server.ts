@@ -12,7 +12,7 @@ import {CITY_RESEARCH_MAX_OUTPUT_TOKENS,CITY_RESEARCH_PER_CALL_LIMIT,cityCandida
 const MAX_SOURCES=8,MAX_SEARCHES=24,MAX_DEPTH=3,PARALLEL_SOURCES=3;
 const FIRST_TIMEOUT_MS=12_000,RETRY_TIMEOUT_MS=8_000;
 type RequestFetch=typeof fetch;
-type SearchAttempt={ok:true;events:CityEventCandidate[];saturated:boolean;filtered:boolean}|
+type SearchAttempt={ok:true;events:CityEventCandidate[];saturated:boolean;filtered:boolean;sourceReport?:unknown}|
   {ok:false;failure:CityResearchFailure;status:number|null;retryEligible:boolean};
 export type CitySourceResearchInput={
   city:string;region:string|null;countryCode:string|null;window:CityResearchWindow;
@@ -68,10 +68,11 @@ export function createCitySourceResearch(deps:{
     let searches=0;
     const stamped=(source:CityResearchSource,from:string,to:string,
       outcome:CitySourceCoverage["outcome"],events:CityEventCandidate[],
-      failure:CityResearchFailure|null,retryEligible:boolean):CitySourceCoverage=>({
+      failure:CityResearchFailure|null,retryEligible:boolean,sourceReport?:unknown):CitySourceCoverage=>({
       sourceId:source.id,sourceKind:source.kind,officialUrl:source.officialUrl??null,
       from,to,reason:input.window.reason,checkedAt:now().toISOString(),
       outcome,events,failure,retryEligible,
+      ...(sourceReport===undefined?{}:{sourceReport}),
     });
 
     const attempt=async(source:CityResearchSource,from:string,to:string,
@@ -125,7 +126,11 @@ export function createCitySourceResearch(deps:{
           try{JSON.parse(output.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gu,""));isJson=true;}catch{}
           return {ok:false,failure:isJson?"invalid_shape":"invalid_json",status,retryEligible:true};
         }
-        return {ok:true,...parsed};
+        // Filtered reports contain unadmitted listings. Save their accepted
+        // facts through the existing candidate path, without retaining the report.
+        const sourceReport=parsed.filtered?undefined:
+          JSON.parse(output.trim().replace(/^\x60\x60\x60(?:json)?\s*|\s*\x60\x60\x60$/gu,""));
+        return {ok:true,...parsed,sourceReport};
       }catch(error){
         const timeout=error instanceof Error&&
           (error.name==="TimeoutError"||error.name==="AbortError");
@@ -168,12 +173,12 @@ export function createCitySourceResearch(deps:{
         // Do not relabel an unresolved parent event with the wrong child window.
         // Preserve its fact, but make the unresolved source/date scope retryable.
         return [...left,...right,...(missing.length?[stamped(source,from,to,
-          "partial",missing,"invalid_shape",true)]:[])];
+          "partial",missing,"invalid_shape",true,result.sourceReport)]:[])];
       }
       const incomplete=result.filtered||result.saturated;
       return [stamped(source,from,to,incomplete?"partial":
         result.events.length?"found":"none_found",result.events,
-        incomplete?"invalid_shape":null,incomplete)];
+        incomplete?"invalid_shape":null,incomplete,result.sourceReport)];
     };
 
     // A bounded pool avoids N simultaneous web searches and a per-café request explosion.

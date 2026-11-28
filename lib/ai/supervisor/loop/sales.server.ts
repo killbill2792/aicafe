@@ -11,20 +11,18 @@ import {readDailyFactRows} from "@/lib/data/dailyFacts.server";
  * becomes a zero-sales day.
  */
 export async function readPriceExperimentSalesDays(
- businessId:string,productId:string,firstDate:string,days:number
+ businessId:string,productId:string,firstDate:string,days:number,scopedClient?:SupabaseClient
 ):Promise<PriceExperimentDay[]>{
  if(!Number.isSafeInteger(days)||days<1||days>31)throw new Error("invalid_sales_window");
  const lastDate=utcDateOffset(firstDate,days-1);
- const db=createAdminSupabaseClient();
+ const db=scopedClient??createAdminSupabaseClient();
  const [coverage,orders]=await Promise.all([
    readDailyFactRows(db,businessId,firstDate,lastDate)
      .then(data=>({data,error:null}),error=>({data:null,error})),
-   db.from("order_lines")
-     .select("quantity,net_sales_cents,orders!inner(business_date,business_id)",{count:"exact"})
-     .eq("menu_item_id",productId).eq("orders.business_id",businessId)
-     .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
-     .gte("orders.business_date",firstDate).lte("orders.business_date",lastDate)
-     .eq("voided",false).limit(10000),
+   db.from("cv_item_sales")
+     .select("quantity,net_sales_cents,business_date",{count:"exact"})
+     .eq("menu_item_id",productId).eq("business_id",businessId).eq("status","actual")
+     .gte("business_date",firstDate).lte("business_date",lastDate).limit(10000),
  ]);
  if(coverage.error||orders.error)throw new Error("canonical_sales_reader_unavailable");
  const pageComplete=orders.count!==null&&orders.count===(orders.data?.length??0);
@@ -33,8 +31,7 @@ export async function readPriceExperimentSalesDays(
  const rowsByDay=new Map<string,Array<{quantity:number;netSalesCents:number}>>();
  let invalid=!pageComplete;
  if(pageComplete)for(const line of orders.data??[]){
-   const record=Array.isArray(line.orders)?line.orders[0]:line.orders;
-   const day=record?.business_date;
+   const day=line.business_date;
    if(typeof day!=="string"||day<firstDate||day>lastDate||
       !Number.isSafeInteger(line.quantity)||line.quantity<0||
       !Number.isSafeInteger(line.net_sales_cents)||line.net_sales_cents<0){
@@ -54,7 +51,7 @@ export async function readPriceExperimentSalesDays(
    const total=!invalid&&rollups.get(businessDate)==="actual"?
      aggregatePriceExperimentSalesRows(rowsByDay.get(businessDate)??[]):null;
    return total?{businessDate,units:total.units,netSalesCents:total.netSalesCents,
-     coverage:"actual" as const,source:"daily_rollups+order_lines"}:null;
+     coverage:"actual" as const,source:"daily_rollups+cv_item_sales"}:null;
  }).filter((day):day is NonNullable<typeof day>=>day!==null);
 }
 /** Seven completed calendar days in the café's timezone; never include a
@@ -69,7 +66,7 @@ export async function readPriceExperimentBaselineUnits(
  if(error||!data)return null;
  const today=formatInTimeZone(new Date(),data.timezone||"America/Los_Angeles","yyyy-MM-dd");
  const start=utcDateOffset(today,-7);
- const days=await readPriceExperimentSalesDays(businessId,productId,start,7);
+ const days=await readPriceExperimentSalesDays(businessId,productId,start,7,db);
  if(days.length!==7||days.some(d=>d.coverage!=="actual"))return null;
  const sums=aggregatePriceExperimentSalesRows(days.map(d=>({
    quantity:d.units,netSalesCents:d.netSalesCents})));

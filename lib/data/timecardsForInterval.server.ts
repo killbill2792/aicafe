@@ -7,7 +7,7 @@ import {readAllPosRows} from "@/lib/pos/pagedReads";
  * Preserve owner-schedule rows for the existing caller-side coverage policy. */
 export async function readTimecardsForInterval(supabase:SupabaseClient,businessId:string,dayStartUtc:string,dayEndUtc:string){
   return readAllPosRows((first,last)=>supabase
-    .from("timecards")
+    .from("cv_staff_clock_entries")
     .select("id, pos_timecard_id, clock_in, clock_out, hourly_wage_cents, wage_source, breaks, source_type, provider_regular_hours, provider_overtime_hours")
     .eq("business_id", businessId)
     .lt("clock_in", dayEndUtc)

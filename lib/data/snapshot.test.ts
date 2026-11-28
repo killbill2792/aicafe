@@ -25,11 +25,11 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
       owner_monthly_payroll_extras_cents:null}],
     locations:[{open_hours:null}],
     cv_sales_days:[],cv_bills:[],cv_expenses:[],recovery_order:[],
-    cv_menu:[],cv_staff_clock_entries:[],alerts:[],cv_financial_periods:fixtureFinancialPeriodRows(),
+    menu_catalog_for:[],cv_staff_clock_entries:[],alerts:[],cv_financial_periods:fixtureFinancialPeriodRows(),
   };
   const db={from(table:string){
     reads.push(table);
-    let records=table==="cv_menu_product_costs"?(data.cv_menu??[]).map(item=>({menu_item_id:item.id,data:{costCents:null,status:"NO_RECIPE",source:null,estimated:false,recipe:[],recipeStatus:"NO_RECIPE",recipeCostCents:null,ownerTotalCostCents:null,differenceCents:null}})):data[table]??[];
+    let records=table==="cv_menu_product_costs"?(data.menu_catalog_for??[]).map(item=>({menu_item_id:item.id,data:{costCents:null,status:"NO_RECIPE",source:null,estimated:false,recipe:[],recipeStatus:"NO_RECIPE",recipeCostCents:null,ownerTotalCostCents:null,differenceCents:null}})):data[table]??[];
     let monthStart="",asOf="";
     const payload={data:records,error:null,count:records.length};
     let range:{start:number;end:number}|null=null;
@@ -48,6 +48,7 @@ function mockDb(options:{sold?:Array<{menu_item_id:string;total_quantity:number|
     };
     return builder;
   },rpc(name:string){
+    if(name==="menu_catalog_for")return this.from(name);
     if(name==="menu_item_quantities_sold"&&options.sold){
       const sold=options.sold;let start=0,end=999;
       const q={order(){return q},
@@ -83,19 +84,19 @@ describe("getSnapshot read-only current snapshot and Home database budget",()=>{
     }));
     const sold=menu.map((item,i)=>({menu_item_id:item.id,total_quantity:i===999?1.5:i===1000?"2.25":2}));
     const {db,seed,reads,writes}=mockDb({sold});
-    seed.cv_menu=menu;
+    seed.menu_catalog_for=menu;
     seed.recipe_lines=[];seed.menu_item_cost_fallbacks=[];
     seed.menu_combo_components=[];seed.ingredient_prices=[];
     const result=await getBusinessSnapshotFromDb(db,"c1","today");
     expect(result.menuItems).toHaveLength(1001);
     expect(result.menuItems[999]).toMatchObject({id:"menu-000999",quantitySoldLast28Days:1.5});
     expect(result.menuItems[1000]).toMatchObject({id:"menu-001000",quantitySoldLast28Days:2.25});
-    expect(reads.filter(table=>table==="cv_menu")).toHaveLength(2);
+    expect(reads.filter(table=>table==="menu_catalog_for")).toHaveLength(2);
     expect(writes).toEqual([]);
   });
   it.each([-1, Infinity, NaN, Number.MAX_SAFE_INTEGER+1, ""])("rejects invalid sold quantities %s",async(total_quantity)=>{
     const {db,seed}=mockDb({sold:[{menu_item_id:"menu-1",total_quantity}]});
-    seed.cv_menu=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
+    seed.menu_catalog_for=[{id:"menu-1",name:"Product",price_cents:750,prep_seconds:15,category:"food",is_active:true}];
     await expect(getBusinessSnapshotFromDb(db,"c1","today")).rejects.toThrow("snapshot_product_sales_mapping_unverified");
   });
   it("never silently drops actual receipts after the 1000-row PostgREST page boundary",async()=>{

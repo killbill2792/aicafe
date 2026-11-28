@@ -1,0 +1,99 @@
+{
+  "id": "external-archive-research",
+  "mode": "generic",
+  "engine": "node-server",
+  "entrypoint": "evals/acceptance/live/external-archive-research.mjs",
+  "proof": "external-archive-research-proof.json",
+  "scope": "external-archive-research-scope.json",
+  "expectedTools": ["describe_database", "run_sql"],
+  "assertions": [
+    {
+      "name": "retained-provider-record",
+      "kind": "source",
+      "table": "public.external_records",
+      "where": {
+        "business_id": {"scope": "businessId"},
+        "provider": {"eq": "clover"},
+        "source_account": {"scope": "account"},
+        "source_key": {"scope": "sourceKey"},
+        "id": {"scope": "sourceRecordId"}
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "retained-provider-delta",
+      "kind": "source",
+      "table": "public.external_record_changes",
+      "where": {
+        "business_id": {"scope": "businessId"},
+        "provider": {"eq": "clover"},
+        "record_id": {"scope": "sourceRecordId"}
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "unavailable-provider-resource",
+      "kind": "source",
+      "table": "public.external_resources",
+      "where": {
+        "business_id": {"scope": "businessId"},
+        "provider": {"eq": "clover"},
+        "source_account": {"scope": "account"},
+        "resource": {"scope": "resource"},
+        "status": {"eq": "unavailable"}
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-control-present",
+      "kind": "source",
+      "table": "public.external_records",
+      "where": {
+        "business_id": {"scope": "otherCafeId"},
+        "source_account": {"scope": "account"},
+        "source_key": {"scope": "sourceKey"},
+        "id": {"scope": "foreignRecordId"}
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "persisted-owner-answer",
+      "kind": "owner",
+      "table": "public.ai_messages",
+      "where": {
+        "business_id": {"scope": "businessId"},
+        "thread_id": {"scope": "threadId"},
+        "id": {"scope": "replyId"},
+        "role": {"eq": "supervisor"}
+      },
+      "minCount": 1,
+      "maxCount": 1
+    },
+    {
+      "name": "foreign-thread-unavailable",
+      "kind": "isolation",
+      "table": "public.ai_threads",
+      "where": {
+        "business_id": {"scope": "otherCafeId"},
+        "id": {"scope": "threadId"}
+      },
+      "minCount": 0,
+      "maxCount": 0
+    },
+    {
+      "name": "no-proposal",
+      "kind": "source",
+      "table": "public.supervisor_proposals",
+      "where": {
+        "business_id": {"scope": "businessId"},
+        "thread_id": {"scope": "threadId"}
+      },
+      "minCount": 0,
+      "maxCount": 0
+    }
+  ]
+}

@@ -13,7 +13,7 @@ if(!["127.0.0.1","localhost","::1","[::1]"].includes(url.hostname)||
 const sql=`
 select jsonb_agg(jsonb_build_object(
  'relation',c.relname,
- 'kind',case when c.relkind='r' then 'table' else 'view' end,
+ 'kind',case when c.relkind='v' then 'view' else 'table' end,
  'rls',c.relrowsecurity,
  'columns',(select jsonb_agg(jsonb_build_array(a.attname,format_type(a.atttypid,a.atttypmod),a.attnotnull) order by a.attnum)
     from pg_attribute a where a.attrelid=c.oid and a.attnum>0 and not a.attisdropped),
@@ -22,7 +22,7 @@ select jsonb_agg(jsonb_build_object(
     where fk.contype='f' and fk.conrelid=c.oid)
 ) order by c.relname) as catalog
 from pg_class c
-where c.relnamespace='public'::regnamespace and c.relkind in ('r','v')
+where c.relnamespace='public'::regnamespace and c.relkind in ('r','p','v')
 `;
 const client=new Client({connectionString:connection,connectionTimeoutMillis:4000,statement_timeout:15000});
 let live,logicalColumns;

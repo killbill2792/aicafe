@@ -34,9 +34,9 @@ vi.mock("@/lib/supabase/admin",()=>({
           staff_tax_cents:0,staff_tax_status:"estimated",labor_wage_status:state.rollupWageStatus,
           sales_data_status:"actual",card_fees_cents:0,voids_cents:0,
         }];
-        if(table==="orders")return [{id:"order-1",pos_order_id:"square:order-1",
+        if(table==="cv_orders")return [{id:"order-1",pos_order_id:"square:order-1",
           net_sales_cents:1200}];
-        if(table==="order_lines")return state.lines;
+        if(table==="cv_item_sales")return state.lines;
         if(table==="recipe_lines")return state.recipeRows;
         if(table==="menu_items")return [{id:itemA},{id:itemB}];
         if(table==="ingredients")return state.ingredientIds.map(id=>({id}));
@@ -46,7 +46,7 @@ vi.mock("@/lib/supabase/admin",()=>({
         ];
         return [];
       };
-      const result=()=>({data:head?null:get(),count:head?(table==="orders"?queryKind==="all"?get().length:0:state.unlinkedCount):null,error:null});
+      const result=()=>({data:head?null:get(),count:head?(table==="cv_orders"?queryKind==="all"?get().length:0:state.unlinkedCount):null,error:null});
       const q:Record<string,unknown>={
         select:(_columns:string,opts?:{head?:boolean})=>{
           if(table==="recipe_lines"&&_columns.split(",").includes("id"))

@@ -82,7 +82,7 @@ export const priceExperimentCapability=registerLoopCapability({
     ];
     return {effect:{...effect,durationDays,preview},baseline:{beforeContributionCents,afterContributionCents,
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,
-      source:"daily_rollups+order_lines",status:"estimated",assumption:"unchanged_unit_demand"},
+      source:"daily_rollups+cv_item_sales",status:"estimated",assumption:"unchanged_unit_demand"},
       monitorSpec:{durationDays,metricScope:item.id}};
   },
   // POS menu APIs are READ-ONLY: no simulated side effect and no fake success.
@@ -167,7 +167,7 @@ export const priceExperimentCapability=registerLoopCapability({
       :copy.midRunNoData.replace("{item}",effect.productName).replace("{price}",money(effect.newPriceCents))
         .replaceAll("{days}",count(7));
     const midRun=midRunText&&guard.status==="broken"&&guardText?midRunText+" "+guardText:midRunText;
-    return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",midRunText:midRun,
+    return {status:result.status,result:trial,recommendation:result.recommendation,source:"cv_item_sales",midRunText:midRun,
       delivery:{agentId:"alex" as const,taskKind:"price_experiment_report" as const,
         entityType:"menu_item",entityId:effect.productId,
         confidence:result.status==="complete"?"high" as const:"low" as const,
@@ -178,7 +178,7 @@ export const priceExperimentCapability=registerLoopCapability({
           estimatedAdditionalRevenue7DaysCents:trial.estimatedAdditionalRevenue7DaysCents,
           estimateIsConditional:true,coveredDays:result.coveredDays,ordersGuardrail:guard.status,
           ordersChangePct:guard.status==="unknown"?null:guard.changePct,ordersComparedDays:guard.countedDays},
-        evidence:[{source:"order_lines",facts:{coveredDays:result.coveredDays,
+        evidence:[{source:"cv_item_sales",facts:{coveredDays:result.coveredDays,
           status:result.status,nonCausal:true,ordersGuardrail:guard.status,ordersComparedDays:guard.countedDays}}],
         threadText:text},
     };

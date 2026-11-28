@@ -1,3 +1,5 @@
+import {squareArchive} from "@/lib/pos/square/sourceArchive.server";
+import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -117,7 +119,8 @@ export async function GET(request: Request) {
     // Backfill: last 90 days (docs/06-integrations.md). Runs inline for now — move to a background
     // job before pilot if 90 days of real order volume risks the route handler's time limit.
     const { data: business } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
-    const adapter = createSquareAdapter({ accessToken: token.access_token, locationId: squareLocationId });
+    const adapter = createSquareAdapter({ accessToken: token.access_token, locationId: squareLocationId,
+      archive: squareArchive(createAdminSupabaseClient(), businessId, token.merchant_id,squareLocationId) });
     const until = new Date();
     const since = new Date(until.getTime() - 90 * 24 * 60 * 60 * 1000);
     await syncPosData(supabase, {

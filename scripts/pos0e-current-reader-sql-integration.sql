@@ -60,6 +60,8 @@ BEGIN
  (b,rest_b,'cashmgmt/v1/entries',d,
   '{"guid":"cash-current-B","amount":83.00,"type":"CASH_IN"}',
   repeat('e',64),'pos0e:cash-b');
+ UPDATE public.external_records SET source_account=rest_a::text,source_key='menu-item-A',
+  payload_origin='historical_provider' WHERE business_id=a AND provider='toast' AND capture_key='pos0e:stock-a';
   -- Retained provider identity is durable after config re-save; a mirrored
   -- staged row without a provider-identity GET is never operational evidence.
   INSERT INTO public.locations(id,business_id,name) VALUES

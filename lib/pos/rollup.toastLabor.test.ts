@@ -11,8 +11,8 @@ vi.mock("./processingFeeEstimate.server",()=>({
 import {recomputeDailyRollup} from "./rollup";
 
 const day="2026-08-22";
-const toastOrder={id:"one",pos_order_id:"toast:restaurant:order",
- net_sales_cents:10000,processing_fee_provider:"toast",toast_excluded:false,superseded_by:null};
+const toastOrder={order_ref:"one",pos_order_id:"toast:restaurant:order",
+ net_sales_cents:10000,processing_fee_provider:"toast"};
 const planned={id:"planned",source_type:"owner_schedule",wage_source:"owner",
  clock_in:"2026-08-22T18:00:00Z",clock_out:"2026-08-22T19:00:00Z",
  hourly_wage_cents:2000,breaks:[]};
@@ -29,7 +29,7 @@ function previewDb(timecards:Array<TimecardFixture>,orders=[toastOrder],staged:A
    lte:()=>q,gte:()=>q,
    range:async(start:number,end:number)=>({
     data:table==="toast_labor_entries"&&denyStage?null:
-      (table==="orders"?orders:table==="timecards"?timecards:table==="toast_labor_entries"?staged:[]).slice(start,end+1),
+      (table==="cv_orders"?orders:table==="cv_staff_clock_entries"?timecards:table==="toast_labor_entries"?staged:[]).slice(start,end+1),
     error:table==="toast_labor_entries"&&denyStage?{code:"42501"}:null
    }),
    single:async()=>({data:{timezone:"America/Los_Angeles",

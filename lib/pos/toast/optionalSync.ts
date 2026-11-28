@@ -7,12 +7,11 @@ import {copyToastPublishedMenu,copyToastStaff,copyToastAttendance,importStagedTo
 import {syncToastLaborReadOnly} from "./laborSync";
 import {backfillToastStoredLabor} from "./laborBackfill";
 import {addCalendarDays,localClock} from "./scheduleDates";
+import {refreshToastConfiguration} from "./configArchive.server";
 
 type Location={business_id:string;restaurant_guid:string;location_id:string;
  toast_time_zone:string;closeout_hour:number};
 const dateSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
-const reasonSchema=z.array(z.object({guid:GUID,name:z.string().nullish(),
- entityType:z.string().nullish()}).passthrough()).max(300);
 const jobSchema=z.array(z.object({guid:GUID,title:z.string().nullish(),
  deleted:z.boolean().nullish()}).passthrough()).max(5000);
 const missingScope=(e:unknown)=>e instanceof ToastApiError&&
@@ -58,7 +57,7 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
  const scopes=(credentials?.scopes_available??{}) as Record<string,boolean>;
  const local=localClock(now,p.toast_time_zone);
  const {data:state,error:se}=await db.from("toast_optional_sync_state")
-  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,void_reasons_local_day,menu_copied_at,roster_copied_at,attendance_copied_at,operational_sources")
+  .select("menu_last_updated,menu_checked_local_day,roster_local_day,labor_local_day,jobs_local_day,menu_copied_at,roster_copied_at,attendance_copied_at,operational_sources")
   .eq("business_id",p.business_id).eq("restaurant_guid",p.restaurant_guid).maybeSingle();
  if(se)throw new ToastApiError("unavailable");
  const key={business_id:p.business_id,restaurant_guid:p.restaurant_guid};
@@ -246,23 +245,11 @@ export async function syncToastOptionalSources(db:SupabaseClient,p:Location,
    if(error)throw new ToastApiError("unavailable");
   }catch(e){recordFailure(e);}
  }
- if(scopes.config!==false&&state?.void_reasons_local_day!==local.today&&
-  Date.now()<deadlineAt){
+ if(Date.now()<deadlineAt){
   try{
-   const reasons=await createToastClient(db,p.business_id).request(
-    "/config/v2/voidReasons",p.restaurant_guid,reasonSchema,{deadlineAt});
-   if(reasons.length>=300)throw new ToastApiError("invalid_response");
-   for(let offset=0;offset<reasons.length;offset+=100){
-    const rows=reasons.slice(offset,offset+100).map(r=>({
-     ...key,reason_guid:r.guid,name:r.name??null,
-     entity_type:r.entityType??null,fetched_at:now.toISOString()
-    }));
-    const {error}=await db.from("toast_void_reason_directory").upsert(rows,{
-     onConflict:"business_id,restaurant_guid,reason_guid"
-    });
-    if(error)throw new ToastApiError("unavailable");
-   }
-   await update({void_reasons_local_day:local.today});
+   await refreshToastConfiguration(db,{
+    businessId:p.business_id,provider:"toast",account:p.restaurant_guid,
+   },now,deadlineAt,scopes);
   }catch(e){recordFailure(e);}
  }
  if(phaseFailures.length)throw new ToastApiError(phaseFailures[0]);

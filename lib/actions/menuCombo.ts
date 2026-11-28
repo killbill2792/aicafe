@@ -16,9 +16,9 @@ export async function createMenuCombo(input:ComboRequest):Promise<{ok:true;id:st
  const {data:{user}}=await db.auth.getUser();
  const businessId=user?await getActiveBusinessId(user.id):null;
  if(!businessId)return{ok:false,error:"Sign in first."};
- const {data:items,error:readError,count}=await db.from("menu_items").select("id,price_cents,is_active",{count:"exact"})
- .eq("business_id",businessId).in("id",ids);
- if(readError||!items||count!==ids.length||items.some(i=>!i.is_active||!Number.isSafeInteger(Number(i.price_cents))||Number(i.price_cents)<=0))
+ const {data:items,error:readError,count}=await db.rpc("menu_catalog_for",{p_business_id:businessId},{count:"exact"})
+ .select("id,price_cents,is_active").in("id",ids);
+ if(readError||!Array.isArray(items)||count!==ids.length||items.some(i=>!i.is_active||!Number.isSafeInteger(Number(i.price_cents))||Number(i.price_cents)<=0))
  return{ok:false,error:"Select active, priced menu items from your café."};
  const {data:nested,error:nestedError}=await db.from("menu_combo_components").select("combo_item_id").in("combo_item_id",ids).eq("business_id",businessId);
  if(nestedError||nested?.length)return{ok:false,error:"A combo cannot contain another combo."};

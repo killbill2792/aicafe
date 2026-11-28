@@ -33,25 +33,15 @@ const matrix=read("docs/plans/toast-standard-api-coverage-matrix.md");
 function loadToastReadRegistry(){
  const require=createRequire(import.meta.url);
  const ts=require("typescript");
- const source=read("lib/pos/toast/rawSample.server.ts");
+ const source=read("lib/pos/toast/readOperations.ts");
  const result=ts.transpileModule(source,{compilerOptions:{
   module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,
   esModuleInterop:true,isolatedModules:true
  }});
- const blocked=label=>()=>{throw Error("POS0a test must not execute operational import: "+label);};
- const stub=label=>new Proxy(Object.create(null),{
-  get(_target,key){return key==="__esModule"?true:blocked(label+"."+String(key));}
- });
- const safeRequire=id=>{
-  if(id==="server-only")return Object.freeze({});
-  if(id==="zod"||id==="node:crypto"||id==="date-fns-tz")return require(id);
-  if(["@/lib/supabase/admin","./client","./analyticsClient","./redact"].includes(id))
-   return stub(id);
-  throw Error("Unexpected import from Toast registry module: "+id);
- };
+ const safeRequire=id=>{throw Error("Unexpected import from Toast registry module: "+id);};
  const sandboxModule={exports:{}};
  runInNewContext(result.outputText,{module:sandboxModule,exports:sandboxModule.exports,require:safeRequire,
-  process:Object.freeze({env:Object.freeze({})})},{timeout:3000,filename:"rawSample.server.audit.cjs"});
+  process:Object.freeze({env:Object.freeze({})})},{timeout:3000,filename:"readOperations.audit.cjs"});
  const actual=sandboxModule.exports.TOAST_READ_ENDPOINTS;
  assert.ok(Array.isArray(actual),"Real exported TOAST_READ_ENDPOINTS array exists");
  // VM realms have distinct Array prototypes; compare serialized public facts.

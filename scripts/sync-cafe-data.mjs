@@ -91,7 +91,8 @@ export function wrapClientForSafety(client) {
 }
 
 // Rows of each day's latest Toast import (what toast_day_status.last_import_run_id points at).
-export const LATEST_ORDERS_FILTER = `t.entity = 'order' and exists (select 1 from toast_day_status d where d.business_id = t.business_id and d.restaurant_guid = t.restaurant_guid and d.business_date = t.business_date and d.import_state = 'imported' and d.last_import_run_id = t.run_id)`;
+export const LATEST_ORDERS_FILTER = `t.entity = 'order' and t.reader_owner_user_id is null and t.payload_origin in ('provider','historical_provider') and exists (select 1 from toast_day_status d where d.business_id = t.business_id and d.restaurant_guid = t.restaurant_guid and d.business_date = t.business_date and d.import_state = 'imported' and d.last_import_run_id = t.run_id)`;
+const HISTORICAL_ARCHIVE_FILTER = `t.entity in ('legacy/open-labor-summary','legacy/payment-summary') and t.payload_origin = 'historical_projection' and t.reader_owner_user_id is null`;
 // Toast endpoints captured per business day; every other endpoint is a setup list, kept newest only.
 const DATED_CAPTURES = `('labor/v1/shifts','labor/v1/timeEntries','cashmgmt/v1/deposits','cashmgmt/v1/entries','kitchen/v1/export/itemFulfillments')`;
 // The newest successful capture of each dated endpoint per day, and of each setup list overall.
@@ -114,6 +115,8 @@ function t(table, opts = {}) {
     // Day-mirror tables only: SQL condition on alias "t" choosing which rows of a day are mirrored
     // (the same condition is used for both cafés, so their fingerprints compare like for like).
     sourceFilter: opts.sourceFilter ?? null,
+    sourceDayReproducible: opts.sourceDayReproducible ?? null,
+    deleteFilter: opts.deleteFilter ?? null,
     fingerprintIgnore: opts.fingerprintIgnore ?? [], // copied, but bookkeeping that changes without the data changing
     // Text ids of the form "toast:<restaurant guid>:<id>": the guid is remapped like restaurant_guid,
     // so views joining them to remapped restaurant_guid columns still match in the destination.
@@ -219,7 +222,7 @@ export const INSERT_IF_MISSING_TABLES = [
 // cafés are deleted and re-copied. See runDayMirrorSync. Order matters: children before parents on delete, parents before
 // children on insert.
 export const REFRESH_WINDOW_TABLES = [
-  t("orders", { remapOwnId: true, fk: { location_id: "locations", employee_id: "employees" } }),
+  t("orders", { remapOwnId: true, fk: { location_id: "locations", employee_id: "employees" }, toastGuidIn: ["pos_order_id"] }),
   // order_lines has no business_id/business_date of its own — scoped via its parent order, and
   // its days always mirror orders' days (see runDayMirrorSync), never its own.
   t("order_lines", { remapOwnId: true, joinScope: "orders", joinCol: "order_id", fk: { order_id: "orders", menu_item_id: "menu_items" } }),
@@ -228,8 +231,8 @@ export const REFRESH_WINDOW_TABLES = [
   // sync-cafe-data.test.ts). A named ON CONFLICT target would error outright on a database built
   // fresh from migrations. Plain insert is safe here because every day being copied is deleted from
   // the destination earlier in the same transaction.
-  t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain" }),
-  t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain" }),
+  t("employee_sales_rollup", { pk: ["business_id", "business_date", "employee_id"], fk: { employee_id: "employees" }, conflictMode: "plain", sourceDayReproducible: "employee_sales_snapshot_matches_accepted" }),
+  t("hourly_sales_rollup", { pk: ["business_id", "business_date", "hour_local"], fk: { location_id: "locations" }, conflictMode: "plain", sourceDayReproducible: "hourly_sales_snapshot_matches_accepted" }),
   t("daily_rollups", { pk: ["business_id", "business_date"] }),
   t("timecards", { remapOwnId: true, fk: { employee_id: "employees", schedule_id: "staff_schedules" }, dateColumn: "clock_in", localDay: true, toastGuidIn: ["pos_timecard_id"] }),
   t("processing_fee_daily_candidates", { pk: ["business_id", "business_date", "source_type", "provider"] }),
@@ -242,21 +245,20 @@ export const REFRESH_WINDOW_TABLES = [
   // Per-payment card fees and payment details, open Toast timecards, voids and refunds: the
   // rows the app's payment, labor and voids/refunds readers use.
   t("toast_payment_facts", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
-  t("toast_payment_summaries", { pk: ["business_id", "restaurant_guid", "business_date", "payment_ref"], fk: { restaurant_guid: "toast_restaurant_guid" } }),
-  t("toast_open_labor_summaries", { pk: ["business_id", "restaurant_guid", "external_time_entry_id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "clock_in", localDay: true }),
+  t("toast_labor_entries", { pk: ["business_id", "restaurant_guid", "external_time_entry_id"], fk: { restaurant_guid: "toast_restaurant_guid", location_id: "locations" }, dateColumn: "clock_in", localDay: true }),
   t("toast_void_facts", { pk: ["business_id", "selection_guid"], fk: { location_id: "locations" }, dateColumn: "order_business_date" }),
   // id is an identity column the destination generates; the whole day is deleted first.
   t("toast_refund_facts", { pk: ["id"], fk: { restaurant_guid: "toast_restaurant_guid" }, dateColumn: "order_business_date", dropColumns: ["id"], conflictMode: "plain" }),
   // The Toast archive: only each day's latest imported orders (the version the app and the AI read).
-  // Its run is the destination's copy of that import run (see syncImportRuns), so the AI's Toast
-  // records view and typed order details (discounts, modifier prices, order times) work the same.
-  // Typed details are rebuilt in the destination by the archive's own insert trigger.
+  // Preserve the source body while remapping its scope and marking the mirror historical.
+  // A test café does not inherit the original connection, owner or observation receipt.
   t("toast_raw_records", {
-    fk: { restaurant_guid: "toast_restaurant_guid", run_id: "toast_sync_runs" },
+    fk: { restaurant_guid: "toast_restaurant_guid", source_account: "toast_restaurant_guid", run_id: "toast_sync_runs" },
     remapOwnId: true,
-    nullOut: ["seen_run_id", "superseded_by"],
+    nullOut: ["seen_run_id", "superseded_by", "commit_id", "source_context"],
     fingerprintIgnore: ["first_seen", "last_seen", "source_page", "source_index", "capture_key"],
-    sourceFilter: LATEST_ORDERS_FILTER,
+    sourceFilter: `((${LATEST_ORDERS_FILTER}) or (${HISTORICAL_ARCHIVE_FILTER}))`,
+    deleteFilter: `(t.entity = 'order' or (${HISTORICAL_ARCHIVE_FILTER}))`,
   }),
   // Daily Toast captures (labor, cash, kitchen, menus, setup): the newest successful capture only.
   // Orders are left out: the archive above already holds them.
@@ -264,12 +266,12 @@ export const REFRESH_WINDOW_TABLES = [
 ];
 
 // Copy order: parents before children. Delete order is the reverse.
-export const DAY_MIRROR_ORDER = ["orders", "order_lines", "employee_sales_rollup", "hourly_sales_rollup", "daily_rollups", "timecards", "processing_fee_daily_candidates", "processing_fee_daily_facts", "toast_day_status", "toast_day_owner_flags", "pos_scheduled_shifts", "toast_payment_facts", "toast_payment_summaries", "toast_open_labor_summaries", "toast_void_facts", "toast_refund_facts", "toast_raw_records", "toast_raw_samples"];
+export const DAY_MIRROR_ORDER = REFRESH_WINDOW_TABLES.map(({ table }) => table);
 
 const TOAST_GUID_PREFIX = /^toast:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):/i;
 export function remapToastGuidPrefix(value) {
   if (typeof value !== "string") return value;
-  return value.replace(TOAST_GUID_PREFIX, (_, guid) => `toast:${remapId("toast_restaurant_guid", guid)}:`);
+  return value.replace(TOAST_GUID_PREFIX, (_, guid) => `toast:${remapId("toast_restaurant_guid", guid.toLowerCase())}:`);
 }
 
 export function remapRow(table, row, cfg) {
@@ -282,6 +284,7 @@ export function remapRow(table, row, cfg) {
   for (const col of cfg.toastGuidIn ?? []) out[col] = remapToastGuidPrefix(out[col]);
   for (const col of cfg.nullOut ?? []) out[col] = null;
   for (const [col, value] of Object.entries(cfg.setValues ?? {})) out[col] = value;
+  if (table === "toast_raw_records" && row.entity === "order") out.payload_origin = "historical_provider";
   for (const col of cfg.dropColumns ?? []) delete out[col];
   return out;
 }
@@ -423,9 +426,16 @@ export function sourceIdOverrides(cfg) {
   const pairs = Object.entries(cfg.fk ?? {}).filter(([col]) => !ignored.has(col))
     .map(([col, target]) => `'${col}', case when t.${col} is null then null else ${v5(target, `t.${col}::text`)} end`);
   for (const col of cfg.toastGuidIn ?? []) {
-    pairs.push(`'${col}', case when t.${col} ~* '^toast:[0-9a-f-]{36}:' then 'toast:' || ${v5("toast_restaurant_guid", `lower(substr(t.${col}, 7, 36))`)} || substr(t.${col}, 43) else t.${col} end`);
+    pairs.push(`'${col}', ${sourceToastScopedIdSql(`t.${col}`)}`);
+  }
+  if (cfg.table === "toast_raw_records") {
+    pairs.push("'payload_origin', case when t.entity = 'order' then 'historical_provider' else t.payload_origin end");
   }
   return pairs.length ? ` || jsonb_build_object(${pairs.join(", ")})` : "";
+}
+
+function sourceToastScopedIdSql(column) {
+  return `case when ${column} ~* '^toast:[0-9a-f-]{36}:' then 'toast:' || pg_temp.sync_v5('${DEST_BUSINESS_ID}|toast_restaurant_guid|' || lower(substr(${column}, 7, 36))) || substr(${column}, 43) else ${column} end`;
 }
 
 // A UTC midnight may be on the previous café business day. Use the business timezone,
@@ -438,16 +448,28 @@ export function businessDaySql(cfg, alias) {
 
 // One row per business day: md5 over every row of that day (minus ignored columns), in a fixed order.
 // Order lines have no business or date of their own: they belong to their order's day and are
-// keyed by the order's POS id, which is the same in both cafés. The source side translates links.
+// keyed by the translated order POS ID. The source side also translates recipe links.
 export function dayFingerprintSql(cfg, side = "dest") {
   const links = side === "source" ? sourceIdOverrides(cfg) : "";
   if (cfg.joinScope) {
-    const row = `p.pos_order_id || ':' || ((to_jsonb(t) - $2::text[])${links})::text`;
+    const orderId = side === "source" ? sourceToastScopedIdSql("p.pos_order_id") : "p.pos_order_id";
+    const row = `(${orderId}) || ':' || ((to_jsonb(t) - $2::text[])${links})::text`;
     return `select ${businessDaySql(cfg, "p")}::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t join ${cfg.joinScope} p on t.${cfg.joinCol} = p.id where p.business_id = $1 group by 1`;
   }
   const row = `((to_jsonb(t) - $2::text[])${links})::text`;
-  const filter = cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : "";
+  const filter = `${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}${side === "source" ? historicalSalesFilter(cfg) : ""}`;
   return `select ${businessDaySql(cfg, "t")}::text as day, md5(string_agg(${row}, '|' order by ${row})) as fp from ${cfg.table} t where t.business_id = $1${filter} group by 1`;
+}
+
+function historicalSalesFilter(cfg, selectedDays = false) {
+  // Destination fingerprints include all saved rows so an older redundant
+  // mirror is removed on refresh. Compare source buckets once per day.
+  if (!cfg.sourceDayReproducible) return "";
+  return ` and t.business_date not in (
+    with saved_days as materialized (select distinct business_date from ${cfg.table} where business_id = $1
+      ${selectedDays ? "and business_date = any($2::date[])" : ""})
+    select business_date from saved_days where public.${cfg.sourceDayReproducible}($1,business_date)
+  )`;
 }
 
 // remapId in SQL: the same name-based UUID (version 5) the copy gives each row, using pgcrypto's sha1.
@@ -487,7 +509,8 @@ async function deleteDestDays(client, cfg, days) {
   if (joinScope) {
     await client.query(`delete from ${table} where ${joinCol} in (select p.id from ${joinScope} p where p.business_id = $1 and ${dayCondition(businessDaySql(cfg, "p"))})`, params);
   } else {
-    await client.query(`delete from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}`, params);
+    const scope = cfg.deleteFilter ? ` and ${cfg.deleteFilter}` : "";
+    await client.query(`delete from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${scope}`, params);
   }
 }
 
@@ -495,7 +518,7 @@ async function copySourceDays(client, cfg, days) {
   const { table, pk, joinScope, joinCol, conflictMode } = cfg;
   const selectSql = joinScope
     ? `select t.* from ${table} t join ${joinScope} p on t.${joinCol} = p.id where p.business_id = $1 and ${dayCondition(businessDaySql(cfg, "p"))}`
-    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}`;
+    : `select t.* from ${table} t where t.business_id = $1 and ${dayCondition(businessDaySql(cfg, "t"))}${cfg.sourceFilter ? ` and ${cfg.sourceFilter}` : ""}${historicalSalesFilter(cfg, true)}`;
   const { rows } = await client.query(selectSql, dayParams(SOURCE_BUSINESS_ID, days));
   if (rows.length === 0) return 0;
   return chunkedInsert(client, table, rows.map((row) => remapRow(table, row, cfg)), pk, conflictMode);

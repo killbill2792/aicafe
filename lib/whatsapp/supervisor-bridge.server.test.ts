@@ -124,7 +124,7 @@ describe("PR A signed durable dispatch -> ONE Supervisor",()=>{
     m.download.mockResolvedValueOnce({mimeType:kind==="image"?"image/jpeg":"application/pdf",
       bytes:new Uint8Array([1,2,3]),name:kind==="image"?"receipt.jpg":"receipt.pdf"});
     await dispatchVerifiedWhatsAppInbound({...transportMessage,kind,mediaId:"123",prompt:null});
-    expect(m.download).toHaveBeenCalledWith({mediaId:"123",kind},"test-token");
+    expect(m.download).toHaveBeenCalledWith({mediaId:"123",kind},"test-token",expect.any(Function));
     expect(m.save).toHaveBeenCalledWith(expect.objectContaining({
       scope:transportMessage.scope,threadId:thread,wamid:providerId,
     }));
@@ -133,6 +133,21 @@ describe("PR A signed durable dispatch -> ONE Supervisor",()=>{
       attachmentIds:["77777777-7777-4777-8777-777777777777"],
     }));
   }
+ });
+ it("discards an in-flight media response after the owner binding is revoked",async()=>{
+  m.row={...m.row,kind:"document",media_id:"123",button_payload:null};
+  vi.stubGlobal("fetch",vi.fn(async()=>{
+    m.binding={...m.binding,threadId:"99999999-9999-4999-8999-999999999999"};
+    return new Response("fixture response");
+  }));
+  try{
+    m.download.mockImplementationOnce(async(_input,_token,fetchMedia)=>
+      fetchMedia("https://graph.facebook.com/v21.0/123"));
+    await expect(dispatchVerifiedWhatsAppInbound({...transportMessage,kind:"document",mediaId:"123",prompt:null}))
+      .rejects.toThrow("binding_revoked");
+    expect(m.save).not.toHaveBeenCalled();
+    expect(m.process).not.toHaveBeenCalled();
+  }finally{vi.unstubAllGlobals();}
  });
  it("reports unsupported media honestly, but never marks a transient download error as unsupported",async()=>{
   m.row={...m.row,kind:"document",media_id:"123",button_payload:null};

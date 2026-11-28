@@ -56,10 +56,10 @@ export async function readMetricDay(businessId:string,date:string,
   }
   if(opts.hours){
     const [orders,timecards,timezone]=await Promise.all([
-      db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
-        .eq("toast_excluded",false).is("superseded_by",null)
+      db.from("cv_orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
+        .eq("status","actual")
         .eq("business_date",date).limit(1001),
-      db.from("timecards").select("clock_in,clock_out,hourly_wage_cents,breaks,source_type,source_provider")
+      db.from("cv_staff_clock_entries").select("clock_in,clock_out,hourly_wage_cents,breaks,source_type,source_provider")
         .eq("business_id",businessId)
         .gte("clock_in",new Date(Date.parse(date+"T00:00:00Z")-86400000).toISOString())
         .lt("clock_in",new Date(Date.parse(date+"T00:00:00Z")+172800000).toISOString()).limit(1001),
@@ -88,22 +88,19 @@ export async function readMetricDay(businessId:string,date:string,
     if(!coverage.covered){
       // Distinguish an authoritative unlinked POS line from a temporary read
       // outage. Only the former invalidates previously verified item values.
-      const unlinked=await db.from("order_lines")
-        .select("id,orders!inner(business_id,business_date)",{count:"exact",head:true})
-        .is("menu_item_id",null).eq("voided",false)
-        .eq("orders.business_id",businessId).eq("orders.business_date",date)
-        .eq("orders.toast_excluded",false).is("orders.superseded_by",null);
+      const unlinked=await db.from("cv_item_sales").select("source_ref",{count:"exact",head:true})
+        .eq("business_id",businessId).eq("business_date",date).eq("status","actual")
+        .is("data->>menu_item_id",null);
       input.itemCoverageInvalidated=Boolean(!unlinked.error&&
         unlinked.count!==null&&unlinked.count!==undefined&&unlinked.count>0);
     }else{
       // PostgreSQL/PostgREST production limit is 1000 rows per query.
       // Multiple 500-row ordered pages avoid falsely certifying a truncated
       // daily order_lines result. Bounded to 5000; beyond that, fail closed.
-      const linePage=(from:number,to:number)=>db.from("order_lines")
-        .select("id,order_id,menu_item_id,quantity,net_sales_cents,modifiers,orders!inner(business_id,business_date)")
-        .eq("orders.business_id",businessId).eq("orders.business_date",date)
-        .eq("orders.toast_excluded",false).is("orders.superseded_by",null)
-        .eq("voided",false).order("id",{ascending:true}).range(from,to);
+      const linePage=(from:number,to:number)=>db.from("cv_item_sales")
+        .select("source_ref,order_id:data->>order_id,menu_item_id:data->>menu_item_id,quantity,net_sales_cents,modifiers:data->modifiers")
+        .eq("business_id",businessId).eq("business_date",date).eq("status","actual")
+        .order("source_ref",{ascending:true}).range(from,to);
       const first=await linePage(0,499);
       if(first.error)throw first.error;
       let lines=first.data??[];
@@ -131,10 +128,9 @@ export async function readMetricDay(businessId:string,date:string,
           input.itemCoverageInvalidated=true;
         }else{
           // Revenue attribution must ALSO reconcile every exact order total.
-          const orderPage=(from:number,to:number)=>db.from("orders")
-            .select("id,net_sales_cents").eq("business_id",businessId)
-            .eq("toast_excluded",false).is("superseded_by",null)
-            .eq("business_date",date).order("id",{ascending:true}).range(from,to);
+          const orderPage=(from:number,to:number)=>db.from("cv_orders")
+            .select("id:order_ref,net_sales_cents").eq("business_id",businessId)
+            .eq("status","actual").eq("business_date",date).order("order_ref",{ascending:true}).range(from,to);
           const firstOrders=await orderPage(0,499);
           if(firstOrders.error)throw firstOrders.error;
           let orders=firstOrders.data??[];

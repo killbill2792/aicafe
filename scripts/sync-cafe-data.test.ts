@@ -323,7 +323,7 @@ describe("day mirror", () => {
   it("mirrors every table in a parent-first order, and copies the payment, labor, void and refund facts", () => {
     expect([...DAY_MIRROR_ORDER].sort()).toEqual(REFRESH_WINDOW_TABLES.map((c) => c.table).sort());
     expect(DAY_MIRROR_ORDER.indexOf("orders")).toBeLessThan(DAY_MIRROR_ORDER.indexOf("order_lines"));
-    for (const name of ["toast_payment_facts", "toast_payment_summaries", "toast_open_labor_summaries", "toast_void_facts", "toast_refund_facts"]) {
+    for (const name of ["toast_payment_facts", "toast_labor_entries", "toast_void_facts", "toast_refund_facts"]) {
       expect(DAY_MIRROR_ORDER).toContain(name);
     }
   });
@@ -338,10 +338,14 @@ describe("day mirror", () => {
 describe("test café gets the Toast archive and daily captures (database behavior: sync-cafe-data-db-integration.mjs)", () => {
   it("points a copied archive row at the copied import run", () => {
     const archive = REFRESH_WINDOW_TABLES.find((c) => c.table === "toast_raw_records")!;
-    const out = remapRow("toast_raw_records", { id: "a", business_id: SOURCE_BUSINESS_ID, restaurant_guid: "g", run_id: "r", seen_run_id: "r", payload: {} }, archive);
+    const out = remapRow("toast_raw_records", { id: "a", business_id: SOURCE_BUSINESS_ID,
+      entity: "order", restaurant_guid: "g", source_account: "g", run_id: "r", seen_run_id: "r", commit_id: "receipt", payload: {} }, archive);
     expect(out.run_id).toBe(remapId("toast_sync_runs", "r"));
     expect(out.seen_run_id).toBeNull();
     expect(out.business_id).toBe(DEST_BUSINESS_ID);
+    expect(out.source_account).toBe(out.restaurant_guid);
+    expect(out.commit_id).toBeNull();
+    expect(out.payload_origin).toBe("historical_provider");
   });
   it("passes capture field lists to Postgres as a real array", () => {
     expect(toParam("field_paths", ["a", "b"])).toEqual(["a", "b"]);
@@ -355,7 +359,7 @@ describe("test café gets the Toast archive and daily captures (database behavio
 describe("Financial Fix B: source/test safety and café-local parity", () => {
   it("partitions late UTC timecards on the café-local business date", () => {
     const timecards = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "timecards")!;
-    const open = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "toast_open_labor_summaries")!;
+    const open = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "toast_labor_entries")!;
     const shifts = REFRESH_WINDOW_TABLES.find((cfg) => cfg.table === "pos_scheduled_shifts")!;
     for (const cfg of [timecards, open, shifts]) {
       expect(cfg.localDay).toBe(true);

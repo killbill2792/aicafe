@@ -10,7 +10,7 @@ export type CanonicalRead={rows:CanonicalRow[];notes:string[];empty:boolean;
 const bounded=z.object({dateFrom:z.iso.date(),dateTo:z.iso.date()});
 const periodViews=new Set<CanonicalView>([
  "cv_sales_days","cv_sales_hours","cv_item_sales","cv_payments","cv_discounts",
- "cv_voids_refunds","cv_card_fees","cv_analytics","cv_labor_entries",
+ "cv_voids_refunds","cv_card_fees","cv_labor_entries",
  "cv_shifts","cv_inventory","cv_orders","cv_cash","cv_kitchen","cv_dining_options","cv_customer_visits","cv_customer_products"
 ]);
 /** The only canonical view query path for screens and AI.
@@ -32,8 +32,10 @@ export async function readCanonicalView(db:SupabaseClient,businessId:string,
   return {rows:[],notes:["invalid_scope"],empty:true,truncated:false,rowCount:0,error:"invalid_scope"};
  // Customer timeline/cohort values are computed at the requested cutoff,
  // never at today's date then filtered back into a historical range.
- let query=view==="cv_customer_visits"||view==="cv_customer_products"
-  ?db.rpc(view==="cv_customer_visits"?"customer_visits_for":"customer_products_for",{p_business_id:businessId,p_from:range.dateFrom,p_to:range.dateTo}).eq("business_id",businessId)
+ const scopedQuery=view==="cv_customer_visits"?"customer_visits_for":
+  view==="cv_customer_products"?"customer_products_for":view==="cv_inventory"?"inventory_evidence_for":null;
+ let query=scopedQuery
+  ?db.rpc(scopedQuery,{p_business_id:businessId,p_from:range.dateFrom,p_to:range.dateTo}).eq("business_id",businessId)
   :db.from(view).select("*").eq("business_id",businessId);
  if(periodViews.has(view))
   query=query.gte("business_date",range.dateFrom).lte("business_date",range.dateTo);
@@ -73,7 +75,6 @@ export const readMenu=wrap("cv_menu");
 export const readBills=wrap("cv_bills");
 export const readInventory=wrap("cv_inventory");
 export const readOwnerFacts=wrap("cv_owner_facts");
-export const readAnalytics=wrap("cv_analytics");
 export const readOrders=wrap("cv_orders");
 export const readCash=wrap("cv_cash");
 export const readKitchen=wrap("cv_kitchen");

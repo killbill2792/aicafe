@@ -86,6 +86,7 @@ function operationalDb(scopes:Record<string,boolean>={}){
   },
   async rpc(name:string,args:Record<string,unknown>){
    log.push({name,args});
+   if(name==="external_note_availability"||name==="external_discover_resources")return {error:null,data:null};
    if(name==="toast_constrained_stock_guids")return {error:null,data:constrained};
    return {error:null,data:(args.p_objects as unknown[]).length};
   }
@@ -105,6 +106,16 @@ beforeEach(()=>{
  });
 });
 describe("POS0c operational source capture uses the shared staged current writer",()=>{
+ it("publishes capabilities for skipped and permission-gated resources independently of their records",async()=>{
+  const {db,log}=operationalDb({cash:false});
+  await syncToastOperationalSources(db,opScope,observed,Date.now()-1);
+  const discovery=log.find(entry=>entry.name==="external_discover_resources");
+  expect(discovery?.args.p_resources).toEqual(expect.arrayContaining([
+   {resource:"cashmgmt/v1/entries",permission:"cash",granted:false},
+   {resource:"stock/v1/inventory",permission:"stock",granted:null},
+  ]));
+  expect(log.filter(entry=>entry.name==="toast_stage_operational_batch")).toHaveLength(0);
+ });
  it("keeps cash, stock, multiple kitchen levels and availability source-shaped and stable",async()=>{
   calls.request.mockImplementation(async(path:string)=>{
    if(path.startsWith("/cashmgmt/v1/entries"))return [
@@ -135,7 +146,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(batch.map(x=>x.args.p_endpoint)).toContain("cashmgmt/v1/entries");
   const stock=batch.find(x=>x.args.p_endpoint==="stock/v1/inventory")!;
   expect(stock.args.p_objects).toEqual(expect.arrayContaining([
-   expect.objectContaining({guid:guid2,status:"OUT_OF_STOCK",quantity:null,
+   expect.objectContaining({payload:expect.objectContaining({guid:guid2,status:"OUT_OF_STOCK",quantity:null}),
     provider_key:guid2,business_id:s.businessId,restaurant_guid:s.restaurantGuid,
     endpoint:"stock/v1/inventory"})]));
   const kitchen=batch.find(x=>x.args.p_endpoint==="kitchen/v1/export/itemFulfillments")!;
@@ -202,7 +213,8 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(f.state().online_availability.last_success_at).toBeUndefined();
   expect(Date.parse(f.state().online_availability.next_at))
    .toBeGreaterThanOrEqual(Date.parse("2026-10-24T19:00:00Z"));
-  expect(f.log).toHaveLength(0);
+  expect(f.log.filter(entry=>entry.name==="toast_stage_operational_batch"&&
+   entry.args.p_endpoint==="restaurant-availability/v1/availability")).toHaveLength(0);
  });
  it("paginates prep stations without claiming a truncated page is complete",async()=>{
   const f=operationalDb({cash:false,stock:false,availability:false,ordering:false});
@@ -221,7 +233,7 @@ describe("POS0c operational source capture uses the shared staged current writer
   expect(batch).toHaveLength(1); // 206 validated objects, one atomic RPC; never two partial commits
   expect(batch[0].args.p_objects).toHaveLength(206);
   expect(batch[0].args.p_objects).toEqual(expect.arrayContaining([
-   expect.objectContaining({guid:guid1}),expect.objectContaining({guid:guid2})]));
+   expect.objectContaining({payload:expect.objectContaining({guid:guid1})}),expect.objectContaining({payload:expect.objectContaining({guid:guid2})})]));
  });
 });
 
@@ -263,5 +275,5 @@ it("recovers a restock omitted from the constrained-stock list without a webhook
  });
  await syncToastOperationalSources(f.db,opScope,observed,Date.now()+300000);
  const row=f.log.find(x=>x.name==="toast_stage_operational_batch"&&x.args.p_endpoint==="stock/v1/inventory");
- expect(row?.args.p_objects).toEqual([expect.objectContaining({guid:guid1,status:"IN_STOCK"})]);
+ expect(row?.args.p_objects).toEqual([expect.objectContaining({payload:expect.objectContaining({guid:guid1,status:"IN_STOCK"})})]);
 });

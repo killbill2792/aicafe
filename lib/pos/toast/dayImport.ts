@@ -56,7 +56,7 @@ async function localRevisionPages(db:SupabaseClient,p:Params,work:RevisionWork,t
  if(error)throw new ToastApiError("unavailable");
  if(!base||base.import_state!=="imported"||!base.coverage_complete||base.unparsed_count!==0||
     !GUID.safeParse(base.last_import_run_id).success||typeof base.orders_snapshot_sha256!=="string")return null;
- const rows=await readAllPages((start,end)=>db.from("toast_raw_records").select("payload")
+ const rows=await readAllPages((start,end)=>db.from("external_records").select("payload").eq("provider","toast")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("business_date",p.businessDate).eq("entity","order")
   .or("run_id.eq."+base.last_import_run_id+",seen_run_id.eq."+base.last_import_run_id).order("id").range(start,end));
  const pages=buildRevisionPages(rows.map(row=>row.payload),work.revision.orders,base.orders_snapshot_sha256,
@@ -115,8 +115,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
    // Redacting a whole day inside the import request exceeded its time limit.
    const redacted=redactToastRaw(fetched,0,"",undefined,"orders");
    if(!Array.isArray(redacted)||redacted.length>100)throw new ToastApiError("invalid_response");
-   // Same order content, same archive hash: an unchanged order is not saved again.
-   const payload=stableToastOrderPage(redacted);
+   const payload=redacted;
    if(!staged){
     const {error:saved}=await db.rpc("toast_stage_day_page",{
      p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_run_id:p.runId,
@@ -134,7 +133,7 @@ export async function importToastBusinessDay(db:SupabaseClient,p:Params){
   const byGuid=new Map<string,ToastParsedOrder>();
   const unparsed:ToastUnparsed[]=[];
   for(const item of pages){
-   const parsed=parseToastDayPage(item.payload,p.restaurantGuid,p.businessDate,
+   const parsed=parseToastDayPage(stableToastOrderPage(item.payload),p.restaurantGuid,p.businessDate,
      m.toast_time_zone,m.closeout_hour);
    unparsed.push(...parsed.unparsed.map(x=>({...x,source_page:item.page})));
    for(const record of parsed.orders){

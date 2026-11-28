@@ -1,6 +1,7 @@
 import "server-only";
 import {randomUUID} from "node:crypto";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {retainProviderPayload} from "@/lib/externalData/retainPayload";
 import {assertDay,cityEventIdentity,cityPlaceIdentity,cityScopeKey,correctedSourceAlias,correctedVenueAlias,canonicalSourceUrl,
   type CityEventCandidate,type CityPlaceCandidate,type CityScope} from "./cityEventIdentity";
 
@@ -47,6 +48,7 @@ export async function upsertCityEventFact(db:SupabaseClient,
 export type CityCoverageStatus="found"|"none_found"|"partial"|"failed";
 export type CitySourceCoverageWrite=CityScope&{
   sourceKey:string;from:string;to:string;status:CityCoverageStatus;checkedAt:string;
+  sourceReport?:unknown;
 };
 export async function recordCitySourceCoverage(db:SupabaseClient,
   input:CitySourceCoverageWrite):Promise<void>{
@@ -58,6 +60,7 @@ export async function recordCitySourceCoverage(db:SupabaseClient,
   const {error}=await db.rpc("ldi_record_city_coverage",{
     p_city_key:cityKey,p_source_key:sourceKey,p_from:from,p_to:to,
     p_status:input.status,p_checked_at:validInstant(input.checkedAt),
+    ...(input.sourceReport===undefined?{}:{p_source_report:retainProviderPayload(input.sourceReport)}),
   });
   throwOnError(error);
 }

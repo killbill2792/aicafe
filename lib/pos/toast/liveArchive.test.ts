@@ -4,7 +4,6 @@ vi.mock("server-only",()=>({}));
 import {isFinishedToastOrder,liveArchivePage} from "./liveArchive";
 import {archiveLiveToastOrders} from "./liveArchive.server";
 import {redactToastRaw} from "./redact";
-import {stableToastOrderPage} from "./stableOrder";
 import {readToastTodaySoFar,clearTodaySoFarCache} from "./todaySoFar.server";
 
 const g=(n:number)=>`cccccccc-cccc-4ccc-8ccc-${String(n).padStart(12,"0")}`;
@@ -37,7 +36,7 @@ describe("which of today's orders are kept during the day",()=>{
  it("prepares a page exactly as the 5 AM import does, so an unchanged order is recognised then",()=>{
   const page=[order(1),order(2,"OPEN"),order(3)];
   const kept=liveArchivePage(page);
-  const asImport=stableToastOrderPage(redactToastRaw(page,0,"",undefined,"orders") as unknown[]);
+  const asImport=redactToastRaw(page,0,"",undefined,"orders") as unknown[];
   expect(kept).toEqual([asImport[0],asImport[2]]);
   // POS0e owner-approved retention: permitted customer names and contacts
   // survive the same live/day-import normalization; payment credentials do not.
@@ -55,9 +54,10 @@ describe("which of today's orders are kept during the day",()=>{
   expect(sanitized).not.toContain("reusable-secret");
   expect(sanitized).not.toContain('"cardNumber"');
   expect(sanitized).not.toContain('"cvv"');
-  // The same order downloaded with its lists in another order is byte-identical.
+  // Keep the provider's original list order in both ingestion paths.
   const shuffled={...order(1),checks:[{...order(1).checks[0],selections:[...order(1).checks[0].selections].reverse()}]};
-  expect(JSON.stringify(liveArchivePage([shuffled]))).toBe(JSON.stringify(liveArchivePage([order(1)])));
+  expect(liveArchivePage([shuffled])).toEqual(redactToastRaw([shuffled]));
+  expect(liveArchivePage([shuffled])).not.toEqual(liveArchivePage([order(1)]));
  });
 });
 

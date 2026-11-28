@@ -29,7 +29,7 @@ function database(pages:number,shortLastPage:boolean){
  // menu tables resolve when awaited. Keep cv_item_sales_daily chainable through range().
  const from=(table:string)=>{
   if(table==="cv_item_sales_daily")return makeQuery(table);
-  const data=table==="menu_price_history"?[]:table==="cv_menu"?[{id:"latte",catalog_source:"csv"}]:[];
+  const data=table==="menu_price_history"?[]:table==="menu_catalog_for"?[{id:"latte",catalog_source:"csv"}]:[];
   const q:Record<string,unknown>={};
   const proxy=new Proxy(q,{get(_target,method:string){
     if(method==="then")return (resolve:(result:unknown)=>unknown)=>resolve({data,error:null});
@@ -41,7 +41,7 @@ function database(pages:number,shortLastPage:boolean){
   }});
   return proxy;
  };
- return {calls,from};
+ return {calls,from,rpc:from};
 }
 beforeEach(()=>{vi.clearAllMocks();});
 describe("realized menu price query contract",()=>{

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { expect, it, vi } from "vitest";
+import { researchToolDefinitions } from "@/lib/ai/research/tools.server";
 import { advanceAssignmentProvider, type AssignmentProviderPort } from "./assignment-provider.server";
 import * as assignmentProvider from "./assignment-provider.server";
 import { processLunaAssignment } from "./assignment-worker.server";
@@ -91,6 +92,11 @@ it("offers scoped metadata discovery and reports absent direct transport", async
     const [{ lease, readTools, signal }] = workerProvider.mock.calls[0];
     expect(readTools?.map(tool => tool.definition.name)).toEqual(["calculate", "describe_database"]);
     const metadata = readTools!.find(tool => tool.definition.name === "describe_database")!;
+    expect(metadata.definition.description).toContain("column's type");
+    expect(metadata.definition.description).not.toContain("external_records.payload");
+    const legacyMetadata = researchToolDefinitions.find(tool => tool.name === "describe_database")!;
+    expect(legacyMetadata.description).toContain("Inspect representative scoped external_records.payload values");
+    expect(legacyMetadata.parameters).toEqual(metadata.definition.parameters);
     const context = { ...lease, jobId: randomUUID(), ownerMessageId: randomUUID(), employeeKey: "general_manager" as const,
       originalInput: { text: "Describe the catalog.", receivedAt: new Date().toISOString(), locale: "en" as const, attachmentIds: [] } };
     await expect(metadata.execute(context, { tables: null }, signal)).resolves.toEqual({ ok: false, error: "research_database_connection_unavailable" });

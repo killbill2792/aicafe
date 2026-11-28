@@ -115,4 +115,70 @@ BEGIN
   IF SQLERRM='wrong restaurant mapping was accepted' THEN RAISE; END IF;
  END;
 END $pos0b_negative$;
+DO $source_cutover$
+DECLARE
+ b uuid:='dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+ r uuid:='dddddddd-dddd-4ddd-8ddd-dddddddddd03';
+ l uuid:='dddddddd-dddd-4ddd-8ddd-dddddddddd02';
+ entry uuid:='dddddddd-dddd-4ddd-8ddd-dddddddddd04';
+ worker uuid:='dddddddd-dddd-4ddd-8ddd-dddddddddd05';
+ clock_ref text:='toast:'||r::text||':'||entry::text;
+ body jsonb; prior_hash text; revision bigint;
+ observed_at timestamptz:='2026-11-09T15:00:00Z';
+ scope jsonb:='{"mode":"incremental","scope":{"query":"fixture"}}';
+BEGIN
+ SELECT payload_sha256 INTO STRICT prior_hash FROM public.external_records
+ WHERE business_id=b AND provider='toast' AND restaurant_guid=r AND entity='time_entry' AND entity_guid=entry;
+ body:=jsonb_build_object('guid',entry,'employeeReference',jsonb_build_object('guid',worker),
+  'inDate','2026-11-09T10:00:00Z','outDate','2026-11-09T14:00:00Z','hourlyWage',null,
+  'regularHours',4,'overtimeHours',0,'breaks','[]'::jsonb);
+ revision:=public.external_commit_page(b,'toast',r::text,'labor/v1/timeEntries','modified',0,scope,true,
+  jsonb_build_array(jsonb_build_object('key',entry,'payload',body,'updated_at',observed_at)));
+ PERFORM public.toast_stage_labor_entries(b,r,l,jsonb_build_array(jsonb_build_object(
+  'external_time_entry_id',entry,'external_employee_id',worker,'clock_in','2026-11-09T10:00:00Z',
+  'clock_out','2026-11-09T14:00:00Z','hourly_wage_cents',null,'wage_status','missing',
+  'provider_regular_hours',4,'provider_overtime_hours',0,'breaks','[]'::jsonb,'deleted',false,
+  'provider_modified_at',observed_at)));
+ PERFORM pg_temp.pos0b_assert((SELECT payload_sha256=prior_hash FROM public.external_records
+  WHERE business_id=b AND provider='toast' AND restaurant_guid=r AND entity='time_entry' AND entity_guid=entry),
+  'an exactly matched original eliminates the second stage snapshot');
+ INSERT INTO public.timecards(business_id,pos_timecard_id,clock_in,clock_out,hourly_wage_cents,wage_source,
+  source_type,source_provider,breaks,provider_regular_hours,provider_overtime_hours,pos_owner_edited)
+ VALUES (b,clock_ref,'2026-11-09T10:00:00Z','2026-11-09T14:00:00Z',0,'pos','connected_pos','Toast','[]',4,0,false);
+ PERFORM pg_temp.pos0b_assert((SELECT source_proven AND provider_hourly_wage_cents IS NULL AND hourly_wage_cents=0
+  FROM public.cv_staff_clock_entries WHERE business_id=b AND pos_timecard_id=clock_ref),
+  'the original null wage remains distinguishable from the approved payroll value');
+ body:=jsonb_set(body,'{hourlyWage}','0');
+ revision:=public.external_commit_page(b,'toast',r::text,'labor/v1/timeEntries','modified',revision,scope,true,
+  jsonb_build_array(jsonb_build_object('key',entry,'payload',body,'updated_at',observed_at+interval '1 hour')));
+ PERFORM pg_temp.pos0b_assert((SELECT source_proven AND provider_hourly_wage_cents=0
+  FROM public.cv_staff_clock_entries WHERE business_id=b AND pos_timecard_id=clock_ref),
+  'the same read exposes verified zero as numeric evidence');
+ UPDATE public.timecards SET pos_owner_edited=true,wage_source='owner',hourly_wage_cents=1700
+ WHERE business_id=b AND pos_timecard_id=clock_ref;
+ PERFORM pg_temp.pos0b_assert((SELECT NOT source_proven AND hourly_wage_cents=1700
+  FROM public.cv_staff_clock_entries WHERE business_id=b AND pos_timecard_id=clock_ref),
+  'original evidence does not replace an independent owner edit');
+END $source_cutover$;
+
+-- The owner-readable projection must keep the existing stage private, even
+-- when an open entry has an independently stored wage.
+SELECT gen_random_uuid() AS projection_owner,gen_random_uuid() AS other_owner \gset
+INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at)
+VALUES(:'projection_owner','00000000-0000-0000-0000-000000000000','authenticated','authenticated',
+ 'labor-'||:'projection_owner'||'@example.invalid','',now(),now());
+INSERT INTO public.memberships(business_id,user_id,role)
+VALUES('dddddddd-dddd-4ddd-8ddd-dddddddddd01',:'projection_owner','owner');
+UPDATE public.toast_labor_entries SET clock_out=null,hourly_wage_cents=750,wage_status='verified'
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddd01';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',:'projection_owner',true);
+SELECT pg_temp.pos0b_assert((SELECT count(*)=1 AND bool_and(hourly_wage_cents IS NULL)
+ FROM public.toast_staged_labor_evidence WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddd01')
+ AND NOT has_table_privilege('authenticated','public.toast_labor_entries','SELECT'),
+ 'the owner can read the stage projection without its unpublished wage or raw table');
+SELECT set_config('request.jwt.claim.sub',:'other_owner',true);
+SELECT pg_temp.pos0b_assert(NOT EXISTS(SELECT FROM public.toast_staged_labor_evidence
+ WHERE business_id='dddddddd-dddd-4ddd-8ddd-dddddddddd01'),'the stage projection stays café-scoped');
+RESET ROLE;
 ROLLBACK;

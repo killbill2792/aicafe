@@ -62,7 +62,7 @@ describe("Toast day pages are redacted once in the app",()=>{
   const safe=redactToastRaw(source) as Record<string,unknown>;
   expect(safe.customer).toEqual(source.customer);
   expect(safe.staff).toEqual(source.staff);
-  expect(safe.notes).toBe("[redacted]");
+  expect(safe.notes).toBe("Call me, card [redacted]");
   expect(safe.comments).toBe(source.comments);
   expect(safe.device).toEqual({});
   expect(safe.missing).toBeNull();

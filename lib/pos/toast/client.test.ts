@@ -16,6 +16,7 @@ it("rejects redirects to outside Toast, embedded credentials, non-HTTPS and unap
 function fakeDB(){
   const row={api_origin:"https://ws-api.toasttab.com",client_id:"test-id",
     client_secret_enc:encryptToken("test-secret"),
+    configuration_version:1,scopes_available:{labor:true},
     bearer_token_enc:null as string|null,bearer_expires_at:null as string|null};
   let logins=0;let responses=0;
   const thenable=(data:unknown)=>({maybeSingle:async()=>({data,error:null}),
@@ -39,9 +40,21 @@ function fakeDB(){
     if(url.includes("/authentication/")){logins++;return new Response(JSON.stringify({token:{accessToken:"access",expiresIn:3600}}),{status:200});}
     responses++;return new Response(JSON.stringify([{guid:"x"}]),{status:200});
   }));
-  return {db,counts:()=>({logins,responses})};
+  return {db,credentials:row,counts:()=>({logins,responses})};
 }
 describe("Toast token cache and read-only client",()=>{
+  it("detects rotated credentials and a revoked resource scope without provider traffic",async()=>{
+    const {db,credentials,counts}=fakeDB();
+    const client=createToastClient(db,"00000000-0000-4000-8000-000000000001");
+    const guid="00000000-0000-4000-8000-000000000002";
+    const first=await client.assertSourceAccess(guid,"labor");
+    credentials.configuration_version++;
+    expect(await client.assertSourceAccess(guid,"labor")).not.toBe(first);
+    credentials.scopes_available.labor=false;
+    await expect(client.assertSourceAccess(guid,"labor"))
+      .rejects.toMatchObject({category:"missing_permissions",status:403});
+    expect(counts()).toEqual({logins:0,responses:0});
+  });
   it("authenticates once and reuses encrypted persisted token for subsequent reads",async()=>{
     const {db,counts}=fakeDB();
     const client=createToastClient(db,"00000000-0000-4000-8000-000000000001");

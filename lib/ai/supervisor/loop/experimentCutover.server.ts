@@ -234,7 +234,7 @@ export const windowHasSourceGap=(segmentEnd:string,sourceGapAt:string|null)=>
 function unverifiedPriceWindow(window:ReturnType<typeof planElapsed24HourWindows>[number],now:string,segmentEndAt?:string):
  Awaited<ReturnType<typeof readElapsedWindowObservations>>{
  return {window,status:"insufficient_evidence",units:null,revenueCents:null,countedLines:0,
-  unknownTimeLines:0,source:"order_lines.ordered_at",asOf:now,...(segmentEndAt?{segmentEndAt}:{})};
+  unknownTimeLines:0,source:"cv_item_sales.ordered_at",asOf:now,...(segmentEndAt?{segmentEndAt}:{})};
 }
 /** The ONE new-path monitor handler for verified Toast prices only. Callers
  * must select mode=new first and must bypass the old calendar-day writer.
@@ -400,7 +400,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   const actual=m.status==="actual";
   const interim:LoopReport={
    status:"in_progress",recommendation:"adjust",
-   source:"order_lines.ordered_at+orders.closed_at",
+   source:"cv_item_sales.ordered_at+closed_at",
    midRunKey:"verified-source-day-"+day,
    midRunText:"Toast verified the price for "+effect.productName+
     ". Elapsed 24-hour day "+day+" of "+days+" ended at "+m.window.endAt+". "+
@@ -420,7 +420,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
      oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
      elapsedWindows:day,totalWindows:days,observedUnits:m.units,observedRevenueCents:m.revenueCents,
      windowStartAt:m.window.startAt,windowEndAt:m.window.endAt,nonCausal:true},
-    evidence:[{source:"order_lines",facts:{status:m.status,windowIndex:m.window.index,nonCausal:true}}],
+   evidence:[{source:"cv_item_sales",facts:{status:m.status,windowIndex:m.window.index,nonCausal:true}}],
     threadText:""},
   };
   await repo.saveReport(scope,proposal,interim,{midRun:true});
@@ -472,7 +472,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
   sourceContinuity:sourceGapAt?"unverified_gap":interruptionAt?"interrupted":"verified",interruptedAt:interruptionAt,sourceGapAt};
  const status=actual?"complete":"insufficient_evidence";
  const report:LoopReport={status,result,recommendation,
-  source:"order_lines.ordered_at+orders.closed_at",
+  source:"cv_item_sales.ordered_at+closed_at",
   delivery:{agentId:"alex",taskKind:"price_experiment_report",
    entityType:"menu_item",entityId:effect.productId,
    payload:{productId:effect.productId,productName:effect.productName,
@@ -488,7 +488,7 @@ export async function runVerifiedToastPriceTick(db:SupabaseClient,repo:LoopRepos
     sourceContinuity:sourceGapAt?"unverified_gap":interruptionAt?"interrupted":"verified",
     interruptionAt,sourceGapAt},
    confidence:actual?"high":"low",
-   evidence:[{source:"order_lines",facts:{actualWindowCount:result.coveredWindows,
+   evidence:[{source:"cv_item_sales",facts:{actualWindowCount:result.coveredWindows,
     totalWindowCount:days,status,nonCausal:true}}],
    threadText:"Toast verified the price for "+effect.productName+
     ". I observed "+result.coveredWindows+" of "+days+

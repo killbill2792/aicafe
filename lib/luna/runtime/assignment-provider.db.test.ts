@@ -240,7 +240,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
     expect(toolState.rows[0]).toMatchObject({ status: "completed", structured_content: [{ type: "text", text: finalText }] });
     expect(toolState.rows[0].checkpoint_receipts.map((item: { phase: string }) => item.phase)).toEqual(["provider_pending", "read_pending", "provider_pending"]);
 
-    const discovery = await admit(true, "Which operational fields describe order totals?");
+    const discovery = await admit(true, "Which fields describe order totals and where are original provider records stored?");
     const role = `luna_discovery_${randomUUID().replaceAll("-", "")}`;
     const password = randomUUID();
     await admin.query(`create role ${role} login password '${password}' in role supervisor_research_transport`);
@@ -253,8 +253,9 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       expect(permissions.rows).toEqual([{ reads_orders: false, can_research: true }]);
       vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", directUrl.toString());
       const metadataCall = { type: "function_call", name: "describe_database", call_id: "call_disposable_catalog",
-        arguments: JSON.stringify({ tables: ["orders", "toast_raw_samples", "toast_client_budgets"] }) };
-      const catalogText = "The orders catalog lists net sales in cents.";
+        arguments: JSON.stringify({ tables: ["orders", "external_records", "external_record_links",
+          "toast_raw_samples", "toast_client_budgets"] }) };
+      const catalogText = "The catalog lists net sales in cents and a JSONB column for original provider records.";
       const catalogReply = (text: string) => reply({ ...finalResponse, output: [{
         type: "message", role: "assistant", content: [{ type: "output_text", text }],
       }] });
@@ -276,9 +277,13 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       expect(savedMetadata.callId).toBe(metadataCall.call_id);
       const output = JSON.parse(savedMetadata.output);
       expect(output).toMatchObject({ columns: { ok: true }, constraints: { ok: true } });
-      expect(output.columns.rows).toEqual(expect.arrayContaining([expect.objectContaining({ table: "orders", column: "net_sales_cents" })]));
+      expect(output.columns.rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({ table: "orders", column: "net_sales_cents" }),
+        expect.objectContaining({ table: "external_records", column: "payload", type: "jsonb" }),
+      ]));
       expect(output.constraints.rows).toEqual(expect.arrayContaining([
         expect.objectContaining({ kind: "foreign_key", table: "orders", references: "businesses" }),
+        expect.objectContaining({ kind: "foreign_key", table: "external_record_links", references: "external_records" }),
       ]));
       expect(savedMetadata.output).not.toMatch(/toast_raw_samples|toast_client_budgets/u);
 
