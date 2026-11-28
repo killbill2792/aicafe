@@ -4,18 +4,11 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
-import {accessStatus,normalizeCode,validCode,type CafeAccess} from "@/lib/access/status";
+import {readCafeAccess} from "@/lib/access/scopedAccess.server";
+import {normalizeCode,validCode,type CafeAccess} from "@/lib/access/status";
 export type OwnerAccess={businessId:string;userId:string;access:CafeAccess};
 export async function getCafeAccess(businessId:string):Promise<CafeAccess>{
-  const client=createAdminSupabaseClient();
-  const [{data,error},{data:business,error:tzError}]=await Promise.all([
-   client.from("cafe_access").select("mode,access_end").eq("business_id",businessId).maybeSingle(),
-   client.from("businesses").select("timezone").eq("id",businessId).maybeSingle(),
-  ]);
-  if(tzError)throw tzError;
-  // Only a not-yet-installed migration fails open; never turn outages into free access.
-  if(error && !["42P01","PGRST205"].includes(error.code??"")) throw error;
-  return accessStatus(data, new Date(),business?.timezone||"UTC");
+  return readCafeAccess(createAdminSupabaseClient(),businessId);
 }
 export async function requireOwnerAccessScope():Promise<OwnerAccess>{
   const client=await createServerSupabaseClient();

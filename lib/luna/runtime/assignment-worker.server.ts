@@ -4,6 +4,11 @@ import { z } from "zod";
 import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
 import { describeDatabase, describeDatabaseToolDefinition } from "@/lib/ai/research/tools.server";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
+import { readCafeAccess, readExternalAccess, requireConnectorMembership, type AccessReader } from "@/lib/access/scopedAccess.server";
+import { readWithSourceAccess } from "@/lib/externalData/pages";
+import { PublicWebPermissionError, publicResearchIncludesPrivateValue, publicWebResearchTool } from "@/lib/luna/shared/publicWebResearch";
+import { createWebSearch } from "@/lib/luna/shared/publicWebResearch.server";
+import { completeResumedHostedWeb, loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { workforceRoster } from "../workforce/roster";
 import { runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
 
@@ -14,6 +19,7 @@ const assistantMessage = z.object({
 type ProviderArgs = Parameters<typeof runClaimedAssignmentProvider>[0];
 
 const describeDatabaseArguments = z.strictObject({ tables: z.array(z.string()).nullable() });
+const webArguments = z.strictObject({ query: z.string().trim().min(1) });
 const assignmentReadTools: readonly AssignmentReadTool[] = [
   { definition: calculationToolDefinition, execute: (_, args) => executeCalculationTool(args) },
   {
@@ -25,6 +31,49 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
     },
   },
 ];
+
+function assignmentWebResearch(accounting: ProviderArgs["accounting"], request?:typeof fetch): AssignmentReadTool {
+  const assertAccess: NonNullable<AssignmentReadTool["sourceRevision"]> = async context => {
+    if(!("from" in accounting.db)||typeof accounting.db.from!=="function")throw Error("public_web_permission_unavailable");
+    const db=accounting.db as AccessReader;
+    await accounting.authorize();
+    await requireConnectorMembership(db,context);
+    const [entitlement,permission]=await Promise.all([readCafeAccess(db,context.businessId),readExternalAccess(db,context,"public_web","public")]);
+    if(!entitlement.active||!permission.allowed)throw Error("public_web_access_revoked");
+    return permission.revision;
+  };
+  return {
+    definition: publicWebResearchTool,
+    sourceRevision: assertAccess,
+    usesProvider: true,
+    execute: async (context, args, signal, web) => {
+      const parsed = webArguments.safeParse(args);
+      if (!parsed.success) return { ok:false, error:"invalid_tool_arguments" };
+      if (publicResearchIncludesPrivateValue(parsed.data.query, web?.privateValues))
+        return { ok:false, error:"Rewrite the search as a public research objective without private values." };
+      const authorize=async () => {
+        try { return await assertAccess(context); }
+        catch (error) {
+          throw new PublicWebPermissionError(error instanceof Error&&error.message==="public_web_access_revoked"?
+            "permissionDenied":"permissionsUnavailable");
+        }
+      };
+      const lookup=createWebSearch({fetch:(input,init)=>readWithSourceAccess(authorize,()=> (request??fetch)(input,init),
+        async response=>{await response.body?.cancel().catch(()=>undefined);})});
+      const value = await withDurableProviderTurn({ ...accounting, ...context }, async () => {
+        const outputCap = await loadModelExecutionCap(accounting.db);
+        return lookup(parsed.data.query, {
+          outputCap,
+          reserveTransport: request => reserveDurableProviderRequest(request,"hosted_web",outputCap),
+          reserveModelCall: () => true,
+          recordUsage: () => {},
+          ...(web ? { continuation: { ...web, authorize, settle:completeResumedHostedWeb } } : {}),
+        }, signal);
+      });
+      return value.available ? { ok:true, result:value } : { ok:false, error:value.reason };
+    },
+  };
+}
 
 /** Process one admitted replacement assignment using the existing claim,
  * provider checkpoint and atomic publication RPCs. */
@@ -58,7 +107,7 @@ export async function processLunaAssignment({
 
   const turn = await runClaimedAssignmentProvider({
     ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken },
-    readTools: provider.readTools ?? assignmentReadTools,
+    readTools: provider.readTools ?? [...assignmentReadTools, assignmentWebResearch(provider.accounting,provider.request)],
     buildRequest: async (context, steering) => {
       const request = await provider.buildRequest(context, steering);
       const employee = workforceRoster().find(profile => profile.key === context.employeeKey);
@@ -73,6 +122,7 @@ export async function processLunaAssignment({
     .filter(part => part.text.length > 0).map(part => ({ type: "text", text: part.text }));
   if (!blocks.length) throw new Error("luna_assignment_reply_empty");
 
+  await turn.assertSources?.();
   signal.throwIfAborted();
   const replyId = randomUUID();
   const receipt = await provider.rpc("luna_commit_assignment_result", {

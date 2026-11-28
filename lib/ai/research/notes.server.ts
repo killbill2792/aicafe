@@ -16,8 +16,9 @@ export async function readCafeNotes(client:SupabaseClient,businessId:string):Pro
   return {notes:error||!data?[]:data as CafeNote[],error:Boolean(error)};
 }
 
-export async function cafeNotesContext(client:SupabaseClient,businessId:string,facts:readonly SavedFact[],today:string):Promise<string>{
+export async function cafeNotesContext(client:SupabaseClient,businessId:string,facts:readonly SavedFact[],today:string,observePrivate?:(values:unknown[])=>void):Promise<string>{
   const {notes,error}=await readCafeNotes(client,businessId);
+  observePrivate?.([...notes.flatMap(n=>[n.note,n.basis]),...facts.map(f=>f.value_json)]);
   const lines=[
     ...notes.map(n=>"- note "+n.topic+": "+n.note+" (learned from: "+n.basis+"; last confirmed "+day(n.confirmed_at)+")"),
     ...facts.map(f=>"- owner fact "+f.fact_key+": "+JSON.stringify(f.value_json)+(f.unit?" "+f.unit:"")+" (the owner saved this on "+day(f.created_at)+")"),

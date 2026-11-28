@@ -240,6 +240,90 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
     expect(toolState.rows[0]).toMatchObject({ status: "completed", structured_content: [{ type: "text", text: finalText }] });
     expect(toolState.rows[0].checkpoint_receipts.map((item: { phase: string }) => item.phase)).toEqual(["provider_pending", "read_pending", "provider_pending"]);
 
+    // Use the real membership, grant, and usage tables on each worker connection.
+    const sqlReader = (worker: Client) => (table: string) => ({
+      select(columns: string) {
+        if (!/^[a-z_,]+$/u.test(columns) || !/^[a-z_]+$/u.test(table)) throw Error("invalid fixture identifier");
+        const filters: string[] = [], values: unknown[] = [];
+        const reader = {
+          eq(column: string, value: unknown) {
+            if (!/^[a-z_]+$/u.test(column)) throw Error("invalid fixture filter");
+            filters.push(`${column}=$${values.push(value)}`);
+            return reader;
+          },
+          async maybeSingle() {
+            const {rows}=await worker.query(`select ${columns} from public.${table} where ${filters.join(" and ")}`,values);
+            return {data:rows[0]??null,error:null};
+          },
+        };
+        return reader;
+      },
+    });
+    const webAccounting = (worker: Client) => ({ ...accounting(worker), ownerDailyCap:3,
+      db:{ ...accounting(worker).db, from:sqlReader(worker) } });
+    const objective = "Compare public admission information at two museums.";
+    const source = "https://example.org/museum";
+    const hosted = await admit(true, objective+" Our private manager is Marisol Quinn.");
+    await admin.query(`insert into public.cafe_access(business_id,mode) values ($1,'grandfathered')
+      on conflict (business_id) do update set mode=excluded.mode`,[hosted.businessId]);
+    const deniedQueries = ["Marisol Quinn", "4155550199"];
+    const calls = [...deniedQueries,objective].map((query,i)=>({type:"function_call",name:"search_web",
+      call_id:"call_disposable_web_"+i,arguments:JSON.stringify({query})}));
+    await firstWorker.query("select public.luna_steer_assignment($1,$2,$3,$4,$5,'My phone is (415) 555-0199.')",
+      [...hosted.scope,hosted.runId,randomUUID()]);
+    const paused = new AbortController(), finished = new AbortController();
+    const hostedId = "resp_disposable_web";
+    const answer = "See the [museum admission page](<"+source+">).";
+    const search = vi.fn<typeof fetch>()
+      .mockImplementationOnce(async()=>reply({...response,output:calls}))
+      .mockImplementationOnce(async()=>Response.json({id:hostedId,status:"queued"}))
+      .mockImplementationOnce(async()=>{
+        finished.abort();
+        return Response.json({...response,id:hostedId,output:[
+          {type:"web_search_call",status:"completed",action:{type:"search"}},
+          {type:"message",content:[{type:"output_text",text:"See the admission page.",
+            annotations:[{type:"url_citation",url:source,title:"Admission"}]}]},
+        ]});
+      })
+      .mockImplementationOnce(async()=>reply({...finalResponse,output:[
+        {type:"message",role:"assistant",content:[{type:"output_text",text:answer}]},
+      ]}));
+    const restart = () => admin.query("update public.supervisor_run_steps set lease_until=clock_timestamp() where run_id=$1 and step_key='owner_turn'",[hosted.runId]);
+    const snapshot = async () => (await admin.query("select state from public.supervisor_research_continuations where run_id=$1",[hosted.runId])).rows[0].state;
+    const hostedAssignment = {scope:hosted.workerScope,runId:hosted.runId,request:search,buildRequest};
+    vi.stubEnv("OPENAI_API_KEY","offline-disposable-fixture");
+    try {
+      await expect(processLunaAssignment({...hostedAssignment,accounting:webAccounting(firstWorker),signal:paused.signal,
+        rpc:async(name,params)=>{
+          const result=await rpc(firstWorker)(name,params);
+          if((params.p_state as {webCheckpoint?:{responseId?:string}}|undefined)?.webCheckpoint?.responseId)paused.abort();
+          return result;
+        },
+      })).rejects.toMatchObject({name:"AbortError"});
+      const pending = await snapshot();
+      expect(pending.webCheckpoint).toMatchObject({responseId:hostedId,revision:0,attemptId:expect.any(String)});
+      expect(pending.toolReceipts.map((item:{output:string})=>JSON.parse(item.output))).toEqual(
+        deniedQueries.map(()=>({ok:false,error:expect.stringContaining("private values")})));
+      expect(search).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(String(search.mock.calls[1][1]?.body))).toMatchObject({input:objective,background:true,store:false});
+      await restart();
+      await expect(processLunaAssignment({...hostedAssignment,accounting:webAccounting(secondWorker),
+        rpc:rpc(secondWorker),signal:finished.signal})).rejects.toMatchObject({name:"AbortError"});
+      expect(String(search.mock.calls[2][0])).toBe("https://api.openai.com/v1/responses/"+hostedId);
+      expect(search.mock.calls[2][1]?.method).toBeUndefined();
+      const settled = await snapshot();
+      expect(settled.webCheckpoint).toBeUndefined();
+      expect(settled.round).toBe(2);
+      expect(JSON.parse(settled.toolReceipts.at(-1).output)).toMatchObject({ok:true,result:{sources:[{url:source}]}});
+      await restart();
+      await expect(processLunaAssignment({...hostedAssignment,accounting:webAccounting(firstWorker),rpc:rpc(firstWorker),signal})).resolves.toBe("completed");
+      expect(search).toHaveBeenCalledTimes(4);
+      expect((await admin.query("select status,input_tokens::int from public.supervisor_system_usage_events where attempt_id=$1",
+        [pending.webCheckpoint.attemptId])).rows).toEqual([{status:"completed",input_tokens:45}]);
+      expect((await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'",
+        [hosted.threadId])).rows).toEqual([{structured_content:[{type:"text",text:answer}]}]);
+    } finally { vi.unstubAllEnvs(); }
+
     const discovery = await admit(true, "Which fields describe order totals and where are original provider records stored?");
     const role = `luna_discovery_${randomUUID().replaceAll("-", "")}`;
     const password = randomUUID();
@@ -271,7 +355,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         }),
       })).rejects.toThrow("simulated loss after metadata save");
       const metadataPayload = JSON.parse(String(metadataTransport.mock.calls[0][1]?.body));
-      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database"]);
+      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database", "search_web"]);
       const checkpoint = await admin.query(`select state from public.supervisor_research_continuations where run_id=$1`, [discovery.runId]);
       const [savedMetadata] = checkpoint.rows[0].state.toolReceipts;
       expect(savedMetadata.callId).toBe(metadataCall.call_id);

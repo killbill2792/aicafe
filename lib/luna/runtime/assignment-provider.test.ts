@@ -90,7 +90,7 @@ it("offers scoped metadata discovery and reports absent direct transport", async
       buildRequest: vi.fn(),
     })).resolves.toBe("busy");
     const [{ lease, readTools, signal }] = workerProvider.mock.calls[0];
-    expect(readTools?.map(tool => tool.definition.name)).toEqual(["calculate", "describe_database"]);
+    expect(readTools?.map(tool => tool.definition.name)).toEqual(["calculate", "describe_database", "search_web"]);
     const metadata = readTools!.find(tool => tool.definition.name === "describe_database")!;
     expect(metadata.definition.description).toContain("column's type");
     expect(metadata.definition.description).not.toContain("external_records.payload");
@@ -105,4 +105,36 @@ it("offers scoped metadata discovery and reports absent direct transport", async
     workerProvider.mockRestore();
     vi.unstubAllEnvs();
   }
+});
+
+it("fences recovered assignment results when the public-web grant changed", async () => {
+  const lease = { businessId: randomUUID(), ownerUserId: randomUUID(), threadId: randomUUID(),
+    runId: randomUUID(), claimToken: randomUUID() };
+  const operation = randomUUID();
+  const saved = { version: 1, operation, response: {
+    id:"resp_completed",status:"completed",output:[{type:"message",role:"assistant",
+      content:[{type:"output_text",text:"Public findings with a link."}]}],
+  }, sourceRevisions:{search_web:1} };
+  const rpc = vi.fn(async (name:string) => {
+    if(name==="luna_open_assignment_provider")return {job:{id:randomUUID(),owner_message_id:randomUUID(),status:"running"},
+      employeeKey:"general_manager",originalInput:{text:"Compare museum opening hours.",receivedAt:new Date().toISOString(),
+        locale:"en",attachmentIds:[]},phase:"ready",sequence:3,operation:null,lastReceipt:"provider:"+operation};
+    if(name==="supervisor_research_checkpoint_v2")return saved;
+    throw Error("Unexpected RPC "+name);
+  });
+  const sourceRevision = vi.fn(async()=>1), execute=vi.fn(), buildRequest=vi.fn();
+  const accounting = { db:{rpc:vi.fn()}, ownerDailyCap:null, authorize:vi.fn(),
+    budget:{maxElapsedMs:1000,maxModelCalls:4,maxToolCalls:2,maxInputTokens:1000,maxOutputTokens:100} };
+  const request=vi.fn<typeof fetch>();
+  const args={ lease,rpc,signal:new AbortController().signal,buildRequest,accounting,request,
+    readTools:[{definition:{name:"search_web"},sourceRevision,execute}] };
+  const turn=await assignmentProvider.runClaimedAssignmentProvider(args);
+  expect(turn?.result.sourceRevisions).toEqual({search_web:1});
+  expect(sourceRevision).toHaveBeenCalledWith(expect.objectContaining({businessId:lease.businessId,ownerUserId:lease.ownerUserId}));
+  sourceRevision.mockResolvedValue(2);
+  await expect(turn?.assertSources?.()).rejects.toThrow("luna_source_access_changed");
+  await expect(assignmentProvider.runClaimedAssignmentProvider(args)).rejects.toThrow("luna_source_access_changed");
+  expect(execute).not.toHaveBeenCalled();
+  expect(buildRequest).not.toHaveBeenCalled();
+  expect(request).not.toHaveBeenCalled();
 });

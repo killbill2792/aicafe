@@ -1,6 +1,8 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {Client} from "pg";
+import {publicResearchIncludesPrivateValue,publicWebResearchTool} from "@/lib/luna/shared/publicWebResearch";
+import type {WebSearchResult} from "@/lib/luna/shared/publicWebResearch.server";
 import {calculationToolDefinition,executeCalculationTool} from "./calculation";
 export {calculate} from "./calculation";
 
@@ -21,15 +23,15 @@ type ResearchDatabaseScope = Pick<ResearchScope, "businessId" | "ownerUserId" | 
   Partial<Pick<ResearchScope, "db">>;
 
 /** Remember everything read from café data (text and numbers, at any depth) so none of it is sent to a public search. */
-function rememberPrivate(scope:ResearchScope,rows:unknown){
-  if(!scope.privateValues)return;
+export function rememberPrivateValues(values:Set<string>|undefined,rows:unknown){
+  if(!values)return;
   const pending=[rows];
   while(pending.length){
     const value=pending.pop();
     if(value===null||value===undefined)continue;
     if(typeof value==="string"){
       const text=value.trim().toLowerCase();
-      if(text.length>=4&&text.length<=200&&!/^[\d\s.,:/-]+$/u.test(text))scope.privateValues!.add(text);
+      if(text.length>=4&&!/^[\d\s.,:/-]+$/u.test(text))values.add(text);
       // A JSON value can be stored as text: read inside it too.
       if(/^[[{]/u.test(text))try{pending.push(JSON.parse(value));}catch{/* plain text */}
       continue;
@@ -37,22 +39,12 @@ function rememberPrivate(scope:ResearchScope,rows:unknown){
     if(typeof value==="number"){
       // Public searches may name a year; any other figure from the café's data stays private.
       if(Number.isFinite(value)&&Math.abs(value)>=100&&!(Number.isInteger(value)&&value>=1990&&value<=2100))
-        scope.privateValues!.add("#"+String(value));
+        values.add("#"+String(value));
       continue;
     }
     if(typeof value==="object")for(const item of Object.values(value))pending.push(item);
   }
 }
-function privateTextIn(scope:ResearchScope,query:string):string|null{
-  const q=query.toLowerCase();
-  const figures=new Set((q.match(/\d[\d.,]*\d|\d/gu)??[]).map(t=>t.replace(/,/gu,"")));
-  for(const v of scope.privateValues??[]){
-    if(v.startsWith("#")){if(figures.has(v.slice(1)))return v.slice(1);continue;}
-    if(q.includes(v))return v;
-  }
-  return null;
-}
-
 export const describeDatabaseToolDefinition = {type:"function",name:"describe_database",strict:true,
     description:"Discover the café database you can read. With tables=null: every readable table and view with its description and columns. "+
       "With table names: each column's type, nullability and description, allowed values (check constraints), and foreign keys to and from those tables.",
@@ -76,11 +68,7 @@ export const researchToolDefinitions=[
       "On an error you get PostgreSQL's message; fix the SQL and try again.",
     parameters:{type:"object",additionalProperties:false,required:["sql"],properties:{
       sql:{type:"string",description:"A single SELECT statement."}}}},
-  {type:"function",name:"search_web",strict:true,
-    description:"Search the public web for current outside information, such as the labor, tax or health rules for this café's own location. "+
-      "Returns a short sourced summary. Never put private café data in the query.",
-    parameters:{type:"object",additionalProperties:false,required:["query"],properties:{
-      query:{type:"string",description:"A public question, including the café's city and state or country when location matters."}}}},
+  publicWebResearchTool,
   calculationToolDefinition,
   {type:"function",name:"remember_cafe_note",strict:true,
     description:"Save something you learned about this café that will help next time (a pattern, a habit, a working assumption, a preference), "+
@@ -167,12 +155,14 @@ export async function executeResearchTool(scope:ResearchScope,name:string,rawArg
     if(name==="describe_database")
       return await describeDatabase(scope,Array.isArray(args.tables)?args.tables.map(String):null);
     if(name==="run_sql")
-      return typeof args.sql==="string"&&args.sql.trim()?await runSql(scope,args.sql).then(r=>{rememberPrivate(scope,r.rows);return r;}):{ok:false,error:"sql is required"};
+      return typeof args.sql==="string"&&args.sql.trim()?await runSql(scope,args.sql).then(r=>{rememberPrivateValues(scope.privateValues,r.rows);return r;}):{ok:false,error:"sql is required"};
     if(name==="search_web"){
-      if(!scope.webSearch||typeof args.query!=="string")return {ok:false,error:"web search is not available"};
-      const leaked=privateTextIn(scope,args.query);
-      if(leaked)return {ok:false,error:"The query contains text from your private café data (\""+leaked+"\"). Public searches must not include it; rewrite the query without it."};
-      return {ok:true,result:await scope.webSearch(args.query,scope.signal)};
+      if(!scope.webSearch||typeof args.query!=="string"||!args.query.trim())
+        return {ok:false,error:"web search is not available or the public objective is empty"};
+      if(publicResearchIncludesPrivateValue(args.query,scope.privateValues))
+        return {ok:false,error:"The query contains private café data. Rewrite it as a public research objective."};
+      const result=await scope.webSearch(args.query.trim(),scope.signal) as WebSearchResult;
+      return result?.available ? {ok:true,result} : {ok:false,error:result?.reason??"web_search_unavailable"};
     }
     if(name==="remember_cafe_note"||name==="forget_cafe_note"){
       if(!scope.notes)return {ok:false,error:"café notes are not available"};
@@ -187,6 +177,7 @@ export async function executeResearchTool(scope:ResearchScope,name:string,rawArg
       return executeCalculationTool(args);
     return {ok:false,error:"unknown tool "+name};
   }catch(error){
+    if(error instanceof Error&&/^(durable_|checkpoint_)/u.test(error.message))throw error;
     return {ok:false,error:error instanceof Error?error.message:"tool_failed"};
   }
 }
