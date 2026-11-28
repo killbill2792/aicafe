@@ -232,7 +232,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
     expect(firstPayload.instructions).toContain("Your assigned role is Operations and Supply Manager.");
     expect(firstPayload.continuation).toBeUndefined();
     const finalPayload = JSON.parse(String(toolTransport.mock.calls[1][1]?.body));
-    expect(finalPayload).toMatchObject({ tools: [], tool_choice: "none", input: [
+    expect(finalPayload).toMatchObject({ tools: [calculationToolDefinition], tool_choice: "auto", input: [
       { role: "user", content: calculation.question },
       { type: "message", role: "user", content: "Keep the unit as cents." },
       call,
@@ -473,8 +473,12 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       expect(await claimScheduled(secondWorker)).toBeNull();
       const query = sql("call_original_scheduled_sales", "select sum((payload->>'net')::int) as cents from external_records where provider='routine-fixture'");
       const finalReport = "The original Toast sales record reports 2,125 cents.";
+      const scheduledReasoning = { type: "reasoning", id: "rs_disposable_schedule", summary: [], encrypted_content: "opaque" };
       const provider = vi.fn<import("@/lib/ai/agent/loop.server").AgentProvider>()
-        .mockImplementationOnce(async function* () { yield { type: "response.completed", response: { ...response, output: [query] } }; })
+        .mockImplementationOnce(async function* () {
+          yield { type: "response.incomplete", response: { ...response, status: "incomplete",
+            incomplete_details: { reason: "max_output_tokens" }, output: [scheduledReasoning, query] } };
+        })
         .mockImplementationOnce(async function* () {
           yield { type: "response.completed", response: { ...response, output: [{ type: "message", role: "assistant",
             content: [{ type: "output_text", text: finalReport }] }] } };
@@ -512,6 +516,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       const outcome = verifyObjectiveTurn(scheduledTurn, routine);
       expect(outcome).toMatchObject({ report: finalReport, sourceCount: 1, observedToolNames: ["run_sql"] });
       expect(provider).toHaveBeenCalledTimes(2);
+      expect(provider.mock.calls[1][0].input).toContainEqual(scheduledReasoning);
       expect(provider.mock.calls[1][0].input).toContainEqual({ type: "function_call_output", call_id: query.call_id,
         output: JSON.stringify({ ok: true, row_count: 1, rows: [{ cents: 2125 }] }) });
       const reportArgs = { p_business_id: scheduled.businessId, p_routine_id: routine.id, p_run_id: recoveredRoutine!.run_id,
@@ -523,13 +528,80 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       expect((await admin.query("select role,count(*)::int as count from public.ai_messages where thread_id=$1 group by role order by role",
         [scheduled.threadId])).rows).toEqual([{ role: "owner", count: 1 }, { role: "supervisor", count: 1 }]);
       expect((await admin.query(`select source_type,status,count(*)::int as count from public.supervisor_system_usage_events
-        where business_id=$1 group by source_type,status`, [scheduled.businessId])).rows).toEqual([
-        { source_type: "routine", status: "completed", count: 2 },
+        where business_id=$1 group by source_type,status order by status`, [scheduled.businessId])).rows).toEqual([
+        { source_type: "routine", status: "attempted", count: 1 },
+        { source_type: "routine", status: "completed", count: 1 },
       ]);
       const nextDay = new Date(Date.parse(due.instant) + 86_400_000);
       expect(await rpc(secondWorker)("supervisor_claim_current_routine_occurrence", { p_business_id: scheduled.businessId,
         p_routine_id: routine.id, p_revision: routine.revision, p_local_date: nextDay.toISOString().slice(0,10),
         p_scheduled_for_utc: nextDay, p_now: new Date(nextDay.getTime() + 60_000) })).toBeNull();
+
+      const long = await admit(true, "Complete all three calculations before reporting the results.", "operations");
+      const reasoning = { type: "reasoning", id: "rs_disposable_progress", summary: [], encrypted_content: "opaque" };
+      const calls = Array.from({ length: 3 }, (_, index) => ({ ...call, call_id: `call_continuation_${index}` }));
+      const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
+      const window = new AbortController();
+      const longTransport = vi.fn<typeof fetch>()
+        .mockImplementationOnce(async (_, init) => {
+          const signal = init!.signal!;
+          const events = [
+            { type: "response.created", response: { id: "resp_interrupted", model } },
+            { type: "response.output_item.done", item: reasoning },
+            ...calls.slice(0, 2).map(item => ({ type: "response.output_item.done", item })),
+          ];
+          return new Response(new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(events.map(frame).join("")));
+              signal.addEventListener("abort", () => controller.error(signal.reason), { once: true });
+              setTimeout(() => window.abort(new DOMException("Worker window elapsed", "TimeoutError")), 0);
+            },
+          }));
+        })
+        .mockImplementationOnce(async () => reply({ ...response, output: [calls[2]] }))
+        .mockImplementationOnce(async () => reply(finalResponse));
+      const calculate = vi.fn((_: unknown, args: Record<string, unknown>) => executeCalculationTool(args));
+      const runSlice = (worker: Client, maxToolCalls: number) => processLunaAssignment({
+        ...assignment, scope: long.workerScope, runId: long.runId, request: longTransport,
+        accounting: { ...accounting(worker), ownerDailyCap: 3,
+          budget: { ...accounting(worker).budget, maxModelCalls: 1, maxToolCalls } },
+        rpc: rpc(worker), readTools: [{ definition: calculationToolDefinition, execute: calculate }],
+      });
+      const wake = () => admin.query("update public.supervisor_run_steps set next_retry_at=clock_timestamp() where run_id=$1 and step_key='owner_turn'", [long.runId]);
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(window.signal);
+      try { await expect(runSlice(firstWorker, 1)).resolves.toBe("busy"); }
+      finally { timeout.mockRestore(); }
+      const longCheckpoint = async () => (await admin.query(`select s.checkpoint_receipts->-1->>'receipt' as receipt,
+        s.checkpoint_phase, s.claim_token, r.status, r.final_report_ref
+        from public.supervisor_runs r join public.supervisor_run_steps s on s.run_id=r.id
+        where r.id=$1 and s.step_key='owner_turn'`, [long.runId])).rows[0];
+      expect(await longCheckpoint()).toMatchObject({
+        receipt: expect.stringMatching(/^provider_partial:/), status: "pending", claim_token: null, final_report_ref: null,
+      });
+      expect(calculate).not.toHaveBeenCalled();
+      await wake();
+      await expect(runSlice(secondWorker, 1)).resolves.toBe("busy");
+      expect(calculate).toHaveBeenCalledTimes(1);
+      expect(longTransport).toHaveBeenCalledTimes(1);
+      await wake();
+      await expect(runSlice(firstWorker, 2)).resolves.toBe("busy");
+      expect(await longCheckpoint()).toMatchObject({ checkpoint_phase: "provider_pending", status: "pending", claim_token: null });
+      expect(calculate).toHaveBeenCalledTimes(3);
+      expect(longTransport).toHaveBeenCalledTimes(2);
+      await wake();
+      await expect(runSlice(secondWorker, 2)).resolves.toBe("completed");
+      expect(calculate).toHaveBeenCalledTimes(3);
+      expect(longTransport).toHaveBeenCalledTimes(3);
+      const resumed = JSON.parse(String(longTransport.mock.calls[2][1]?.body));
+      expect(resumed).toMatchObject({ store: false, tools: [expect.objectContaining({ name: "calculate" })] });
+      expect(resumed.input).toContainEqual(reasoning);
+      expect(resumed.input.filter((item: { type: string }) => item.type === "function_call_output").map(
+        (item: { call_id: string }) => item.call_id)).toEqual(calls.map(item => item.call_id));
+      expect((await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'",
+        [long.threadId])).rows).toEqual([{ structured_content: [{ type: "text", text: finalText }] }]);
+      expect((await admin.query(`select status, count(*)::integer from public.supervisor_system_usage_events
+        where source_type='durable_run' and source_id=$1 group by status order by status`, [long.runId])).rows)
+        .toEqual([{ status: "attempted", count: 1 }, { status: "completed", count: 2 }]);
     } finally {
       vi.unstubAllEnvs();
       await admin.query(`drop role ${role}`);

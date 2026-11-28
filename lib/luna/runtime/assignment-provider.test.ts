@@ -67,6 +67,38 @@ it("treats denied reservations and incomplete responses as unsettled work", asyn
   expect(port.complete).not.toHaveBeenCalled();
 });
 
+it("settles token usage and saves replayable items when a response reaches its output ceiling", async () => {
+  const { port, fetch, reservation, signal } = dependencies();
+  const reasoning = response.output[0];
+  fetch.mockResolvedValueOnce(new Response(`data: ${JSON.stringify({
+    type: "response.incomplete", response: {
+      ...response, status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
+      output: [reasoning, { ...response.output[1], status: "incomplete" }],
+    },
+  })}\n\n`));
+  const state = await advanceAssignmentProvider(ready, port, signal, fetch);
+  expect(state.response).toMatchObject({ status: "incomplete", output: [reasoning] });
+  expect(reservation.complete).toHaveBeenCalledBefore(port.save);
+  expect(port.complete).toHaveBeenCalledWith(1, state.operation, true);
+});
+
+it("leaves interrupted provider items uncommitted after caller cancellation", async () => {
+  const { port, reservation } = dependencies();
+  const caller = new AbortController();
+  const window = new AbortController();
+  const stream = async function* (_request: unknown, signal: AbortSignal) {
+    yield { type: "response.created", response: { id: response.id } };
+    yield { type: "response.output_item.done", item: response.output[0] };
+    caller.abort();
+    signal.throwIfAborted();
+  };
+  await expect(advanceAssignmentProvider(ready, port, AbortSignal.any([caller.signal, window.signal]), undefined,
+    undefined, stream, window.signal)).rejects.toThrow();
+  expect(reservation.launched).toHaveBeenCalledOnce();
+  expect(reservation.complete).not.toHaveBeenCalled();
+  expect(port.save).not.toHaveBeenCalled();
+});
+
 it("does not restart a provider while a tool boundary still needs recovery", async () => {
   const { port, fetch, signal } = dependencies();
   await expect(advanceAssignmentProvider({ ...ready, phase: "effect_pending" }, port, signal, fetch))

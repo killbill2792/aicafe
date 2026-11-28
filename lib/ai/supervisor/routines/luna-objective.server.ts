@@ -3,7 +3,8 @@ import { z } from "zod";
 import type { AgentProvider, AgentTurn } from "@/lib/ai/agent/loop.server";
 import type { ResearchContinuationPort, RunScope } from "@/lib/ai/supervisor/runs/contracts";
 import {
-  advanceAssignmentProvider, assertLunaPaidAcceptanceAllowed, assignmentReadRequest, parseSavedProviderResponse, readAssignmentEvidence, runAssignmentReadLoop,
+  advanceAssignmentProvider, assertLunaPaidAcceptanceAllowed, assignmentReadRequest, LunaAssignmentYielded,
+  parseSavedProviderResponse, providerReceipt, readAssignmentEvidence, runAssignmentReadLoop,
   type AssignmentProviderPort, type ProviderCheckpoint, type ProviderRequest, type SavedProviderResponse,
 } from "@/lib/luna/runtime/assignment-provider.server";
 import { assignmentReadTools, assignmentTextBlocks } from "@/lib/luna/runtime/assignment-worker.server";
@@ -21,7 +22,7 @@ export async function runLunaScheduledResearch({ scope, continuation, request, r
   executionDeadline, budget }: {
   scope: RunScope; continuation: ResearchContinuationPort & { yield: () => Promise<void> };
   request: ProviderRequest; reserve: AssignmentProviderPort["reserve"]; provider?: AgentProvider;
-  authorize: () => Promise<void>; executionDeadline: number; budget: { maxModelCalls: number; maxToolCalls: number };
+  authorize: () => Promise<void>; executionDeadline: number; budget: { maxToolCalls: number };
 }): Promise<Pick<AgentTurn, "text" | "endReason" | "toolInvocations" | "results">> {
   const stored = await continuation.load();
   const saved = stored == null ? null : checkpointState.parse(stored);
@@ -38,7 +39,8 @@ export async function runLunaScheduledResearch({ scope, continuation, request, r
     await persist();
   };
   const signal = AbortSignal.timeout(Math.max(0, executionDeadline - Date.now()));
-  const advance = () => advanceAssignmentProvider(checkpoint, {
+  const slice = { window: signal, toolCalls: 0 };
+  const advance = (after?: string) => advanceAssignmentProvider(checkpoint, {
     load: async () => result,
     begin: (_sequence, operation) => next("provider_pending", operation, null),
     buildRequest: async (_operation, previous) => assignmentReadRequest(request, previous, [], assignmentReadTools, budget),
@@ -48,14 +50,17 @@ export async function runLunaScheduledResearch({ scope, continuation, request, r
       return reserve(payload);
     },
     save,
-    complete: async (_sequence, operation) => { await next("ready", null, `provider:${operation}`); },
-  }, signal, undefined, undefined, provider);
+    complete: async (_sequence, operation, interrupted) => {
+      await next("ready", null, providerReceipt(operation, interrupted ?? false));
+    },
+  }, signal, undefined, after, provider, signal);
   try {
     await authorize();
     const interruptedRead = checkpoint.phase === "read_pending" || checkpoint.lastReceipt?.startsWith("read:");
     const final = await runAssignmentReadLoop({
       result: interruptedRead && checkpoint.phase !== "provider_pending" ? parseSavedProviderResponse(result) : await advance(),
-      context: scope, readTools: assignmentReadTools, budget, signal, provider: advance, save, authorize,
+      context: scope, readTools: assignmentReadTools, budget, signal, slice, provider: advance, save, authorize,
+      yieldClaim: async () => { throw new LunaAssignmentYielded(); },
       checkpoint: () => checkpoint,
       startRead: (_sequence, operation) => next("read_pending", operation, null),
       completeRead: async receipt => { await next("ready", null, `read:${receipt.operation}`); },
@@ -67,7 +72,7 @@ export async function runLunaScheduledResearch({ scope, continuation, request, r
     return { text: assignmentTextBlocks(final).map(block => block.text).join("\n\n"), endReason: "complete",
       toolInvocations, results: toolInvocations.map(call => call.result) };
   } catch (error) {
-    if (!signal.aborted) throw error;
+    if (!(error instanceof LunaAssignmentYielded) && !signal.aborted) throw error;
     await continuation.yield();
     throw new Error("research_execution_yield");
   }
