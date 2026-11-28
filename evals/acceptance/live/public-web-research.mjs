@@ -28,8 +28,9 @@ try{
     data:{requestId:randomUUID(),title:"Public web research acceptance"}});
   if(created.status()!==201)fail("thread_creation_failed");
   const {thread:{id}}=await created.json();
-  const foreignStatus=(await foreign.context.request.get("/api/ai/threads/"+id)).status();
-  if(![403,404].includes(foreignStatus))fail("foreign_thread_was_not_denied");
+  const messages="/api/ai/threads/"+id+"/messages";
+  const [ownerRead,foreignRead]=await Promise.all([owner.context.request.get(messages),foreign.context.request.get(messages)]);
+  if(ownerRead.status()!==200||![403,404].includes(foreignRead.status()))fail("thread_isolation_unverified");
   async function observe(test){
     const turn=await ownerTurn(owner.page,id,test.question);
     const [message]=(await db.query("select id from public.ai_messages where business_id=$1 and thread_id=$2 and client_message_id=$3 and role='owner'",
