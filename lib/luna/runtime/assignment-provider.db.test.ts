@@ -149,6 +149,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         [...due.scope, due.runId, randomUUID()]);
     };
     const dueResult = await runClaimedAssignmentProvider({ ...recovery, lease: { ...due, claimToken: dueClaimToken } });
+    steerInFlight = undefined;
     expect(dueResult?.result.response).toEqual(response);
     expect(transport).toHaveBeenCalledTimes(2);
     expect(JSON.parse(String(transport.mock.calls[1][1]?.body)).input).toEqual([{ role: "user", content: due.question }]);
