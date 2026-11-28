@@ -50,6 +50,8 @@ try{
     const {text,hosted,urls}=await observe(test);
     if(!hosted.some(r=>r.model==="gpt-6-luna"&&r.outcome==="completed"&&r.inputTokens>0&&r.outputTokens>0)
       ||!test.matches(text,new Set(urls.map(url=>url.hostname))))fail(test.name+"_evidence_missing");
+    await owner.page.goto("/en/?thread="+id);
+    await owner.page.locator("a[href="+JSON.stringify(urls[0].href)+"]").first().waitFor({timeout:15000});
     console.log(JSON.stringify({case:test.name,hosted,citations:urls.map(url=>url.href)}));
   }
   const [grant]=(await db.query("select allowed,revision from public.supervisor_external_access where business_id=$1 and kind='public_web' and resource_key='public'",[cafe.businessId])).rows;
