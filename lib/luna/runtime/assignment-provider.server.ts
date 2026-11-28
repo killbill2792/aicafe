@@ -86,7 +86,7 @@ export async function runClaimedAssignmentProvider({
   request?: typeof fetch;
   buildRequest: (context: ProviderContext, steering: z.infer<typeof steeringPage>) => Promise<ProviderRequest>;
   accounting: AssignmentAccounting;
-}): Promise<{ jobId: string; result: SavedProviderResponse } | null> {
+}): Promise<{ jobId: string; ownerMessageId: string; sequence: number; result: SavedProviderResponse } | null> {
   signal.throwIfAborted();
   const scope = {
     p_business_id: lease.businessId, p_owner_user_id: lease.ownerUserId, p_thread_id: lease.threadId,
@@ -103,11 +103,13 @@ export async function runClaimedAssignmentProvider({
       ...scope, p_expected_seq: sequence, p_operation: operation,
       p_action: receipt ? "complete" : "begin_provider", p_tool: null, p_receipt_ref: receipt,
     });
+  const checkpointSequence = z.object({ checkpoint_seq: z.number().int().nonnegative() });
+  let settledSequence = entry.sequence;
   const result = await advanceAssignmentProvider(entry, {
     load: (sequence) => rpc("supervisor_research_checkpoint_v2", {
       ...scope, p_expected_seq: sequence, p_write: false, p_state: null,
     }),
-    begin: async (sequence, operation) => z.object({ checkpoint_seq: z.number().int().nonnegative() })
+    begin: async (sequence, operation) => checkpointSequence
       .parse(await checkpoint(sequence, operation, null)).checkpoint_seq,
     buildRequest: async (operation) => {
       const steering: z.infer<typeof steeringPage> = [];
@@ -140,10 +142,10 @@ export async function runClaimedAssignmentProvider({
       }) !== true) throw new Error("luna_provider_checkpoint_not_saved");
     },
     complete: async (sequence, operation) => {
-      await checkpoint(sequence, operation, `provider:${operation}`);
+      settledSequence = checkpointSequence.parse(await checkpoint(sequence, operation, `provider:${operation}`)).checkpoint_seq;
     },
   }, signal, request);
-  return { jobId: context.jobId, result };
+  return { jobId: context.jobId, ownerMessageId: context.ownerMessageId, sequence: settledSequence, result };
 }
 
 /** Advance a leased assignment by one provider operation. The database port

@@ -6019,6 +6019,39 @@
      true
     ],
     [
+     "owner_user_id",
+     "uuid",
+     true
+    ],
+    [
+     "employee_key",
+     "text",
+     true
+    ],
+    [
+     "thread_id",
+     "uuid",
+     true
+    ]
+   ],
+   "relation": "luna_employee_threads",
+   "foreign_keys": [
+    {
+     "target": "ai_threads",
+     "constraint": "luna_employee_threads_business_id_thread_id_owner_user_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
      "enabled",
      "boolean",
      true

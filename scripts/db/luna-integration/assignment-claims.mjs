@@ -7,6 +7,7 @@ import { verifyResult } from './assignment-result.mjs';
 import { verifySteering } from './assignment-inputs.mjs';
 import { verifyWorkforceProfiles } from './workforce-profiles.mjs';
 import { verifyLegacyFollowups } from './legacy-followups.mjs';
+import { verifyEmployeeConversations } from './employee-conversations.mjs';
 
 const connectionString = process.env.SUPERVISOR_RUN_DB_URL;
 const target = new URL(connectionString);
@@ -157,6 +158,7 @@ try {
   }
   await assert.rejects(a.query('select luna_internal.supervisor_run_claim(null,null,null,null,null,60)'), /permission denied/);
   console.log('Verified concurrent owner admission, both engine claim entries, rollback, tenant isolation, lease recovery and revocation.');
+  await verifyEmployeeConversations({ admin, a, b, first: await fixture(), second: await fixture() });
 } finally {
   try {
     for (const { business, owner } of fixtures) {
