@@ -24,19 +24,19 @@ describe("general web_search",()=>{
     const body=message("The parade runs on Main Street.",[cited,
       {type:"url_citation",title:"Duplicate",url:"https://city.example.org/parade"},
       {type:"url_citation",title:"Bad URL",url:"javascript:alert(1)"}]);
-    expect(extractWebSearchAnswer(body)).toEqual({answer:"The parade runs on Main Street.",
+    expect(extractWebSearchAnswer(body)).toEqual({answer:"The parade runs on Main Street. [1](<https://city.example.org/parade>)",
       sources:[{title:"Official parade route",url:"https://city.example.org/parade"}]});
     const fetch=vi.fn(async(_url:string|URL|Request,_init?:RequestInit)=>completed(body));
     const search=createWebSearch({fetch,apiKey:"test-key",model:"test-model"});
     const ctx={...input,webSearch:search};
     const result=await executeAgentTool("web_search",{query:"Where is the parade route?"},ctx);
     expect(result).toMatchObject({source:"web_search",period:null,missing:[],
-      answer:"The parade runs on Main Street.",sources:[{url:"https://city.example.org/parade"}]});
+      answer:"The parade runs on Main Street. [1](<https://city.example.org/parade>)",sources:[{url:"https://city.example.org/parade"}]});
     const payload=JSON.parse(String(fetch.mock.calls[0][1]?.body));
     expect(payload).toMatchObject({store:false,tools:[{type:"web_search"}],model:"test-model"});
     expect(payload.input).toContain("Where is the parade route?");
     expect(payload).not.toHaveProperty("business_id");
-    expect(payload.max_output_tokens).toBeLessThanOrEqual(1600);
+    expect(payload).not.toHaveProperty("max_output_tokens");
   });
 
   it("reserves each paid lookup before sending and returns actual provider token counts",async()=>{
@@ -56,7 +56,7 @@ describe("general web_search",()=>{
       status:"incomplete",output:[],usage:{input_tokens:7,output_tokens:1200},
     })),apiKey:"test-key"});
     expect(await unreadable("Incomplete?",{reserveModelCall,recordUsage}))
-      .toEqual({available:false,reason:"unreadable"});
+      .toEqual({available:false,reason:"providerFailed"});
     expect(recordUsage).toHaveBeenLastCalledWith({inputTokens:7,cachedTokens:0,outputTokens:1200});
   });
 
@@ -80,7 +80,7 @@ describe("general web_search",()=>{
     const log=vi.spyOn(console,"error").mockImplementation(()=>{});
     const search=createWebSearch({fetch:vi.fn(async()=>completed({status:"incomplete",output:[]})),
       apiKey:"test-key"});
-    expect(await search("What changed today?")).toEqual({available:false,reason:"unreadable"});
+    expect(await search("What changed today?")).toEqual({available:false,reason:"providerFailed"});
     expect(log.mock.calls.flat().join(" ")).not.toContain("What changed today?");
   });
 

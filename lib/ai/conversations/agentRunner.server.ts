@@ -795,6 +795,10 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
     // re-verifies ownership and applies RLS for this one café.
     const notesClient=await getDb();
     let lastThinkingWrite=0;
+    const privateWebValues:unknown[]=[identity.cafeName,scope.businessId,scope.ownerUserId,...selectedIds];
+    const publicLocation=new Set([location?.city,location?.region,location?.countryCode]);
+    const notesContext=await cafeNotesContext(notesClient,scope.businessId,ownerFactRead.facts,identity.asOf,
+      values=>privateWebValues.push(...values.filter(value=>typeof value!=="string"||!publicLocation.has(value))));
     const result = await runResearchTurn({ ownerText: p.ownerText,matchedOwnerAnswers:p.matchedAnswers,
       presentationContext:{asOf:identity.asOf,currency:identity.currency,presentationAttachments:[...selectedIds]},
       ownerImages:selected.images, ownerPdfs:selected.pdfs, ownerEvidence:selected.evidence, history,
@@ -803,13 +807,14 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       cafeContext:"Café (authenticated, not an owner message): "+JSON.stringify({name:identity.cafeName,
         currency:identity.currency,timezone:identity.timezone,localDate:identity.asOf,
         city:location?.city??null,region:location?.region??null,country:location?.countryCode??null})+
-        "\n"+await cafeNotesContext(notesClient,scope.businessId,ownerFactRead.facts,identity.asOf),
+        "\n"+notesContext,
       // Luna writes its own public queries. Only the owner's public-web permission applies, plus a check
       // that no private café text is inside the query (tools.server.ts); no wording filter on the owner.
-      webSearch:(q,signal)=>ownerPublicWebSearch(scope,async()=>{
+      privateWebValues,
+      webSearch:(q,signal,budget)=>ownerPublicWebSearch(scope,async()=>{
         const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
         await assertTurnSources();
-        const value=await searchWeb(q,undefined,signal);
+        const value=await searchWeb(q,budget,signal);
         const check=async()=>{if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)throw Error("public_web_evidence_access_changed");};
         await check();
         if(value.available){sourceChecks.set("public_web",check);sourceVersions.set("public_web",String(revision));}

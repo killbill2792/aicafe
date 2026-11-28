@@ -4,7 +4,7 @@ import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {readWithSourceAccess,SourceAccessChanged} from "@/lib/externalData/pages";
 import {assertExternalAccess,WEB_RESOURCE} from "./access.server";
 import type {ConnectorOwner} from "./registry.server";
-import type {WebSearchResult} from "@/lib/ai/agent/webSearch.server";
+import type {WebSearchResult} from "./publicWebResearch.server";
 
 // The existing café+owner permission is the sole authority. A request-scoped
 // binding keeps parallel city/holiday queries and their retries in the same
@@ -15,7 +15,7 @@ export class PublicWebPermissionError extends Error{
     super(reason);this.name="PublicWebPermissionError";
   }
 }
-async function assertOwnerPublicWeb(scope:ConnectorOwner):Promise<number>{
+export async function assertOwnerPublicWeb(scope:ConnectorOwner):Promise<number>{
   try{
     await assertCafeAiAccess(scope.businessId);
     return await assertExternalAccess(scope,"public_web",WEB_RESOURCE);

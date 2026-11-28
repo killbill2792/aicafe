@@ -8,11 +8,12 @@ import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer,ResearchContinuationPort} from "@/lib/ai/supervisor/runs/contracts";
 import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
+import type {WebSearchBudget} from "@/lib/connectors/publicWebResearch.server";
 import {createHash} from "node:crypto";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
 import type {RichPresentation} from "@/lib/ai/conversations/presentation";
-import {executeResearchTool,researchToolDefinitions,type ResearchScope} from "./tools.server";
+import {executeResearchTool,rememberPrivateValues,researchToolDefinitions,type ResearchScope} from "./tools.server";
 
 /** What Supervisor is and can reach; how to investigate is the model's own decision. */
 export const RESEARCH_INSTRUCTIONS=
@@ -22,6 +23,7 @@ export const RESEARCH_INSTRUCTIONS=
   "Use them whenever the answer depends on café data, as much as the question needs. Saved events, staff schedules, staff messages and Gmail have their own readers, which you can use when relevant. "+
   "Answer directly in the owner's language, concise for simple questions and thorough for hard ones. "+
   "Distinguish recorded facts from your calculations, assumptions, forecasts and estimates. Explain the basis and uncertainty in the answer. Choose the authorized database tables or views yourself; screen-specific views are optional, not the research interface. "+
+  "When the owner needs public information, delegate the full public objective to search_web and cite its sources as clickable Markdown links. Use only public location and public facts in that request. If a search is unavailable or partial, distinguish that limitation from the evidence it returned. "+
   "For questions about rules or law, use the café's own location from its profile, look up the current rules for that place with search_web, "+
   "cite what you found, and say when it isn't legal advice. "+
   "To change something or contact someone, use the action tools (propose_*, Gmail, routines, staff questions): each only prepares an approval card for the owner, "+
@@ -78,7 +80,8 @@ export async function runResearchTurn(args:{
   history?:ReadonlyArray<{role:"user"|"assistant";content:string}>;
   scope:ResearchScope;
   /** Public web lookups through the existing owner-permissioned search; omit to disable. */
-  webSearch?:(query:string,signal?:AbortSignal)=>Promise<unknown>;
+  webSearch?:(query:string,signal?:AbortSignal,budget?:WebSearchBudget)=>Promise<unknown>;
+  privateWebValues?: unknown;
   /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
   actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
   /** Presentation identity is independent of what data/action tools are enabled. */
@@ -154,6 +157,7 @@ export async function runResearchTurn(args:{
   const usage:AgentTurn["usage"]={model,modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0,requests:[],toolMetrics:[]};
   const invocations:{name:string;result:AgentToolResult}[]=[];
   const privateValues=new Set<string>();
+  rememberPrivateValues(privateValues,[args.privateWebValues,args.ownerEvidence,args.ownerPdfs?.map(file=>file.filename)]);
   /** Admitted evidence is retained across worker replacement for model context. */
   const evidence:string[]=[];
   let nextResultRef=0;
@@ -363,6 +367,31 @@ export async function runResearchTurn(args:{
     }finally{observed?.settle();observed?.close();}
   };
 
+  const webSearch:ResearchScope["webSearch"]=args.webSearch ? async(query,signal)=>{
+    const startedCall=now(),outputCap=acceptanceOutputCap()??null;
+    let composition:ReturnType<typeof requestComposition>=null;
+    let response:unknown,launched=false;
+    try{
+      return await args.webSearch!(query,signal,{
+        outputCap,
+        reserveTransport:params=>reserveDurableProviderRequest(params,"hosted_web"),
+        reserveModelCall:()=>{usage.modelCalls++;launched=true;return true;},
+        recordUsage:bill=>{
+          usage.inputTokens+=bill.inputTokens;usage.outputTokens+=bill.outputTokens;usage.cachedTokens+=bill.cachedTokens;
+        },
+        onRequest:params=>{composition=requestComposition(params);},
+        onProviderResponse:value=>{response=value;},
+      });
+    }finally{
+      if(launched){
+        const status=(response as {status?:unknown}|undefined)?.status;
+        usage.requests!.push(providerUsageReceipt({requestedModel:model,kind:"hosted_web",
+          outcome:status==="completed"?"completed":status==="incomplete"?"incomplete":"failed",
+          final:false,nativeSearch:true,outputCap,durationMs:Math.max(0,now()-startedCall),response,composition}));
+      }
+    }
+  } : args.scope.webSearch;
+
   try{
     let recoveredTransport=false;
     researchLoop: while(true){
@@ -411,10 +440,10 @@ export async function runResearchTurn(args:{
           const readOnly=["run_sql","describe_database","calculate","search_web"].includes(fc.name);
           if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const {controller,clear}=sliceController();
-          const result=await executeResearchTool({...args.scope,webSearch:args.webSearch??args.scope.webSearch,privateValues,signal:controller.signal},fc.name,fc.arguments).finally(clear);
+          const result=await executeResearchTool({...args.scope,webSearch,privateValues,signal:controller.signal},fc.name,fc.arguments).finally(clear);
           if(controller.signal.aborted&&readOnly){if(args.checkpoint)await args.checkpoint.endTool({source:"sql_research",period:null,missing:["interrupted"]});endReason="timeout";break researchLoop;}
           await args.beforeAcceptResult?.();
-          const ref=result.ok===true?admit(fc.name==="run_sql"?"SQL query result":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":"Tool result: "+fc.name,
+          const ref=result.ok===true?admit(fc.name==="run_sql"?"SQL query result":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":fc.name==="search_web"?"Public web evidence; preserve its cited links":"Tool result: "+fc.name,
             fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
             fc.name==="run_sql"?"sql":fc.name==="calculate"?"calculator":undefined):null;
           input.push({type:"function_call_output",call_id:fc.call_id,output:JSON.stringify(ref?{...result,presentationRef:ref}:result)});
@@ -422,7 +451,9 @@ export async function runResearchTurn(args:{
           resultBytes=Buffer.byteLength(JSON.stringify(result),"utf8");
           returnedRows=Array.isArray(result.rows)?result.rows.length:null;
           if(!failed)evidence.push(JSON.stringify(result));
-          record={source:"sql_research",period:null,missing:[],agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
+          record={source:fc.name==="search_web"?"web_search":"sql_research",period:null,
+            missing:(result.result as {status?:unknown}|undefined)?.status==="partial"?["incomplete_search"]:[],
+            agentId:"alex",tool:fc.name,...(failed?{error:"research_tool_error"}:{})};
           if(readOnly&&args.checkpoint)await args.checkpoint.endTool({...record,result});
         }
         invocations.push({name:fc.name,result:record});
