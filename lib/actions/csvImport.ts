@@ -21,8 +21,8 @@ import { NEW_EMPLOYEE } from "@/lib/constants";
 import { toCents } from "@/lib/pos/csv/csvUtils";
 import { aggregateSalesRows, type AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
 import { parseSalesCsv, type SalesColumnMapping, type SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
-import { readSalesCsvForImport, retainSalesCsv } from "@/lib/pos/csv/retainSalesCsv.server";
-import type { NormalizedLaborRow, LaborColumnMapping, LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
+import { readImportCsv, retainImportCsv } from "@/lib/pos/csv/retainImportCsv.server";
+import { parseLaborCsv, type LaborColumnMapping, type LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
 import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@/lib/pos/csv/parseIngredientCostsCsv";
 import { processingFeeTotalsByDate, type NormalizedProcessingFeeRow, type ProcessingFeeColumnMapping } from "@/lib/pos/csv/parseProcessingFeesCsv";
 import { setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "@/lib/pos/processingFees";
@@ -95,6 +95,23 @@ const salesMappingSchema = z.object({
   date: z.string().min(1), item: z.string().min(1), quantity: z.string().min(1), netSales: z.string().min(1),
   category: z.string().optional(), processingFee: z.string().optional(), voided: z.string().optional(),
 });
+const laborMappingSchema = z.object({
+  employee: z.string().min(1), date: z.string().min(1), clockIn: z.string().min(1), clockOut: z.string().min(1),
+  hourlyWage: z.string().optional(),
+});
+
+async function archiveImportCsv(
+  businessId: string,
+  userId: string,
+  jobId: string,
+  payload: ReturnType<typeof retainImportCsv>,
+  mapping: SalesColumnMapping | LaborColumnMapping,
+) {
+  const { error } = await createAdminSupabaseClient().rpc("archive_import_csv_evidence", {
+    p_business: businessId, p_uploader: userId, p_job: jobId, p_payload: payload, p_mapping: mapping,
+  });
+  if (error) throw error;
+}
 
 function dateRange(dates: string[]): { dateFrom: string | null; dateTo: string | null } {
   if (dates.length === 0) return { dateFrom: null, dateTo: null };
@@ -346,7 +363,7 @@ export async function startSalesImportJob(
   if (file === null || typeof file === "string") return err("no_valid_rows");
   const source = await file.text();
 
-  const { fields, rows } = readSalesCsvForImport(source);
+  const { fields, rows } = readImportCsv(source);
   if (Object.values(columnMapping.data).some(field => field && !fields.has(field))) return err("no_valid_rows");
   const rowsInFile = rows.length;
   if (rowsInFile > MAX_SOURCE_ROWS) return err("row_limit_source", { count: rowsInFile, limit: MAX_SOURCE_ROWS });
@@ -355,13 +372,8 @@ export async function startSalesImportJob(
   if (groups.length > MAX_SALES_GROUPS) return err("row_limit_groups", { count: groups.length, limit: MAX_SALES_GROUPS });
   if (groups.length === 0) return err("no_valid_rows");
 
-  const payload = retainSalesCsv(source);
-  const archive = async (jobId: string) => {
-    const { error } = await createAdminSupabaseClient().rpc("archive_sales_csv_evidence", {
-      p_business: businessId, p_uploader: userId, p_job: jobId, p_payload: payload, p_mapping: columnMapping.data,
-    });
-    if (error) throw error;
-  };
+  const payload = retainImportCsv(source);
+  const archive = (jobId: string) => archiveImportCsv(businessId, userId, jobId, payload, columnMapping.data);
   const duplicate = async (existingJob: NonNullable<Awaited<ReturnType<typeof findDuplicateJob>>>) => {
     if (existingJob.status === "processing") return err("already_processing_duplicate");
     try {
@@ -663,18 +675,38 @@ async function resolveEmployeeIds(
  * `employees` row could not be created is tracked as a rejected row instead of silently vanishing
  * from the staged count. */
 export async function startLaborImportJob(
-  rows: NormalizedLaborRow[],
+  upload: FormData,
+  mapping: LaborColumnMapping,
   employeeChoices: Record<string, string>,
-  rowsInFile: number,
-  rejectedRows: RejectedRowSummary<LaborRejectReason>[],
 ): Promise<{ ok: boolean; jobId?: string; duplicate?: boolean; summary?: LaborImportSummary } & Partial<ActionError>> {
   const ctx = await context();
   if (!ctx) return err("not_signed_in");
-  const { supabase, businessId } = ctx;
+  const { supabase, businessId, userId } = ctx;
+  const columnMapping = laborMappingSchema.safeParse(mapping);
+  if (!(upload instanceof FormData) || !columnMapping.success) return err("no_valid_rows");
+  const file = upload.get("source");
+  if (file === null || typeof file === "string") return err("no_valid_rows");
+  const source = await file.text();
 
+  const { fields, rows: sourceRows } = readImportCsv(source);
+  if (Object.values(columnMapping.data).some(field => field && !fields.has(field))) return err("no_valid_rows");
+  const rowsInFile = sourceRows.length;
   if (rowsInFile > MAX_SOURCE_ROWS) return err("row_limit_source", { count: rowsInFile, limit: MAX_SOURCE_ROWS });
+  const { valid: rows, rejected: rejectedRows } = parseLaborCsv(sourceRows, columnMapping.data);
   if (rows.length > MAX_LABOR_ROWS) return err("row_limit_shifts", { count: rows.length, limit: MAX_LABOR_ROWS });
   if (rows.length === 0) return err("no_valid_rows");
+
+  const payload = retainImportCsv(source);
+  const archive = (jobId: string) => archiveImportCsv(businessId, userId, jobId, payload, columnMapping.data);
+  const duplicate = async (job: NonNullable<Awaited<ReturnType<typeof findDuplicateJob>>>) => {
+    if (job.status === "processing") return err("already_processing_duplicate");
+    try {
+      await archive(job.id);
+    } catch {
+      return err("staging_failed");
+    }
+    return { ok: true, duplicate: true, jobId: job.id, summary: job.summary ? { ...(job.summary as LaborImportSummary), duplicate: true } : undefined };
+  };
 
   // employeeChoices is part of the identity: correcting an ambiguous name's match and re-uploading
   // the same rows must not be treated as the same prior (possibly wrong) result. rowsInFile and
@@ -688,10 +720,7 @@ export async function startLaborImportJob(
   };
   const fingerprint = contentFingerprint("labor", fingerprintPayload);
   const existingJob = await findDuplicateJob(supabase, businessId, "labor", fingerprint);
-  if (existingJob) {
-    if (existingJob.status === "processing") return err("already_processing_duplicate");
-    return { ok: true, duplicate: true, jobId: existingJob.id, summary: existingJob.summary ? { ...(existingJob.summary as LaborImportSummary), duplicate: true } : undefined };
-  }
+  if (existingJob) return duplicate(existingJob);
 
   const seedSummary: LaborImportSummary = { rowsInFile, imported: 0, dateFrom: null, dateTo: null, rejectedRows, pendingWageReview: [] };
   const { dateFrom, dateTo } = dateRange(rows.map((r) => r.clockIn.slice(0, 10)));
@@ -717,12 +746,19 @@ export async function startLaborImportJob(
     }
     if (jobError?.code === "23505") {
       const retry = await findDuplicateJob(supabase, businessId, "labor", fingerprint);
-      if (retry) return { ok: true, duplicate: true, jobId: retry.id, summary: retry.summary as LaborImportSummary };
+      if (retry) return duplicate(retry);
     }
     return err("create_job_failed");
   }
 
   // Only now (lock held) do we touch shared employees roster state.
+  try {
+    await archive(job.id);
+  } catch {
+    await supabase.from("csv_import_jobs").update({ status: "failed", updated_at: new Date().toISOString() })
+      .eq("id", job.id).eq("business_id", businessId);
+    return err("staging_failed");
+  }
   const employeeNames = [...new Set(rows.map((r) => r.employee))];
   const employeeIdByName = await resolveEmployeeIds(supabase, businessId, employeeNames, employeeChoices);
 

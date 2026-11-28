@@ -1047,6 +1047,51 @@ test("@money owner imports sales and retains unrecognized original CSV cells", a
   }
 });
 
+test("@staff owner imports labor originals and reviews an unknown wage", async ({page})=>{
+  const own=seededCafe(1),day="2025-01-04",staff=`Labor fixture ${randomUUID()}`;
+  const csv=`Employee,Date,Start,End,Shift note,Employee SSN\n${staff},${day},09:00,17:30,training,000-00-0000\n`;
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",
+    user:"postgres",password:"postgres",connectionTimeoutMillis:5000});
+  const args=[own.businessId,staff];
+  await db.connect();
+  try {
+    await login(page,own);
+    await openOwnedPage(page,own,"more/uploads/labor");
+    const picker=page.locator('input[type="file"]');
+    await expect(picker).toBeEnabled();
+    await picker.setInputFiles({name:"labor.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+    for(const [label,column] of [["Employee name","Employee"],["Date","Date"],["Clock in","Start"],["Clock out","End"]]){
+      await page.getByRole("combobox",{name:label,exact:true}).selectOption(column);
+    }
+    await page.getByRole("button",{name:"Import",exact:true}).click();
+    await expect(page.getByRole("button",{name:"Imported (0)",exact:true})).toBeVisible();
+    const evidence=await db.query(`select r.payload,l.evidence,j.status,s.promoted,s.hourly_wage_cents
+      from public.external_records r join public.external_record_links l
+      on (l.business_id,l.provider,l.record_id)=(r.business_id,r.provider,r.id)
+      join public.csv_import_jobs j on j.business_id=r.business_id and j.id::text=l.native_key->>'id'
+      join public.csv_labor_import_rows s on (s.business_id,s.job_id)=(j.business_id,j.id)
+      where r.business_id=$1 and r.entity='labor_csv' and r.payload#>>'{rows,0,0}'=$2`,args);
+    expect(evidence.rows).toEqual([{
+      payload:{headers:["Employee","Date","Start","End","Shift note"],rows:[[staff,day,"09:00","17:30","training"]]},
+      evidence:{column_mapping:{employee:"Employee",date:"Date",clockIn:"Start",clockOut:"End"}},
+      status:"needs_wage_review",promoted:false,hourly_wage_cents:null,
+    }]);
+  }finally{
+    const jobs=await db.query(`select r.id as record_id,r.source_key,j.id as job_id,j.upload_id from public.external_records r
+      join public.external_record_links l on (l.business_id,l.provider,l.record_id)=(r.business_id,r.provider,r.id)
+      join public.csv_import_jobs j on j.business_id=r.business_id and j.id::text=l.native_key->>'id'
+      where r.business_id=$1 and r.entity='labor_csv' and r.payload#>>'{rows,0,0}'=$2`,args);
+    for(const job of jobs.rows){
+      await db.query("delete from public.external_sync_checkpoints where business_id=$1 and provider='owner_upload' and resource='labor_csv' and stream=$2",[own.businessId,job.source_key]);
+      await db.query("delete from public.external_records where business_id=$1 and provider='owner_upload' and id=$2",[own.businessId,job.record_id]);
+      await db.query("delete from public.csv_import_jobs where business_id=$1 and id=$2",[own.businessId,job.job_id]);
+      if(job.upload_id)await db.query("delete from public.uploads where business_id=$1 and id=$2",[own.businessId,job.upload_id]);
+    }
+    await db.query("delete from public.employees where business_id=$1 and display_name=$2",args);
+    await db.end();
+  }
+});
+
 test("@gmail seeded owner sees Gmail entry, connection status and revocation UX without external Google calls",async({page})=>{
   const own=seededCafe(0);
   let connected=false,disconnects=0;

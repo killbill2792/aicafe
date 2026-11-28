@@ -3,12 +3,14 @@ import Papa from "papaparse";
 import { retainProviderPayload } from "@/lib/externalData/retainPayload";
 
 function permittedColumn(header: string): boolean {
-  return Object.hasOwn(retainProviderPayload({ [header]: "" }) as object, header)
+  const normalized = header.replace(/[^a-z0-9]/gi, "");
+  return !/^(?:employee)?(?:ssn|socialsecurity(?:number|no)?)$/i.test(normalized)
+    && Object.hasOwn(retainProviderPayload({ [header]: "" }) as object, header)
     && retainProviderPayload(header) === header;
 }
 
 /** Keep column positions, duplicate headings, blanks and short rows as supplied. */
-export function retainSalesCsv(csv: string) {
+export function retainImportCsv(csv: string) {
   const [headers = [], ...rows] = Papa.parse<string[]>(csv, { skipEmptyLines: true }).data;
   const allowed = headers.map(permittedColumn);
   const retainCell = (cell: string) => retainProviderPayload(cell) as string;
@@ -19,7 +21,7 @@ export function retainSalesCsv(csv: string) {
 }
 
 /** Use the original heading for credential screening even if Papa renames a duplicate. */
-export function readSalesCsvForImport(csv: string) {
+export function readImportCsv(csv: string) {
   const { data, meta } = Papa.parse<Record<string, string>>(csv, { header: true, skipEmptyLines: true });
   const original = meta.renamedHeaders ?? {};
   const fields = new Set((meta.fields ?? []).filter(field => permittedColumn(Object.hasOwn(original, field) ? original[field] : field)));
