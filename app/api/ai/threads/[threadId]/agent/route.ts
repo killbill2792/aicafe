@@ -145,7 +145,7 @@ export async function POST(request: Request, context: RouteContext) {
                 if(error)throw error;
                 completed=data?.final_report_ref?await getCompletedDurableReply(scope,original,data.final_report_ref):null;
               }else completed=await getExistingSupervisorReply(scope,original);
-              if(completed)sink.emit("done",{reply:completed,replayed:true});
+              if(completed)sink.emit("done",{reply:completed,replayed:true,...(run.engine==="replacement"?{endReason:"complete"}:{})});
             }
           }catch{sink.emit("error",{code:"agent_turn_failed",retryable:true,runId:run.id});}
           finally{sink.close();}
