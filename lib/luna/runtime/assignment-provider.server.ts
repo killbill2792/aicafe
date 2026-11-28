@@ -120,11 +120,13 @@ async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string,
   try { revision = await tool.sourceRevision?.(context); }
   catch { return { output: JSON.stringify({ ok: false, error: "public_web_permission_unavailable" }) }; }
   const result = await tool.execute(context, parsed, signal);
-  if (revision !== undefined && (result as { ok?: unknown } | null)?.ok === true) {
+  const status = result as { ok?: unknown; error?: unknown } | null;
+  const settledProvider = tool.usesProvider && status?.error !== "timeout";
+  if (revision !== undefined && status?.ok === true) {
     if (await tool.sourceRevision?.(context) !== revision) throw new Error("luna_source_access_changed");
-    return { output: JSON.stringify(result), revision };
+    return { output: JSON.stringify(result), revision, settledProvider };
   }
-  return { output: JSON.stringify(result ?? null) };
+  return { output: JSON.stringify(result ?? null), settledProvider };
 }
 
 /** Both interactive and scheduled dispatch can pass their existing owner-turn
@@ -246,9 +248,9 @@ export async function runClaimedAssignmentProvider({
         const tool = previousReads + index < accounting.budget.maxToolCalls
           ? readTools.find(item => item.definition.name === call.name) : undefined;
         const remaining = accounting.budget.maxModelCalls - (result.round ?? 1);
-        const { output, revision } = await readToolOutput(
+        const { output, revision, settledProvider } = await readToolOutput(
           tool?.usesProvider && remaining < 2 ? undefined : tool, call.arguments, context, signal);
-        signal.throwIfAborted();
+        if (!settledProvider) signal.throwIfAborted();
         const receipt = { operation, callId: call.call_id, output };
         if (tool?.usesProvider && remaining >= 2) result.round = (result.round ?? 1) + 1;
         if (revision !== undefined) {
@@ -258,6 +260,7 @@ export async function runClaimedAssignmentProvider({
         receipts.push(receipt);
         await save(checkpoint.sequence, { ...result, toolReceipts: receipts });
         await completeRead(receipt);
+        signal.throwIfAborted();
       }
       result = await provider();
     }
