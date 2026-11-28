@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { verifyBearer } from "@/lib/security/bearer";
-import { processOldestDurableRun, startDurableOwnerRun } from "@/lib/ai/supervisor/runs/worker.server";
+import { configuredBudget, processOldestDurableRun, startDurableOwnerRun } from "@/lib/ai/supervisor/runs/worker.server";
+import { ownerModelCallsLimit } from "@/lib/ai/conversations/usage.server";
+import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { dispatchDueObjectivesAcrossCafes } from "@/lib/ai/supervisor/routines/dispatch.server";
+import { runNextLunaAssignment } from "@/lib/ai/supervisor/runs/luna-entry.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,8 +20,21 @@ const enabled = () => process.env.SUPERVISOR_RUN_WORKER_ENABLED !== "false" &&
 export async function GET(request: Request) {
   if (!authorized(request)) return respond(401, { error: "unauthorized" });
   if (!enabled()) return respond(503, { disabled: true });
-  try { return respond(200, await processOldestDurableRun()); }
-  catch { return respond(503, { error: "supervisor_worker_unavailable" }); }
+  const now = new Date();
+  const [legacy, replacement, scheduled] = await Promise.allSettled([
+    processOldestDurableRun(),
+    (async () => runNextLunaAssignment({
+      budget: configuredBudget(true), ownerDailyCap: ownerModelCallsLimit(), signal: AbortSignal.timeout(55_000),
+    }))(),
+    (async () => {
+      if (process.env.SUPERVISOR_U4_ENABLED !== "true") return null;
+      return dispatchDueObjectivesAcrossCafes(createAdminSupabaseClient(), now, undefined, now.getTime() + 35_000, "replacement");
+    })(),
+  ]);
+  if (legacy.status === "rejected" || replacement.status === "rejected" || scheduled.status === "rejected")
+    return respond(503, { error: "supervisor_worker_unavailable" });
+  return respond(200, { ...legacy.value, ...(replacement.value.processed ? { replacement: replacement.value } : {}),
+    ...(scheduled.value?.admitted || scheduled.value?.failed ? { scheduled: scheduled.value } : {}) });
 }
 
 /** Trusted server enqueue of an already persisted owner turn. The worker

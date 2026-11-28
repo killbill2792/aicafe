@@ -492,6 +492,31 @@ describe("U4 fast lane: independent cafés, no paid activation by default",()=>{
       expect(rpc).not.toHaveBeenCalled();
     }finally{vi.unstubAllEnvs();}
   });
+  it("passes the workforce engine to both admission and the lease fence",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    const rpc=vi.fn(async()=>({data:candidates(1),error:null}));
+    mocks.claim.mockReset().mockResolvedValue({runId:"run",leaseToken:"lease",revision:1,engine:"replacement"});
+    mocks.objective.mockReset().mockResolvedValue(undefined);
+    try{
+      const result=await dispatchDueObjectivesAcrossCafes({rpc} as never,new Date(),undefined,undefined,"replacement");
+      expect(result.completed).toBe(1);
+      expect(rpc).toHaveBeenCalledExactlyOnceWith("u4_due_objective_admission",expect.objectContaining({p_engine:"replacement"}));
+      expect(mocks.claim).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({engine:"replacement"}));
+      expect(mocks.objective).toHaveBeenCalledWith(expect.anything(),expect.objectContaining({lease:expect.objectContaining({engine:"replacement"})}));
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("uses the original admission signature for legacy schedules during migration",async()=>{
+    vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
+    const rpc=vi.fn(async()=>({data:null,error:{code:"PGRST202"}}))
+      .mockResolvedValueOnce({data:null,error:{code:"PGRST202"}}).mockResolvedValueOnce({data:[] as never,error:null as never});
+    try{
+      await dispatchDueObjectivesAcrossCafes({rpc} as never,new Date(),undefined,undefined,"legacy");
+      expect(rpc.mock.calls).toHaveLength(2);
+      expect(rpc).toHaveBeenNthCalledWith(2,"u4_due_objective_admission",{
+        p_now:expect.any(String),p_limit:6,p_watch_enabled:expect.any(Boolean),
+      });
+    }finally{vi.unstubAllEnvs();}
+  });
   it.each([1,10,100,500])("caps %i simultaneously due cafés to six independent slots",async count=>{
     vi.stubEnv("SUPERVISOR_U4_ENABLED","true");
     vi.stubEnv("SUPERVISOR_U4_WATCH_ENABLED","false");

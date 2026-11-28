@@ -34,7 +34,14 @@ const savedResponse = z.object({
 });
 
 export type SavedProviderResponse = z.infer<typeof savedResponse>;
+export const parseSavedProviderResponse = (value: unknown) => savedResponse.parse(value);
 export class LunaAssignmentYielded extends Error {}
+
+export function assertLunaPaidAcceptanceAllowed() {
+  if (process.env.AI_CAFE_LIVE_ACCEPTANCE === "OWNER_APPROVED_LOCAL_ONLY" || process.env.AICAFE_TASK14B_BUDGET_LEDGER) {
+    throw new Error("luna_assignment_requires_separate_paid_acceptance");
+  }
+}
 
 export type ProviderCheckpoint = {
   phase: "ready" | "provider_pending" | "read_pending" | "effect_pending";
@@ -89,9 +96,10 @@ type ProviderContext = AssignmentLease & {
 };
 type AssignmentAccounting = Pick<DurableProviderScope, "db" | "budget" | "ownerDailyCap" | "authorize">;
 type Rpc = (name: string, params: Record<string, unknown>) => Promise<unknown>;
+type AssignmentReadScope = Pick<ProviderContext, "businessId" | "ownerUserId"> & Partial<Pick<ProviderContext, "ownerMessageId" | "originalInput">>;
 export type AssignmentReadTool = {
   definition: Readonly<Record<string, unknown>> & { name: string };
-  execute: (context: ProviderContext, args: Record<string, unknown>, signal: AbortSignal) => unknown;
+  execute: (context: AssignmentReadScope, args: Record<string, unknown>, signal: AbortSignal) => unknown;
 };
 
 function requestedCalls(state: SavedProviderResponse) {
@@ -128,7 +136,7 @@ function fitReadReceipt(state: SavedProviderResponse, previous: readonly z.infer
   return { ...receipt, output: overCapacity };
 }
 
-async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string, context: ProviderContext, signal: AbortSignal) {
+async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string, context: AssignmentReadScope, signal: AbortSignal) {
   if (!tool) return JSON.stringify({ ok: false, error: "tool_unavailable" });
   const args = z.record(z.string(), z.unknown());
   let parsed: z.infer<typeof args>;
@@ -203,18 +211,10 @@ export async function runClaimedAssignmentProvider({
       if (!readTools) return buildRequest(context, steering);
       const base = await buildRequest(context, []);
       const fresh = steering.map(item => ({ type: "message", role: "user", content: item.content }));
-      const transcript = [...(previous ? toolTranscript(previous) : []), ...fresh];
-      const usedTools = transcript.filter(item => item.type === "function_call_output").length;
-      const round = (previous?.round ?? (previous ? 1 : 0)) + 1;
-      const canUseTools = usedTools < accounting.budget.maxToolCalls && round < accounting.budget.maxModelCalls;
-      const tools = canUseTools ? readTools.map(tool => tool.definition) : [];
-      return { ...base, input: [...base.input, ...transcript], tools, tool_choice: tools.length ? "auto" : "none",
-        continuation: { transcript, round } };
+      return assignmentReadRequest(base, previous, fresh, readTools, accounting.budget);
     },
     reserve: async (payload) => {
-      if (process.env.AI_CAFE_LIVE_ACCEPTANCE === "OWNER_APPROVED_LOCAL_ONLY" || process.env.AICAFE_TASK14B_BUDGET_LEDGER) {
-        throw new Error("luna_assignment_requires_separate_paid_acceptance");
-      }
+      assertLunaPaidAcceptanceAllowed();
       const outputCap = await loadModelExecutionCap(accounting.db, String(payload.model));
       try {
         const reservation = await withDurableProviderTurn({ ...accounting, ...lease, jobId: context.jobId, ownerMessageId: context.ownerMessageId },
@@ -241,36 +241,83 @@ export async function runClaimedAssignmentProvider({
   if (resumingRead && !readTools) throw new Error("luna_provider_requires_recovered_tool_boundary");
   let result = resumingRead ? savedResponse.parse(await load(entry.sequence)) : await provider();
   if (readTools) {
-    for (let calls = requestedCalls(result); calls.length; calls = requestedCalls(result)) {
-      if ((result.round ?? 1) >= accounting.budget.maxModelCalls) throw new Error("luna_assignment_provider_budget_exhausted");
-      const receipts = [...result.toolReceipts ?? []];
-      const completeRead = async (receipt: z.infer<typeof toolReceipt>) => {
+    result = await runAssignmentReadLoop({
+      result, context, readTools, budget: accounting.budget, signal, provider, save,
+      checkpoint: () => checkpoint, authorize: accounting.authorize,
+      startRead: (sequence, operation, tool) => transition(sequence, operation, "begin_read", tool, null),
+      completeRead: async receipt => {
         const digest = createHash("sha256").update(receipt.output).digest("hex");
         const ref = `read:${receipt.operation.replaceAll("-", "")}_${digest}`;
         await transition(checkpoint.sequence, receipt.operation, "complete", null, ref);
-      };
-      const last = receipts.at(-1);
-      if (last && checkpoint.phase === "read_pending" && checkpoint.operation === last.operation) await completeRead(last);
-      const previousReads = result.transcript?.filter(item => item.type === "function_call_output").length ?? 0;
-      for (let index = receipts.length; index < calls.length; index++) {
-        const call = calls[index];
-        signal.throwIfAborted();
-        const operation = checkpoint.operation ?? randomUUID();
-        if (checkpoint.phase === "ready") await transition(checkpoint.sequence, operation, "begin_read", call.name, null);
-        await accounting.authorize();
-        const tool = previousReads + index < accounting.budget.maxToolCalls
-          ? readTools.find(item => item.definition.name === call.name) : undefined;
-        const output = await readToolOutput(tool, call.arguments, context, signal);
-        signal.throwIfAborted();
-        const receipt = fitReadReceipt(result, receipts, { operation, callId: call.call_id, output }, calls.slice(index + 1));
-        receipts.push(receipt);
-        await save(checkpoint.sequence, { ...result, toolReceipts: receipts });
-        await completeRead(receipt);
-      }
-      result = await provider();
-    }
+      },
+    });
   }
   return { jobId: context.jobId, ownerMessageId: context.ownerMessageId, sequence: checkpoint.sequence, result };
+}
+
+type ReadLimits = { maxModelCalls: number; maxToolCalls: number };
+
+export function assignmentReadRequest(base: ProviderRequest, previous: SavedProviderResponse | null,
+  fresh: SavedProviderResponse["transcript"], readTools: readonly AssignmentReadTool[], limits: ReadLimits) {
+  const transcript = [...(previous ? toolTranscript(previous) : []), ...fresh ?? []];
+  const usedTools = transcript.filter(item => item.type === "function_call_output").length;
+  const round = (previous?.round ?? (previous ? 1 : 0)) + 1;
+  const canUseTools = usedTools < limits.maxToolCalls && round < limits.maxModelCalls;
+  const tools = canUseTools ? readTools.map(tool => tool.definition) : [];
+  return { ...base, input: [...base.input, ...transcript], tools, tool_choice: tools.length ? "auto" as const : "none" as const,
+    continuation: { transcript, round } };
+}
+
+export async function runAssignmentReadLoop({ result, context, readTools, budget, signal, provider, save,
+  checkpoint, authorize, startRead, completeRead }: {
+  result: SavedProviderResponse; context: AssignmentReadScope;
+  readTools: readonly AssignmentReadTool[]; budget: ReadLimits; signal: AbortSignal;
+  provider: () => Promise<SavedProviderResponse>; save: AssignmentProviderPort["save"];
+  checkpoint: () => ProviderCheckpoint; authorize: () => Promise<void>;
+  startRead: (sequence: number, operation: string, tool: string) => Promise<unknown>;
+  completeRead: (receipt: z.infer<typeof toolReceipt>) => Promise<void>;
+}) {
+  for (let calls = requestedCalls(result); calls.length; calls = requestedCalls(result)) {
+    if ((result.round ?? 1) >= budget.maxModelCalls) throw new Error("luna_assignment_provider_budget_exhausted");
+    const receipts = [...result.toolReceipts ?? []];
+    const last = receipts.at(-1);
+    if (last && checkpoint().phase === "read_pending" && checkpoint().operation === last.operation) await completeRead(last);
+    const previousReads = result.transcript?.filter(item => item.type === "function_call_output").length ?? 0;
+    for (let index = receipts.length; index < calls.length; index++) {
+      const call = calls[index];
+      signal.throwIfAborted();
+      const operation = checkpoint().operation ?? randomUUID();
+      if (checkpoint().phase === "ready") await startRead(checkpoint().sequence, operation, call.name);
+      await authorize();
+      const tool = previousReads + index < budget.maxToolCalls ? readTools.find(item => item.definition.name === call.name) : undefined;
+      const output = await readToolOutput(tool, call.arguments, context, signal);
+      signal.throwIfAborted();
+      const receipt = fitReadReceipt(result, receipts, { operation, callId: call.call_id, output }, calls.slice(index + 1));
+      receipts.push(receipt);
+      await save(checkpoint().sequence, { ...result, toolReceipts: receipts });
+      await completeRead(receipt);
+    }
+    result = await provider();
+  }
+  return result;
+}
+
+export function readAssignmentEvidence(result: SavedProviderResponse, afterOwnerInput = false) {
+  const transcript = result.transcript ?? [];
+  const start = afterOwnerInput ? transcript.findLastIndex(item => item.role === "user") + 1 : 0;
+  const calls = new Map<string, string>();
+  return transcript.slice(start).flatMap(item => {
+    if (item.type === "function_call") {
+      const call = toolCall.parse(item);
+      calls.set(call.call_id, call.name);
+      return [];
+    }
+    if (item.type !== "function_call_output" || typeof item.call_id !== "string" || typeof item.output !== "string") return [];
+    const name = calls.get(item.call_id);
+    calls.delete(item.call_id);
+    const data = z.record(z.string(), z.unknown()).safeParse(JSON.parse(item.output));
+    return name && data.success ? [{ name, data: data.data }] : [];
+  });
 }
 
 /** Advance a leased assignment by one provider operation. The database port
@@ -281,6 +328,7 @@ export async function advanceAssignmentProvider(
   signal: AbortSignal,
   request?: typeof fetch,
   supersedeOperation?: string,
+  stream?: (payload: Record<string, unknown>, signal: AbortSignal) => AsyncIterable<{ type: string; response?: unknown }>,
 ): Promise<SavedProviderResponse> {
   if (checkpoint.phase !== "ready" && checkpoint.phase !== "provider_pending") {
     throw new Error("luna_provider_requires_recovered_tool_boundary");
@@ -309,7 +357,8 @@ export async function advanceAssignmentProvider(
   const reservation = await port.reserve(payload);
   signal.throwIfAborted();
   reservation.launched();
-  for await (const event of streamResponses(input.model, serialized, signal, request)) {
+  const events = stream ? stream(payload, signal) : streamResponses(input.model, serialized, signal, request);
+  for await (const event of events) {
     if (event.type === "response.failed" || event.type === "response.incomplete" || event.type === "error") {
       throw new Error("luna_provider_response_unsettled");
     }

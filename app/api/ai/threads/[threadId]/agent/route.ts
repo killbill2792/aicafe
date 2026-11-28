@@ -3,7 +3,7 @@ import {addOwnerMessageInput,threadIdInput} from "@/lib/ai/conversations/contrac
 import {conversationError,parseInput,readBoundedJson,requireSameOrigin} from "@/lib/ai/conversations/http.server";
 import {registerAuthorizedSupervisorTurn} from "@/lib/ai/conversations/authorizedTurn.server";
 import {isSupervisorChatConfigured,getSupervisorChatReadiness} from "@/lib/ai/conversations/enabled.server";
-import {assertOwnerAgentTurnAvailable} from "@/lib/ai/conversations/usage.server";
+import {assertOwnerAgentTurnAvailable,ownerModelCallsLimit} from "@/lib/ai/conversations/usage.server";
 import {assertCafeAiAccess} from "@/lib/access/access.server";
 import {runOneTurn,errorCode} from "@/lib/ai/conversations/agentRunner.server";
 import {authorizedExternalConversation,storedOwnerMessageChannel} from "@/lib/ai/conversations/authorizedTurn.server";
@@ -123,16 +123,29 @@ export async function POST(request: Request, context: RouteContext) {
         const work=(async()=>{
           try{
             let sentReply=false;
-            const state=await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);},executionDeadline);
+            const state=run.engine==="replacement" ?
+              await (await import("@/lib/ai/supervisor/runs/luna-entry.server")).runScopedLunaAssignment(
+                {...scope,threadId:id},run.id,{
+                  budget:worker.configuredBudget(true),ownerDailyCap:ownerModelCallsLimit(),
+                  signal:AbortSignal.timeout(Math.max(1,executionDeadline-Date.now())),
+                }) :
+              await worker.processDurableRun(run.id,(type,data)=>{if(type==="done")sentReply=true;sink.emit(type,data);},executionDeadline);
             if(state==="busy"&&!sentReply)sink.emit("queued",{runId:run.id});
             else if(state==="blocked")sink.emit("error",{code:"agent_turn_failed",retryable:false,runId:run.id});
             else if(!sentReply) {
               // An earlier worker may have completed the reply between
               // admission and claim. Replay only the canonical saved answer.
-              const {getExistingSupervisorReply}=await import("@/lib/ai/conversations/replyWriter.server");
+              const {getExistingSupervisorReply,getCompletedDurableReply}=await import("@/lib/ai/conversations/replyWriter.server");
               const original=run.requestKey===owner.id?owner:await jobs.readOwnerMessage(scope,id,run.requestKey);
-              const completed=await getExistingSupervisorReply(scope,original);
-              if(completed)sink.emit("done",{reply:completed,replayed:true});
+              let completed: Awaited<ReturnType<typeof getCompletedDurableReply>>;
+              if(run.engine==="replacement"){
+                const {data,error}=await createAdminSupabaseClient().from("supervisor_runs")
+                  .select("final_report_ref").eq("id",run.id).eq("business_id",scope.businessId)
+                  .eq("thread_id",id).eq("owner_user_id",scope.ownerUserId).eq("status","completed").maybeSingle();
+                if(error)throw error;
+                completed=data?.final_report_ref?await getCompletedDurableReply(scope,original,data.final_report_ref):null;
+              }else completed=await getExistingSupervisorReply(scope,original);
+              if(completed)sink.emit("done",{reply:completed,replayed:true,...(run.engine==="replacement"?{endReason:"complete"}:{})});
             }
           }catch{sink.emit("error",{code:"agent_turn_failed",retryable:true,runId:run.id});}
           finally{sink.close();}

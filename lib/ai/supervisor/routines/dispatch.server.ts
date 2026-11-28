@@ -477,15 +477,19 @@ export async function dispatchRoutinesForBusiness(db:SupabaseClient,businessId:s
  * Independent leased cafés execute concurrently; no cross-café await chain.
  * The server-only flag NEVER activates unsolicited Watch by itself. */
 export async function dispatchDueObjectivesAcrossCafes(
-  db:SupabaseClient,now:Date,provider?:AgentProvider,executionDeadline?:number,
+  db:SupabaseClient,now:Date,provider?:AgentProvider,executionDeadline?:number,engine?:import("./repository.server").RoutineEngine,
 ):Promise<{admitted:number;claimed:number;completed:number;failed:number;deferred:number}>{
   const result={admitted:0,claimed:0,completed:0,failed:0,deferred:0};
   const batchStartedAt=Date.now();
   if(process.env.SUPERVISOR_U4_ENABLED!=="true")return result;
   const watchEnabled=process.env.SUPERVISOR_U4_WATCH_ENABLED==="true";
-  const selected=await db.rpc("u4_due_objective_admission",{
-    p_now:now.toISOString(),p_limit:6,p_watch_enabled:watchEnabled,
-  });
+  const admission={p_now:now.toISOString(),p_limit:6,p_watch_enabled:watchEnabled};
+  let selected=await db.rpc("u4_due_objective_admission",{...admission,...(engine?{p_engine:engine}:{})});
+  const oldSchema=engine&&["PGRST202","42883"].includes(selected.error?.code??"");
+  if(oldSchema){
+    if(engine==="replacement")return result;
+    selected=await db.rpc("u4_due_objective_admission",admission);
+  }
   if(selected.error)throw Error("u4_due_admission_unavailable");
   if(!Array.isArray(selected.data))throw Error("u4_due_admission_invalid");
   type Candidate={routine:RoutineRow;localDate:string;scheduledForUtc:string|null};
@@ -512,7 +516,7 @@ export async function dispatchDueObjectivesAcrossCafes(
     try{
       lease=await claimRoutineOccurrence(db,{
         businessId:routine.businessId,routineId:routine.id,
-        revision:routine.revision,localDate:row.localDate,dueAt:due,now:at,
+        revision:routine.revision,localDate:row.localDate,dueAt:due,now:at,engine:oldSchema?undefined:engine,
       });
       if(!lease)return "deferred" as const;
       await executeClaimedObjective(db,{
