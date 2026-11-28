@@ -136,14 +136,13 @@ export async function describeDatabase(scope:ResearchDatabaseScope,tables:readon
   const names=tables.filter(t=>IDENT.test(t));
   const ignored=tables.filter(t=>!IDENT.test(t));
   const list="array["+names.map(t=>"'"+t+"'").join(",")+"]::text[]";
+  const readable="with readable as (select c.oid, c.relname "+RELATIONS+") ";
   const [columns,links]=await Promise.all([
-    callDatabase(scope,"select c.relname as table, a.attname as column, format_type(a.atttypid,a.atttypmod) as type, "+
+    callDatabase(scope,readable+"select c.relname as table, a.attname as column, format_type(a.atttypid,a.atttypmod) as type, "+
       "not a.attnotnull as nullable, col_description(c.oid,a.attnum) as description "+
-      "from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace "+
-      "where n.nspname='public' and c.relname = any("+list+") and has_table_privilege(c.oid,'select') and "+OPERATIONAL+" "+
-      "and a.attnum>0 and not a.attisdropped order by c.relname, a.attnum"),
-    callDatabase(scope,"with readable as (select c.oid, c.relname "+RELATIONS+") "+
-      "select case k.contype when 'f' then 'foreign_key' else 'allowed_values' end as kind, "+
+      "from pg_attribute a join readable c on c.oid=a.attrelid "+
+      "where c.relname = any("+list+") and a.attnum>0 and not a.attisdropped order by c.relname, a.attnum"),
+    callDatabase(scope,readable+"select case k.contype when 'f' then 'foreign_key' else 'allowed_values' end as kind, "+
       "src.relname as table, dst.relname as references, pg_get_constraintdef(k.oid) as definition "+
       "from pg_constraint k join readable src on src.oid=k.conrelid left join readable dst on dst.oid=k.confrelid "+
       "where (k.contype='c' and src.relname = any("+list+")) or "+
