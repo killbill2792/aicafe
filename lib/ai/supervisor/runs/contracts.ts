@@ -18,11 +18,13 @@ const runRowSchema = z.object({
   thread_id: z.uuid(), request_key: z.uuid(), plan_hash: z.string().length(64),
   status: z.enum(["pending", "running", "blocked", "completed"]),
   final_report_ref: z.string().nullable(),
+  engine: z.enum(["legacy", "replacement"]).optional(),
 });
 export type DurableRun = {
   id: string; businessId: string; ownerUserId: string; threadId: string;
   requestKey: string; status: "pending" | "running" | "blocked" | "completed";
   finalReportRef: string | null;
+  engine?: "legacy" | "replacement";
 };
 export function decodeRun(row: unknown): DurableRun {
   const r = runRowSchema.parse(row);
@@ -30,6 +32,7 @@ export function decodeRun(row: unknown): DurableRun {
     id: r.id, businessId: r.business_id, ownerUserId: r.owner_user_id,
     threadId: r.thread_id, requestKey: r.request_key,
     status: r.status, finalReportRef: r.final_report_ref,
+    ...(r.engine ? { engine: r.engine } : {}),
   };
 }
 

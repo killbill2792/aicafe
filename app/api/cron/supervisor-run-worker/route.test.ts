@@ -1,12 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const work = vi.hoisted(() => ({
-  process: vi.fn(), start: vi.fn(),
+  process: vi.fn(), start: vi.fn(), replacement: vi.fn(), budget: vi.fn(),
 }));
 vi.mock("@/lib/ai/supervisor/runs/worker.server", () => ({
   processOldestDurableRun: work.process,
   startDurableOwnerRun: work.start,
+  configuredBudget: work.budget,
 }));
+vi.mock("@/lib/ai/supervisor/runs/luna-entry.server", () => ({ runNextLunaAssignment: work.replacement }));
 import { GET, POST } from "./route";
 
 const url = "https://example.test/api/cron/supervisor-run-worker";
@@ -20,6 +22,7 @@ const ownerMessageId = "00000000-0000-4000-8000-000000000111";
 beforeEach(() => {
   work.process.mockReset().mockResolvedValue({ processed: 1, state: "completed" });
   work.start.mockReset().mockResolvedValue({ id: "00000000-0000-4000-8000-000000000222", status: "pending" });
+  work.replacement.mockReset().mockResolvedValue({ processed: 0, state: null });
   process.env.CRON_SECRET = "private-test-cron-secret";
   delete process.env.SUPERVISOR_RUN_WORKER_ENABLED;
 });
@@ -35,6 +38,7 @@ describe("durable Supervisor worker cron trust boundary", () => {
     expect((await GET(request("GET"))).status).toBe(401);
     expect((await POST(request("POST", "Bearer invalid", { ownerMessageId }))).status).toBe(401);
     expect(work.process).not.toHaveBeenCalled();
+    expect(work.replacement).not.toHaveBeenCalled();
     expect(work.start).not.toHaveBeenCalled();
   });
   it("is off by default even for a valid cron credential", async () => {
@@ -42,6 +46,7 @@ describe("durable Supervisor worker cron trust boundary", () => {
     expect((await GET(request("GET", token))).status).toBe(503);
     expect((await POST(request("POST", token, { ownerMessageId }))).status).toBe(503);
     expect(work.process).not.toHaveBeenCalled();
+    expect(work.replacement).not.toHaveBeenCalled();
     expect(work.start).not.toHaveBeenCalled();
   });
   it("processes bounded work when explicitly enabled", async () => {
@@ -61,6 +66,15 @@ describe("durable Supervisor worker cron trust boundary", () => {
     expect(response.status).toBe(202);
     expect(work.start).toHaveBeenCalledExactlyOnceWith(ownerMessageId);
     expect(await response.json()).toMatchObject({ status: "pending" });
+  });
+  it("dispatches replacement work on the same authenticated minute tick", async () => {
+    process.env.SUPERVISOR_RUN_WORKER_ENABLED = "true";
+    work.replacement.mockResolvedValueOnce({ processed: 1, state: "completed" });
+    const response = await GET(request("GET", "Bearer private-test-cron-secret"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ processed: 1, state: "completed", replacement: { processed: 1, state: "completed" } });
+    expect(work.process).toHaveBeenCalledOnce();
+    expect(work.replacement).toHaveBeenCalledOnce();
   });
   it("does not disclose internal failures or run any work on invalid config", async () => {
     process.env.SUPERVISOR_RUN_WORKER_ENABLED = "true";

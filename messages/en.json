@@ -5,6 +5,8 @@
         "name": "Display name",
         "jobTitle": "Job title",
         "edit": "Edit profile",
+        "openConversation": "Open conversation",
+        "openHistory": "Open conversation history",
         "defaults": "Leave a field blank to use its default.",
         "save": "Save profile",
         "saving": "Saving…",

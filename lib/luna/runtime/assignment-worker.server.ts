@@ -6,7 +6,7 @@ import {
   describeDatabase, describeResearchDatabaseToolDefinition, runSql, runSqlToolDefinition,
 } from "@/lib/ai/research/tools.server";
 import { durableProviderRequestByteLimit } from "@/lib/ai/supervisor/runs/provider-reservation.server";
-import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
+import { decodeClaim, runScopeSchema, type RunScope, type StepClaim } from "@/lib/ai/supervisor/runs/contracts";
 import { workforceRoster } from "../workforce/roster";
 import { LunaAssignmentYielded, runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
 
@@ -41,15 +41,17 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
 /** Process one admitted replacement assignment using the existing claim,
  * provider checkpoint and atomic publication RPCs. */
 export async function processLunaAssignment({
-  scope: claimedScope, runId: id, ...provider
-}: Omit<ProviderArgs, "lease" | "supersedeOperation"> & { scope: RunScope; runId: string }): Promise<"busy" | "blocked" | "completed"> {
+  scope: claimedScope, runId: id, dispatch, ...provider
+}: Omit<ProviderArgs, "lease" | "supersedeOperation"> & {
+  scope: RunScope; runId: string; dispatch?: { workerId: string; step: StepClaim };
+}): Promise<"busy" | "blocked" | "completed"> {
   const scope = runScopeSchema.parse(claimedScope);
   const runId = z.uuid().parse(id);
   const identity = {
     p_business_id: scope.businessId, p_owner_user_id: scope.ownerUserId, p_thread_id: scope.threadId,
     p_run_id: runId,
   };
-  const workerId = randomUUID();
+  const workerId = dispatch?.workerId ?? randomUUID();
   const signal = AbortSignal.any([provider.signal, AbortSignal.timeout(55_000)]);
   const claim = async () => {
     signal.throwIfAborted();
@@ -57,7 +59,7 @@ export async function processLunaAssignment({
       ...identity, p_worker_id: workerId, p_lease_seconds: 60,
     }));
   };
-  let step = await claim();
+  let step = dispatch?.step ?? await claim();
   if (step.kind === "claimed" && step.key === "authorize_owner") {
     await provider.accounting.authorize();
     await provider.rpc("supervisor_run_complete_step", {
