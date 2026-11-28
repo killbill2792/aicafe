@@ -42,14 +42,16 @@ try{
       [turn.done.reply.id,cafe.businessId,id])).rows;
     const [row]=(await db.query("select execution_metrics from public.ai_usage_events where id=$1",[usage.id])).rows;
     if(!reply||!Array.isArray(row?.execution_metrics))fail("saved_reply_or_provider_usage_missing");
-    const hosted=row.execution_metrics.flatMap(receipt=>receipt.requests??[]).filter(receipt=>receipt.kind==="hosted_web");
+    const {rows:hosted}=await db.query(`select model,status,input_tokens::int as "inputTokens",output_tokens::int as "outputTokens"
+      from public.supervisor_system_usage_events where business_id=$1 and thread_id=$2 and owner_message_id=$3
+        and source_type='durable_run' and execution_metrics->>'kind'='hosted_web'`,[cafe.businessId,id,message.id]);
     const text=reply.structured_content.filter(block=>block.type==="text").map(block=>block.text).join("\n");
     const urls=[...text.matchAll(/\[[^\]]+\]\(<?(https?:\/\/[^)>\s]+)>?\)/gu)].map(match=>new URL(match[1]));
     return {text,hosted,urls};
   }
   for(const test of cases){
     const {text,hosted,urls}=await observe(test);
-    if(!hosted.some(r=>r.model==="gpt-6-luna"&&r.outcome==="completed"&&r.inputTokens>0&&r.outputTokens>0)
+    if(!hosted.some(r=>r.model==="gpt-6-luna"&&r.status==="completed"&&r.inputTokens>0&&r.outputTokens>0)
       ||!test.matches(text,new Set(urls.map(url=>url.hostname))))fail(test.name+"_evidence_missing");
     await owner.page.goto("/en/?thread="+id);
     await owner.page.locator("a[href="+JSON.stringify(urls[0].href)+"]").first().waitFor({timeout:15000});

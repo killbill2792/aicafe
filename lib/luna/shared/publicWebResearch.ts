@@ -15,7 +15,8 @@ export const publicWebResearchTool = {
   type: "function", name: "search_web", strict: true,
   description: "Investigate public information beyond the café. Submit the full public research objective " +
     "so the web researcher can search, follow leads and compare sources. Use broad public location when relevant. " +
-    "Exclude confidential café details, including private records, messages, staff and customer identities, and credentials. " +
+    "The objective is sent to a public web research service. Leave out confidential details from the latest message, conversation history, " +
+    "and tool results. Use general public concepts in place of private records, personal contacts and credentials. " +
     "Use the returned source links as clickable citations for claims and report any important gaps.",
   parameters: { type: "object", additionalProperties: false, required: ["query"], properties: {
     query: { type: "string", description: "The standalone public research objective." },
@@ -35,6 +36,13 @@ export function publicResearchIncludesPrivateValue(query: string, privateValues:
 }
 
 const normalize = (text: string) => text.normalize("NFKC").replace(/[’‘]/gu, "'").toLowerCase().replace(/\s+/gu, " ").trim();
+const privateDeclaration = new RegExp(
+  "(?:\\b(?:confidential|private|internal|non[- ]public)(?: [\\p{L}]+){0,2}|"+
+  "\\b(?:our|my) (?:employee|staff|customer|client|manager|owner|address|cost|margin|revenue|sales|wages|payroll)|"+
+  "\\b(?:password|access code|account number|api key))"+
+  /(?:'s)?(?:\s+(?:name|detail|id|code|reference|email|address|number|value))?\s*(?:[:=]|\bis\b|\bnamed\b|\bcalled\b)\s*["“']?([^\n;!?"”]+?)(?=\s+(?:and|but|please|who|whose|for)\b|[.,\n;!?"”]|$)/u.source,
+  "giu",
+);
 
 /** Collect sensitive spans in mixed conversation text without withholding its public objective. */
 export function rememberPrivateWebConversation(values: Set<string>, ...messages: (string | null | undefined)[]) {
@@ -48,11 +56,11 @@ export function rememberPrivateWebConversation(values: Set<string>, ...messages:
     for (const match of text.matchAll(/[\w.+-]+@[\w.-]+\.[\p{L}]{2,}|\b\d+[\p{L}]?\s+(?:[\p{L}\d.'-]+\s+){1,6}(?:street|st\b|road|rd\b|avenue|ave\b|lane|ln\b|drive|dr\b|boulevard|blvd\b|way|court|ct\b)\b/giu)) {
       values.add(normalize(match[0]));
     }
-    for (const match of text.matchAll(/\b(?:confidential|private|internal|non[- ]public|employee|staff|customer|client|manager|owner|our (?:address|cost|margin|revenue|sales|wages|payroll)|password|access code|account number|api key)(?:'s)?(?:\s+(?:name|detail|id|code|reference|email|address|number|value))?\s*(?:[:=]|\bis\b|\bnamed\b|\bcalled\b)\s*["“']?([^\n;!?"”]+?)(?=\s+(?:and|but|please|who|whose|for)\b|[.,\n;!?"”]|$)/giu)) {
+    for (const match of text.matchAll(privateDeclaration)) {
       const value = normalize(match[1]).replace(/['"]+$/u, "").trim();
       if (value.length >= 3) values.add(value);
     }
-    for (const match of text.matchAll(/\b(?:[Ee]mployee|[Cc]ustomer|[Mm]anager|[Cc]lient|[Bb]arista|[Cc]oworker)\s+(\p{Lu}[\p{L}'-]*(?:[ \t]+\p{Lu}[\p{L}'-]*)*)/gu)) {
+    for (const match of text.matchAll(/\b(?:[Oo]ur|[Mm]y)\s+(?:employee|customer|manager|client|barista|coworker)\s+(\p{Lu}[\p{L}'-]*(?:[ \t]+\p{Lu}[\p{L}'-]*)*)/gu)) {
       values.add(normalize(match[1]));
     }
   }

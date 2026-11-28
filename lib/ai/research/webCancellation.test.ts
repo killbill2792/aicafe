@@ -1,6 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {createWebSearch} from "@/lib/ai/agent/webSearch.server";
 import type { PublicWebCheckpoint } from "@/lib/luna/shared/publicWebResearch.server";
+import { publicResearchIncludesPrivateValue, rememberPrivateWebConversation } from "@/lib/luna/shared/publicWebResearch";
 import {executeResearchTool} from "./tools.server";
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/connectors/publicWeb.server",()=>({
@@ -53,5 +54,14 @@ describe("research web cancellation",()=>{
     expect(await search("Compare museum ticket policies.",{...budget,continuation:{...continuation,saved}}))
       .toEqual({available:false,reason:"unverified"});
     expect(reserveModelCall).toHaveBeenCalledTimes(1);
+  });
+  it("keeps named public research usable alongside privately declared details",()=>{
+    const publicObjective="Was the owner of the original Chrysler Building named William Reynolds?";
+    const privateText="My client is Clara Valdez. Our internal reference is Hearth-47.";
+    const protectedValues=new Set<string>();
+    rememberPrivateWebConversation(protectedValues,publicObjective,privateText);
+    expect(publicResearchIncludesPrivateValue(publicObjective,protectedValues)).toBe(false);
+    expect(publicResearchIncludesPrivateValue("Look up Clara Valdez",protectedValues)).toBe(true);
+    expect(publicResearchIncludesPrivateValue("Find Hearth-47",protectedValues)).toBe(true);
   });
 });
