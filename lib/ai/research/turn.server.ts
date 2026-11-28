@@ -8,7 +8,9 @@ import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer,ResearchContinuationPort} from "@/lib/ai/supervisor/runs/contracts";
 import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
-import type {WebSearchBudget} from "@/lib/luna/shared/publicWebResearch.server";
+import {publicWebCheckpointSchema,type PublicWebCheckpoint,type WebSearchBudget} from "@/lib/luna/shared/publicWebResearch.server";
+import {rememberPrivateWebConversation} from "@/lib/luna/shared/publicWebResearch";
+import {completeResumedHostedWeb,hasDurableProviderTurn} from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import {createHash} from "node:crypto";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";
@@ -56,7 +58,7 @@ type ResearchSnapshot={
   text:string;presentations:AgentToolResult[];invocations:{name:string;result:AgentToolResult}[];
   evidence:string[];queries:[string,PresentationEvidence][];privateValues:string[];nextResultRef:number;
   diagnostics:{requestedSections:number;decodedSections:number;decodedPatches:number;rejectedSections:number;acceptedViews:number;rolledBackViews:number};
-  sourceVersions:Record<string,string>;finished:boolean;followUpIds?:string[];
+  sourceVersions:Record<string,string>;finished:boolean;followUpIds?:string[];webCheckpoint?:PublicWebCheckpoint;
 };
 function checkedSnapshot(value:unknown):ResearchSnapshot{
   const v=value as ResearchSnapshot;
@@ -68,6 +70,8 @@ function checkedSnapshot(value:unknown):ResearchSnapshot{
     throw Error("checkpoint_research_invalid");
   if(v.pending.some(c=>c.type!=="function_call"||typeof c.name!=="string"||typeof c.call_id!=="string"||typeof c.arguments!=="string"))
     throw Error("checkpoint_research_invalid");
+  if(v.webCheckpoint!==undefined&&(v.pending[0]?.name!=="search_web"||!publicWebCheckpointSchema.safeParse(v.webCheckpoint).success))
+    throw Error("checkpoint_public_web_invalid");
   if(v.followUpIds!==undefined&&(!Array.isArray(v.followUpIds)||v.followUpIds.some(id=>typeof id!=="string")))throw Error("checkpoint_research_invalid");
   return v;
 }
@@ -80,7 +84,8 @@ export async function runResearchTurn(args:{
   history?:ReadonlyArray<{role:"user"|"assistant";content:string}>;
   scope:ResearchScope;
   /** Public web lookups through the existing owner-permissioned search; omit to disable. */
-  webSearch?:(query:string,signal?:AbortSignal,budget?:WebSearchBudget)=>Promise<unknown>;
+  webSearch?:(query:string,signal?:AbortSignal,budget?:WebSearchBudget,
+    continuation?:Omit<NonNullable<WebSearchBudget["continuation"]>,"authorize">)=>Promise<unknown>;
   privateWebValues?: unknown;
   /** The existing registered action tools (approval cards, Gmail, routines), run through the one existing executor. */
   actions?:{definitions:readonly {name:string}[];context:AgentToolContext};
@@ -157,7 +162,10 @@ export async function runResearchTurn(args:{
   const usage:AgentTurn["usage"]={model,modelCalls:0,toolCalls:0,inputTokens:0,cachedTokens:0,outputTokens:0,latencyMs:0,requests:[],toolMetrics:[]};
   const invocations:{name:string;result:AgentToolResult}[]=[];
   const privateValues=new Set<string>();
-  rememberPrivateValues(privateValues,[args.privateWebValues,args.ownerEvidence,args.ownerPdfs?.map(file=>file.filename)]);
+  rememberPrivateValues(privateValues,[args.privateWebValues,args.ownerEvidence,args.ownerPdfs?.map(file=>file.filename),
+    args.matchedOwnerAnswers?.map(pair=>pair.answer)]);
+  rememberPrivateWebConversation(privateValues,args.ownerText,...(args.history??[]).map(item=>item.content),
+    ...(args.matchedOwnerAnswers??[]).flatMap(pair=>[pair.question,pair.answer]));
   /** Admitted evidence is retained across worker replacement for model context. */
   const evidence:string[]=[];
   let nextResultRef=0;
@@ -167,6 +175,7 @@ export async function runResearchTurn(args:{
   const presentations:AgentToolResult[]=[];
   const followUpIds=new Set<string>();
   let text="",endReason:EndReason="complete",pending:FunctionCall[]=[],finished=false;
+  let webCheckpoint:PublicWebCheckpoint|undefined;
   const statePort=args.continuation??args.checkpoint?.research;
   const restored=await statePort?.load();
   if(restored){
@@ -177,6 +186,7 @@ export async function runResearchTurn(args:{
       await args.restoreSourceVersions?.(saved.sourceVersions);
       await args.beforeAcceptResult?.();
       input.push(...saved.transcript);pending=saved.pending;text=saved.text;finished=saved.finished;
+      webCheckpoint=saved.webCheckpoint;
       for(const id of saved.followUpIds??[])followUpIds.add(id);
       presentations.push(...saved.presentations);invocations.push(...saved.invocations);evidence.push(...saved.evidence);
       for(const [ref,value] of saved.queries)queries.set(ref,value);
@@ -192,7 +202,7 @@ export async function runResearchTurn(args:{
     await args.beforeAcceptResult?.();
     const snapshot:ResearchSnapshot={version:1,objective:originalObjective,model,transcript:input.slice(prefixLength),pending,text,
       presentations,invocations,evidence,queries:[...queries].filter(([ref])=>/^q\d+$/u.test(ref)),privateValues:[...privateValues],nextResultRef,
-      diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished,followUpIds:[...followUpIds]};
+      diagnostics:presentationDiagnostics,sourceVersions:args.captureSourceVersions?.()??{},finished,followUpIds:[...followUpIds],webCheckpoint};
     await statePort.save(snapshot);
   };
   const appendText=(part:string,continuing=false)=>{
@@ -381,7 +391,10 @@ export async function runResearchTurn(args:{
         },
         onRequest:params=>{composition=requestComposition(params);},
         onProviderResponse:value=>{response=value;},
-      });
+      },statePort&&hasDurableProviderTurn()?{
+        saved:webCheckpoint,settle:completeResumedHostedWeb,
+        save:async state=>{webCheckpoint=state;await save();},
+      }:undefined);
     }finally{
       if(launched){
         const status=(response as {status?:unknown}|undefined)?.status;
@@ -400,7 +413,7 @@ export async function runResearchTurn(args:{
         if(args.readFollowUps&&!invocations.some(i=>i.name==="ask_owner"&&!i.result.missing.length&&typeof i.result.question==="string")){
           const fresh=(await args.readFollowUps()).filter(m=>!followUpIds.has(m.id));
           if(fresh.length){
-            for(const m of fresh){followUpIds.add(m.id);input.push({role:"user",content:m.text});}
+            for(const m of fresh){followUpIds.add(m.id);input.push({role:"user",content:m.text});rememberPrivateWebConversation(privateValues,m.text);}
             finished=false;args.onFollowUp?.();await save();
           }
         }
@@ -431,6 +444,7 @@ export async function runResearchTurn(args:{
         if(args.actions?.definitions.some(d=>d.name===fc.name)){
           record=await runAction(fc);
           observeToolResult(args.actions.context.resolveState,record);
+          if(!record.error)rememberPrivateValues(privateValues,record);
           evidence.push(JSON.stringify(record));
           failed=Boolean(record.error);
           resultBytes=Buffer.byteLength(JSON.stringify(record),"utf8");
@@ -441,7 +455,7 @@ export async function runResearchTurn(args:{
           if(readOnly&&args.checkpoint)await args.checkpoint.beginTool(fc.name,fc.arguments,true);
           const {controller,clear}=sliceController();
           const result=await executeResearchTool({...args.scope,webSearch,privateValues,signal:controller.signal},fc.name,fc.arguments).finally(clear);
-          if(controller.signal.aborted&&readOnly){if(args.checkpoint)await args.checkpoint.endTool({source:"sql_research",period:null,missing:["interrupted"]});endReason="timeout";break researchLoop;}
+          if(controller.signal.aborted&&readOnly&&!webCheckpoint?.result){if(args.checkpoint)await args.checkpoint.endTool({source:"sql_research",period:null,missing:["interrupted"]});endReason="timeout";break researchLoop;}
           await args.beforeAcceptResult?.();
           const ref=result.ok===true?admit(fc.name==="run_sql"?"SQL query result":fc.name==="calculate"?"Exact calculator result; depends on supplied inputs":fc.name==="search_web"?"Public web evidence; preserve its cited links":"Tool result: "+fc.name,
             fc.name==="calculate"?{...result,calculationInput:JSON.parse(fc.arguments)}:result,
@@ -466,7 +480,7 @@ export async function runResearchTurn(args:{
           if(!text.trim())appendText(record.question);
           pending=[];finished=true;await save();break researchLoop;
         }
-        pending.shift();await save();
+        pending.shift();webCheckpoint=undefined;await save();
       }
     }
   }catch(error){

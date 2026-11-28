@@ -5,6 +5,8 @@ import {
   loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn, type DurableProviderScope,
 } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { streamResponses } from "../shared/responses.server";
+import { publicWebCheckpointSchema, type PublicWebContinuation } from "../shared/publicWebResearch.server";
+import { rememberPrivateWebConversation } from "../shared/publicWebResearch";
 import { employeeKeys, type EmployeeKey } from "../workforce/roster";
 
 const completedResponse = z.object({
@@ -30,6 +32,7 @@ const savedResponse = z.object({
   round: z.number().int().positive().optional(),
   toolReceipts: z.array(toolReceipt).optional(),
   sourceRevisions: z.record(z.string(),z.number().int().nonnegative()).optional(),
+  webCheckpoint: publicWebCheckpointSchema.optional(),
 });
 
 export type SavedProviderResponse = z.infer<typeof savedResponse>;
@@ -87,9 +90,10 @@ type ProviderContext = AssignmentLease & {
 };
 type AssignmentAccounting = Pick<DurableProviderScope, "db" | "budget" | "ownerDailyCap" | "authorize">;
 type Rpc = (name: string, params: Record<string, unknown>) => Promise<unknown>;
+type WebReadPort = Pick<PublicWebContinuation, "saved" | "save"> & { privateValues: ReadonlySet<string> };
 export type AssignmentReadTool = {
   definition: Readonly<Record<string, unknown>> & { name: string };
-  execute: (context: ProviderContext, args: Record<string, unknown>, signal: AbortSignal) => unknown;
+  execute: (context: ProviderContext, args: Record<string, unknown>, signal: AbortSignal, web?: WebReadPort) => unknown;
   sourceRevision?: (context: ProviderContext) => Promise<number>;
   usesProvider?: boolean;
 };
@@ -110,7 +114,7 @@ function toolTranscript(previous: SavedProviderResponse) {
     ...receipts.map(receipt => ({ type: "function_call_output", call_id: receipt.callId, output: receipt.output }))];
 }
 
-async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string, context: ProviderContext, signal: AbortSignal) {
+async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string, context: ProviderContext, signal: AbortSignal, web?: WebReadPort) {
   if (!tool) return { output: JSON.stringify({ ok: false, error: "tool_unavailable" }) };
   const args = z.record(z.string(), z.unknown());
   let parsed: z.infer<typeof args>;
@@ -118,8 +122,11 @@ async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string,
   catch { return { output: JSON.stringify({ ok: false, error: "invalid_tool_arguments" }) }; }
   let revision: number | undefined;
   try { revision = await tool.sourceRevision?.(context); }
-  catch { return { output: JSON.stringify({ ok: false, error: "public_web_permission_unavailable" }) }; }
-  const result = await tool.execute(context, parsed, signal);
+  catch (error) {
+    return { output: JSON.stringify({ ok:false, error:error instanceof Error&&error.message==="public_web_access_revoked"?
+      "permissionDenied":"permissionsUnavailable" }) };
+  }
+  const result = await tool.execute(context, parsed, signal, web);
   const status = result as { ok?: unknown; error?: unknown } | null;
   const settledProvider = tool.usesProvider && status?.error !== "timeout";
   if (revision !== undefined && status?.ok === true) {
@@ -248,16 +255,28 @@ export async function runClaimedAssignmentProvider({
         const tool = previousReads + index < accounting.budget.maxToolCalls
           ? readTools.find(item => item.definition.name === call.name) : undefined;
         const remaining = accounting.budget.maxModelCalls - (result.round ?? 1);
+        const privateValues = new Set<string>();
+        let web: WebReadPort | undefined;
+        if (tool?.usesProvider) {
+          rememberPrivateWebConversation(privateValues, context.originalInput.text,
+            ...(result.transcript ?? []).filter(item => item.type === "message" && item.role === "user")
+              .map(item => typeof item.content === "string" ? item.content : null));
+          web = { saved:result.webCheckpoint, privateValues, save:async state => {
+            await save(checkpoint.sequence, { ...result, toolReceipts:receipts, webCheckpoint:state });
+            result.webCheckpoint = state;
+          } };
+        }
         const { output, revision, settledProvider } = await readToolOutput(
-          tool?.usesProvider && remaining < 2 ? undefined : tool, call.arguments, context, signal);
+          tool?.usesProvider && remaining < 2 ? undefined : tool, call.arguments, context, signal, web);
         if (!settledProvider) signal.throwIfAborted();
         const receipt = { operation, callId: call.call_id, output };
-        if (tool?.usesProvider && remaining >= 2) result.round = (result.round ?? 1) + 1;
+        if (result.webCheckpoint) result.round = (result.round ?? 1) + 1;
         if (revision !== undefined) {
           result.sourceRevisions = { ...result.sourceRevisions, [call.name]:revision };
           await verifySources(result);
         }
         receipts.push(receipt);
+        delete result.webCheckpoint;
         await save(checkpoint.sequence, { ...result, toolReceipts: receipts });
         await completeRead(receipt);
         signal.throwIfAborted();

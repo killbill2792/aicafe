@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createWebSearch } from "@/lib/ai/agent/webSearch.server";
 import type { AgentProvider } from "@/lib/ai/agent/loop.server";
+import { withDurableProviderTurn } from "@/lib/ai/supervisor/runs/provider-reservation.server";
+import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { runResearchTurn } from "./turn.server";
 
 const supplierQuestion = "Can you find me a bagel wholesaler? I am trying to find lox bagel!";
@@ -81,5 +83,80 @@ describe("shared native public research in the deployed Supervisor turn",()=>{
     expect(lookup).toHaveBeenCalledTimes(1);
     expect(functionOutput(requests[1],"private")).toMatchObject({ok:false,error:expect.stringContaining("private café data")});
     expect(functionOutput(requests[2],"public")).toEqual({ok:false,error:"permissionDenied"});
+  });
+
+  it("withholds private spans from the current message, matched answers and earlier conversation",async()=>{
+    const history=[{role:"assistant" as const,content:"Our employee Marisol Quinn handles delivery at 123 Orchard Road."}];
+    const ownerText=supplierQuestion+" My number is (415) 555-0142.";
+    const matchedOwnerAnswers=[{question:"Who is the private contact?",answer:"Carmen Solano",answerId:"matched",
+      questionId:"clarification"}];
+    const attempted=["4155550142","Marisol Quinn","123 Orchard Road","Carmen Solano"];
+    const {provider,requests}=scripted([
+      [...attempted.map((value,i)=>call("private"+i,supplierQuestion+" "+value)),call("public",supplierQuestion),done],
+      [answer("Here is the public evidence."),done],
+    ]);
+    const lookup=vi.fn(async()=>({available:true}));
+    await runResearchTurn({ownerText,history,matchedOwnerAnswers,cafeContext:"Fixture",scope,provider,webSearch:lookup});
+    expect(lookup).toHaveBeenCalledExactlyOnceWith(supplierQuestion,expect.any(AbortSignal),expect.anything(),undefined);
+    attempted.forEach((_,i)=>expect(functionOutput(requests[1],"private"+i)).toMatchObject({ok:false}));
+  });
+
+  it("continues the same paid Responses request after the Supervisor worker yields", async () => {
+    let state:unknown, controller:AbortSignal|undefined;
+    let revision=1, interrupted=false;
+    const reserve=vi.fn<(name:string,params:Record<string,unknown>)=>Promise<{data:null;error:null}>>(
+      async()=>({data:null,error:null}));
+    const attempts=vi.fn(() => ({
+      select:()=>({eq:function eq(){return {eq,maybeSingle:async()=>({data:{model:"gpt-6-luna",status:"attempted"},error:null})};}}),
+    }));
+    const binding={...scope,db:{rpc:reserve,from:attempts},ownerMessageId:"message",threadId:"thread",runId:"run",
+      jobId:"job",claimToken:"lease",ownerDailyCap:null,unrestrictedResearch:true,authorize:async()=>{},
+      budget:{maxModelCalls:10,maxToolCalls:10,maxOutputTokens:10000,maxInputTokens:10000,maxElapsedMs:2000}};
+    const settled={...done,response:{...done.response,model:configuredSupervisorModel()}};
+    const {provider,requests}=scripted([
+      [call("first",supplierQuestion),settled],
+      [answer("See the [public source]("+sourceUrl+")."),settled],
+    ]);
+    const transport=vi.fn<typeof fetch>(async (_url,init)=>{
+      if(init?.method==="POST")return Response.json({id:"resp_fixture",status:"queued"});
+      return Response.json(providerBody());
+    });
+    const lookup=createWebSearch({fetch:transport,apiKey:"fixture",model:"gpt-6-luna"});
+    const base:Parameters<typeof runResearchTurn>[0]={
+      ownerText:supplierQuestion,cafeContext:"Fixture",scope,provider,
+      continuation:{load:async()=>state,save:async next=>{state=structuredClone(next);}},
+      webSearch:(query,signal,budget,continuation)=>{
+        controller=signal;
+        if(!continuation||!budget)throw Error("missing hosted continuation");
+        return lookup(query,{...budget,continuation:{...continuation,authorize:async()=>revision,
+          save:async next=>{
+            await continuation.save(next);
+            if(next.responseId&&!interrupted){interrupted=true;await new Promise(resolve=>setTimeout(resolve,180));}
+          },
+        }},signal);
+      },
+    };
+    const yielded=await withDurableProviderTurn(binding,()=>runResearchTurn({...base,executionDeadline:Date.now()+150}));
+    expect(yielded.endReason).toBe("timeout");
+    expect(controller?.aborted).toBe(true);
+    expect(state).toMatchObject({webCheckpoint:{revision:1,responseId:"resp_fixture",attemptId:expect.any(String)}});
+    const submitted=JSON.parse(String(transport.mock.calls[0][1]?.body));
+    expect(submitted).toMatchObject({input:supplierQuestion,background:true,store:false});
+    const beforeResume=structuredClone(state);
+    const result=await withDurableProviderTurn(binding,()=>runResearchTurn(base));
+    expect(result.endReason).toBe("complete");
+    expect(result.text).toContain(sourceUrl);
+    expect(transport.mock.calls.map(([url,init])=>[String(url),init?.method??"GET"])).toEqual([
+      ["https://api.openai.com/v1/responses","POST"],["https://api.openai.com/v1/responses/resp_fixture","GET"],
+    ]);
+    const {attemptId}=(beforeResume as {webCheckpoint:{attemptId:string}}).webCheckpoint;
+    expect(reserve.mock.calls.filter(([name,p])=>name==="supervisor_complete_investigation_model_call"&&p.p_attempt_id===attemptId)).toHaveLength(1);
+    expect(functionOutput(requests[1],"first").result.sources).toEqual([{url:sourceUrl,title:"Reference 0"}]);
+    state=beforeResume;
+    revision=2;
+    const denied=scripted([[answer("Public access changed."),settled]]);
+    await withDurableProviderTurn(binding,()=>runResearchTurn({...base,provider:denied.provider}));
+    expect(functionOutput(denied.requests[0],"first")).toEqual({ok:false,error:"permissionDenied"});
+    expect(transport).toHaveBeenCalledTimes(2);
   });
 });

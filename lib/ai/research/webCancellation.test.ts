@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import {createWebSearch} from "@/lib/ai/agent/webSearch.server";
+import type { PublicWebCheckpoint } from "@/lib/luna/shared/publicWebResearch.server";
 import {executeResearchTool} from "./tools.server";
 vi.mock("server-only",()=>({}));
 vi.mock("@/lib/connectors/publicWeb.server",()=>({
@@ -40,5 +41,17 @@ describe("research web cancellation",()=>{
     expect(await search("public question",undefined,controller.signal)).toEqual({available:false,reason:"timeout"});
     expect(fetcher).not.toHaveBeenCalled();
     expect(reserveTransport).not.toHaveBeenCalled();
+  });
+  it("does not issue a second POST when the provider did not return a response ID",async()=>{
+    let saved:PublicWebCheckpoint|undefined;
+    const search=createWebSearch({fetch:vi.fn(async()=>{throw new DOMException("Timeout","TimeoutError");}),apiKey:"test"});
+    const reserveModelCall=vi.fn(()=>true);
+    const continuation={authorize:async()=>1,settle:vi.fn(),save:async(state:PublicWebCheckpoint)=>{saved=state;}};
+    const budget={reserveModelCall,recordUsage:vi.fn()};
+    expect(await search("Compare museum ticket policies.",{...budget,continuation})).toEqual({available:false,reason:"timeout"});
+    expect(saved).toMatchObject({revision:1});
+    expect(await search("Compare museum ticket policies.",{...budget,continuation:{...continuation,saved}}))
+      .toEqual({available:false,reason:"unverified"});
+    expect(reserveModelCall).toHaveBeenCalledTimes(1);
   });
 });

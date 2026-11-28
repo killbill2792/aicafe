@@ -1,20 +1,39 @@
 import "server-only";
+import { setTimeout as delay } from "node:timers/promises";
+import { z } from "zod";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
-import { PublicWebPermissionError } from "./publicWebResearch";
-import { publicResearchIncludesPrivateValue, publicWebResearchInstructions } from "./publicWebResearch";
+import { SourceAccessChanged } from "@/lib/externalData/pages";
+import { PublicWebPermissionError, publicResearchIncludesPrivateValue, publicWebResearchInstructions } from "./publicWebResearch";
 
 type Source = { title: string; url: string };
 type Answer = { answer: string; sources: Source[] };
-export type WebSearchResult =
-  | ({ available: true } & Answer & { status?: "partial"; reason?: "outputLimit" })
-  | { available: false; reason: "notConfigured" | "timeout" | "providerFailed" | "unreadable" |
-      "outputLimit" | "unverified" | "budget" | "permissionDenied" | "permissionsUnavailable" | "unsafeQuery" };
+const resultSchema = z.discriminatedUnion("available",[
+  z.object({available:z.literal(true),answer:z.string(),sources:z.array(z.object({title:z.string(),url:z.string()})),
+    status:z.literal("partial").optional(),reason:z.literal("outputLimit").optional()}),
+  z.object({available:z.literal(false),reason:z.enum(["notConfigured","timeout","providerFailed","unreadable",
+    "outputLimit","unverified","budget","permissionDenied","permissionsUnavailable","unsafeQuery"])}),
+]);
+export type WebSearchResult = z.infer<typeof resultSchema>;
 
 type ResponseRecord = Record<string, unknown>;
 type Outcome = "completed" | "incomplete" | "failed";
 type Reservation = {
+  attemptId?: string;
   launched: () => void;
   complete: (response: ResponseRecord) => Promise<void>;
+};
+export const publicWebCheckpointSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  responseId: z.string().regex(/^resp_[\w-]+$/u).optional(),
+  attemptId: z.uuid().optional(),
+  result: resultSchema.optional(),
+});
+export type PublicWebCheckpoint = z.infer<typeof publicWebCheckpointSchema>;
+export type PublicWebContinuation = {
+  saved?: PublicWebCheckpoint;
+  save: (state: PublicWebCheckpoint) => Promise<void>;
+  authorize: () => Promise<number>;
+  settle: (attemptId: string, response: ResponseRecord) => Promise<void>;
 };
 export type WebSearchUsage = { inputTokens: number; cachedTokens: number; outputTokens: number };
 export type WebSearchBudget = {
@@ -24,6 +43,7 @@ export type WebSearchBudget = {
   onRequest?: (request: ResponseRecord) => void;
   outputCap?: number | null;
   reserveTransport?: (request: ResponseRecord) => Promise<Reservation | null>;
+  continuation?: PublicWebContinuation;
 };
 type Dependencies = {
   fetch: typeof fetch;
@@ -93,11 +113,12 @@ export function createWebSearch(deps: Dependencies) {
     if (signal?.aborted) return { available: false, reason: "timeout" };
     if (!query.trim() || publicResearchIncludesPrivateValue(query)) return { available: false, reason: "unsafeQuery" };
     const key = deps.apiKey ?? process.env.OPENAI_API_KEY;
-    if (!key) return { available: false, reason: "notConfigured" };
     const cap = budget?.outputCap === undefined ? (budget ? 1200 : null) : budget.outputCap;
+    const continuation = budget?.continuation;
     const request = {
       model: deps.model ?? configuredSupervisorModel(),
       store: false,
+      ...(continuation ? { background: true } : {}),
       tools: [{ type: "web_search" }],
       tool_choice: "required",
       instructions: publicWebResearchInstructions,
@@ -107,44 +128,96 @@ export function createWebSearch(deps: Dependencies) {
     const started = now();
     const elapsed = () => now() - started;
     try {
-      budget?.onRequest?.(request);
-      const finish = await deps.reserveTransport?.(request);
-      const reservation = await budget?.reserveTransport?.(request);
-      signal?.throwIfAborted();
-      if (budget && !budget.reserveModelCall()) return { available: false, reason: "budget" };
-      reservation?.launched();
-      const response = await doFetch("https://api.openai.com/v1/responses", {
-        method: "POST", signal, headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
-        body: JSON.stringify(request),
-      });
-      if (!response.ok) {
-        console.error("agent_web_search_failed", { category: "http", status: response.status, durationMs: elapsed() });
-        return { available: false, reason: "providerFailed" };
+      const url = "https://api.openai.com/v1/responses";
+      const headers = { "Content-Type": "application/json", Authorization: "Bearer " + key };
+      const revision = await continuation?.authorize();
+      let state = continuation?.saved;
+      const assertRevision = async () => {
+        if (await continuation?.authorize() !== revision) throw new PublicWebPermissionError("permissionDenied");
+      };
+      const save = async (next: PublicWebCheckpoint) => {
+        await assertRevision();
+        try { await continuation!.save(next); }
+        catch (error) { throw new Error("checkpoint_public_web_unavailable", { cause:error }); }
+        state = next;
+      };
+      if (state && state.revision !== revision) return { available: false, reason: "permissionDenied" };
+      if (state?.result) return state.result;
+      if (!key) return { available: false, reason: "notConfigured" };
+      let body: ResponseRecord | undefined;
+      let reservation: Reservation | null | undefined;
+      let finish: Awaited<ReturnType<NonNullable<Dependencies["reserveTransport"]>>> | undefined;
+      if (!state) {
+        budget?.onRequest?.(request);
+        finish = await deps.reserveTransport?.(request);
+        reservation = await budget?.reserveTransport?.(request);
+        signal?.throwIfAborted();
+        if (budget && !budget.reserveModelCall()) return { available: false, reason: "budget" };
+        // An interrupted or ambiguous POST cannot safely be repeated.
+        if (revision !== undefined) await save({ revision, attemptId: reservation?.attemptId });
+        reservation?.launched();
+        const response = await doFetch(url, { method: "POST", signal, headers, body: JSON.stringify(request) });
+        if (!response.ok) {
+          console.error("agent_web_search_failed", { category: "http", status: response.status, durationMs: elapsed() });
+          return { available: false, reason: "providerFailed" };
+        }
+        body = record(await response.json());
+        if (revision !== undefined && body && typeof body.id === "string" && /^resp_[\w-]+$/u.test(body.id)) {
+          await save({ revision, attemptId:reservation?.attemptId, responseId:body.id });
+        }
       }
-      const body = record(await response.json());
+      const responseId = state?.responseId;
+      if (state && !responseId) return { available: false, reason: "unverified" };
+      let waitBeforePoll = Boolean(body);
+      while (responseId && (!body || body.status === "queued" || body.status === "in_progress")) {
+        if (waitBeforePoll) await delay(1000, undefined, { signal });
+        waitBeforePoll = true;
+        signal?.throwIfAborted();
+        await assertRevision();
+        try {
+          const response = await doFetch(url + "/" + encodeURIComponent(responseId), { signal, headers });
+          if (signal && (response.status >= 500 || response.status === 429)) continue;
+          if (!response.ok) return { available: false, reason: "providerFailed" };
+          body = record(await response.json());
+        } catch (error) {
+          const transient = error instanceof TypeError || error instanceof Error && error.name==="TimeoutError";
+          if (!transient || !signal || signal.aborted) throw error;
+          continue;
+        }
+        if (!body || body.id !== responseId) return { available: false, reason: "unreadable" };
+      }
       if (!body) return { available: false, reason: "unreadable" };
+      await assertRevision();
       const outcome = body.status === "completed" ? "completed" : body.status === "incomplete" ? "incomplete" : "failed";
-      budget?.recordUsage(webSearchUsage(body));
+      if (!continuation?.saved) budget?.recordUsage(webSearchUsage(body));
       budget?.onProviderResponse?.(body);
       await finish?.(body, outcome);
-      if (body.usage) await reservation?.complete(body);
+      if (body.usage) {
+        if (reservation) await reservation.complete(body);
+        else if (state?.attemptId) await continuation?.settle(state.attemptId, body);
+      }
       const outputLimited = outcome === "incomplete" && record(body.incomplete_details)?.reason === "max_output_tokens";
       const searched = rows(body.output).some(item => item?.type === "web_search_call" && item.status === "completed");
       const answer = outcome === "completed" || outputLimited ? readAnswer(body) : null;
+      let result: WebSearchResult;
       if (searched && answer?.sources.length) {
         console.info("agent_web_search_completed", { outcome, durationMs: elapsed(), sources: answer.sources.length });
-        return outputLimited ? { available: true, ...answer, status: "partial", reason: "outputLimit" } : { available: true, ...answer };
+        result = outputLimited ? { available: true, ...answer, status: "partial", reason: "outputLimit" } : { available: true, ...answer };
+      } else {
+        const reason = outputLimited ? "outputLimit" : outcome !== "completed" ? "providerFailed" : answer ? "unverified" : "unreadable";
+        console.error("agent_web_search_failed", {
+          category: reason, outcome, durationMs: elapsed(),
+          outputTokens: webSearchUsage(body).outputTokens,
+          reasoningTokens: tokens(record(record(body.usage)?.output_tokens_details)?.reasoning_tokens),
+        });
+        result = { available: false, reason };
       }
-      const reason = outputLimited ? "outputLimit" : outcome !== "completed" ? "providerFailed" : answer ? "unverified" : "unreadable";
-      console.error("agent_web_search_failed", {
-        category: reason, outcome, durationMs: elapsed(),
-        outputTokens: webSearchUsage(body).outputTokens,
-        reasoningTokens: tokens(record(record(body.usage)?.output_tokens_details)?.reasoning_tokens),
-      });
-      return { available: false, reason };
+      if (state) await save({ ...state, result });
+      return result;
     } catch (error) {
       if (error instanceof PublicWebPermissionError) return { available: false, reason: error.reason };
-      if (error instanceof Error && /^(durable_|owner_quota_reached|storage_failed)/u.test(error.message)) throw error;
+      if (error instanceof SourceAccessChanged) return { available: false, reason: "permissionDenied" };
+      if (error instanceof Error && /^(durable_|checkpoint_|owner_quota_reached|storage_failed)/u.test(error.message)) throw error;
       const timedOut = signal?.aborted || error instanceof Error && ["AbortError", "TimeoutError"].includes(error.name);
       console.error("agent_web_search_failed", { category: timedOut ? "timeout" : "network", durationMs: elapsed() });
       return { available: false, reason: timedOut ? "timeout" : "providerFailed" };

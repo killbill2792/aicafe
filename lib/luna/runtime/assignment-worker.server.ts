@@ -6,9 +6,9 @@ import { describeDatabase, describeDatabaseToolDefinition } from "@/lib/ai/resea
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
 import { readCafeAccess, readExternalAccess, requireConnectorMembership, type AccessReader } from "@/lib/access/scopedAccess.server";
 import { readWithSourceAccess } from "@/lib/externalData/pages";
-import { publicResearchIncludesPrivateValue, publicWebResearchTool } from "@/lib/luna/shared/publicWebResearch";
+import { PublicWebPermissionError, publicResearchIncludesPrivateValue, publicWebResearchTool } from "@/lib/luna/shared/publicWebResearch";
 import { createWebSearch } from "@/lib/luna/shared/publicWebResearch.server";
-import { loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn } from "@/lib/ai/supervisor/runs/provider-reservation.server";
+import { completeResumedHostedWeb, loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { workforceRoster } from "../workforce/roster";
 import { runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
 
@@ -32,7 +32,7 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
   },
 ];
 
-function assignmentWebResearch(accounting: ProviderArgs["accounting"]): AssignmentReadTool {
+function assignmentWebResearch(accounting: ProviderArgs["accounting"], request?:typeof fetch): AssignmentReadTool {
   const assertAccess: NonNullable<AssignmentReadTool["sourceRevision"]> = async context => {
     if(!("from" in accounting.db)||typeof accounting.db.from!=="function")throw Error("public_web_permission_unavailable");
     const db=accounting.db as AccessReader;
@@ -46,23 +46,30 @@ function assignmentWebResearch(accounting: ProviderArgs["accounting"]): Assignme
     definition: publicWebResearchTool,
     sourceRevision: assertAccess,
     usesProvider: true,
-    execute: async (context, args, signal) => {
+    execute: async (context, args, signal, web) => {
       const parsed = webArguments.safeParse(args);
       if (!parsed.success) return { ok:false, error:"invalid_tool_arguments" };
-      if (publicResearchIncludesPrivateValue(parsed.data.query))
+      if (publicResearchIncludesPrivateValue(parsed.data.query, web?.privateValues))
         return { ok:false, error:"Rewrite the search as a public research objective without private values." };
-      const authorize=() => assertAccess(context);
-      const lookup=createWebSearch({fetch:(input,init)=>readWithSourceAccess(authorize,()=>fetch(input,init),
+      const authorize=async () => {
+        try { return await assertAccess(context); }
+        catch (error) {
+          throw new PublicWebPermissionError(error instanceof Error&&error.message==="public_web_access_revoked"?
+            "permissionDenied":"permissionsUnavailable");
+        }
+      };
+      const lookup=createWebSearch({fetch:(input,init)=>readWithSourceAccess(authorize,()=> (request??fetch)(input,init),
         async response=>{await response.body?.cancel().catch(()=>undefined);})});
-      const value = await readWithSourceAccess(authorize, () => withDurableProviderTurn({ ...accounting, ...context }, async () => {
+      const value = await withDurableProviderTurn({ ...accounting, ...context }, async () => {
         const outputCap = await loadModelExecutionCap(accounting.db);
         return lookup(parsed.data.query, {
           outputCap,
           reserveTransport: request => reserveDurableProviderRequest(request,"hosted_web",outputCap),
           reserveModelCall: () => true,
           recordUsage: () => {},
+          ...(web ? { continuation: { ...web, authorize, settle:completeResumedHostedWeb } } : {}),
         }, signal);
-      }));
+      });
       return value.available ? { ok:true, result:value } : { ok:false, error:value.reason };
     },
   };
@@ -100,7 +107,7 @@ export async function processLunaAssignment({
 
   const turn = await runClaimedAssignmentProvider({
     ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken },
-    readTools: provider.readTools ?? [...assignmentReadTools, assignmentWebResearch(provider.accounting)],
+    readTools: provider.readTools ?? [...assignmentReadTools, assignmentWebResearch(provider.accounting,provider.request)],
     buildRequest: async (context, steering) => {
       const request = await provider.buildRequest(context, steering);
       const employee = workforceRoster().find(profile => profile.key === context.employeeKey);

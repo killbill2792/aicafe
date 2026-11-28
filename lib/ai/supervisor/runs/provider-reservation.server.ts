@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { PRODUCTION_SUPERVISOR_OPENAI_MODEL, configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import { modelTokenUsage, standardModelTokenRates, estimateModelCallCostMicros, hostedWebActualCostMicros } from "@/lib/calc/supervisorTokenCost";
 import type { WorkerBudget } from "./usage.server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type ReservationDatabase = {
   rpc(name: string, params: Record<string, unknown>): PromiseLike<{
@@ -60,9 +61,32 @@ function configuredReserve(value:string|undefined,fallback:number):number{
   return Number(value);
 }
 export type DurableProviderReservation={
+  attemptId:string;
   launched:()=>void;
   complete:(response:{model?:unknown;service_tier?:unknown;usage?:unknown;output?:unknown})=>Promise<void>;
 };
+
+/** A GET after worker replacement belongs to the original paid attempt. */
+export async function completeResumedHostedWeb(attemptId:string,response:Record<string,unknown>){
+  const scope=durableProviderTurns.getStore()?.scope;
+  if(!scope)throw Error("durable_provider_scope_unavailable");
+  await scope.authorize();
+  const db=scope.db as Pick<SupabaseClient,"from"> & ReservationDatabase;
+  const {data,error}=await db.from("supervisor_system_usage_events").select("model,status")
+    .eq("attempt_id",attemptId).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+    .eq("thread_id",scope.threadId).eq("source_type","durable_run").eq("source_id",scope.runId)
+    .eq("owner_message_id",scope.ownerMessageId).maybeSingle();
+  const usage=modelTokenUsage(response.usage),model=response.model;
+  if(error||!data||!usage||typeof model!=="string"||data.model!==model)throw Error("durable_provider_usage_unverified");
+  if(data.status==="completed")return;
+  const rates=standardModelTokenRates(model,response.service_tier,usage.inputTokens);
+  const completion=await db.rpc("supervisor_complete_investigation_model_call",{
+    p_attempt_id:attemptId,p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+    p_thread_id:scope.threadId,p_model:model,p_input_tokens:usage.inputTokens,p_output_tokens:usage.outputTokens,
+    p_estimated_cost_micros:hostedWebActualCostMicros(rates?estimateModelCallCostMicros(usage,rates):null,response.output),
+  });
+  if(completion.error)throw Error("durable_provider_completion_unavailable",{cause:completion.error});
+}
 
 /** A conservative reservation is not an exact provider invoice. Count every
  * serialized UTF-8 byte plus framing allowance; multimedia/hosted retrieval
@@ -135,6 +159,7 @@ export async function reserveDurableProviderRequest(
     if(error)throw new Error("durable_provider_reservation_denied",{cause:error});
     let started=false,completed=false,startedAt=0;
     return {
+      attemptId:id,
       launched:()=>{if(started||ctx.denied)throw new Error("durable_provider_launch_conflict");
         started=true;startedAt=Date.now();ctx.launched.push(id);},
       complete:async(response)=>{

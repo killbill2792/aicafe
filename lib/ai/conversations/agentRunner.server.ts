@@ -69,7 +69,7 @@ import {readCafeLocation} from "@/lib/data/cafeLocation.server";
 import {searchWeb} from "@/lib/ai/agent/webSearch.server";
 import {assertSelectedAttachmentAccess,assertExternalAccess,FILE_RESOURCE,WEB_RESOURCE} from "@/lib/connectors/access.server";
 import {projectOwnerPublicQuery} from "@/lib/ai/agent/tools/webSearch";
-import {ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
+import {assertOwnerPublicWeb,ownerPublicWebSearch} from "@/lib/connectors/publicWeb.server";
 import {readSavedEventTimeline} from "@/lib/data/cafeEvents.server";
 import {authenticatedConversationContext,ConversationApiError} from "@/lib/ai/conversations/auth.server";
 import type {ConversationMessage, ConversationScope} from "@/lib/ai/conversations/contracts";
@@ -811,10 +811,11 @@ export async function runOneTurn(p: TurnParams): Promise<{ replyId: string; repl
       // Luna writes its own public queries. Only the owner's public-web permission applies, plus a check
       // that no private café text is inside the query (tools.server.ts); no wording filter on the owner.
       privateWebValues,
-      webSearch:(q,signal,budget)=>ownerPublicWebSearch(scope,async()=>{
-        const revision=await assertExternalAccess(scope,"public_web",WEB_RESOURCE);
+      webSearch:(q,signal,budget,continuation)=>ownerPublicWebSearch(scope,async()=>{
+        const authorize=()=>assertOwnerPublicWeb(scope);
+        const revision=await authorize();
         await assertTurnSources();
-        const value=await searchWeb(q,budget,signal);
+        const value=await searchWeb(q,budget&&continuation?{...budget,continuation:{...continuation,authorize}}:budget,signal);
         const check=async()=>{if(await assertExternalAccess(scope,"public_web",WEB_RESOURCE)!==revision)throw Error("public_web_evidence_access_changed");};
         await check();
         if(value.available){sourceChecks.set("public_web",check);sourceVersions.set("public_web",String(revision));}
