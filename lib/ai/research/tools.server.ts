@@ -17,6 +17,9 @@ export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:strin
   /** Café notes (what Supervisor has learned about this café), saved with the owner's own session. */
   notes?:{save:(topic:string,note:string,basis:string)=>Promise<void>;forget:(topic:string)=>Promise<boolean>}};
 
+type ResearchDatabaseScope = Pick<ResearchScope, "businessId" | "ownerUserId" | "signal"> &
+  Partial<Pick<ResearchScope, "db">>;
+
 /** Remember everything read from café data (text and numbers, at any depth) so none of it is sent to a public search. */
 function rememberPrivate(scope:ResearchScope,rows:unknown){
   if(!scope.privateValues)return;
@@ -50,12 +53,14 @@ function privateTextIn(scope:ResearchScope,query:string):string|null{
   return null;
 }
 
-export const researchToolDefinitions=[
-  {type:"function",name:"describe_database",strict:true,
+export const describeDatabaseToolDefinition = {type:"function",name:"describe_database",strict:true,
     description:"Discover the café database you can read. With tables=null: every readable table and view with its description and columns. "+
       "With table names: each column's type, nullability and description, allowed values (check constraints), and foreign keys to and from those tables.",
     parameters:{type:"object",additionalProperties:false,required:["tables"],properties:{
-      tables:{type:["array","null"],items:{type:"string"},description:"Table or view names, or null for the full list."}}}},
+      tables:{type:["array","null"],items:{type:"string"},description:"Table or view names, or null for the full list."}}}} as const;
+
+export const researchToolDefinitions=[
+  describeDatabaseToolDefinition,
   {type:"function",name:"run_sql",strict:true,
     description:"Run one read-only PostgreSQL SELECT (WITH, joins, window functions, aggregates and subqueries are fine) on this café's data. "+
       "Rows are already limited to this café by the database. Returns every row the query produces. "+
@@ -81,7 +86,9 @@ export const researchToolDefinitions=[
     parameters:{type:"object",additionalProperties:false,required:["topic"],properties:{topic:{type:"string"}}}},
 ] as const;
 
-async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<string,unknown>>{
+const databaseUnavailable = {ok:false,error:"research_database_connection_unavailable"} as const;
+
+async function callDatabase(scope:ResearchDatabaseScope,sql:string):Promise<Record<string,unknown>>{
   // PostgREST has an independent hosting request deadline. A dedicated
   // restricted direct/session connection uses the same RLS SQL executor,
   // with no statement or client query timeout and no arbitrary role change.
@@ -101,6 +108,7 @@ async function callDatabase(scope:ResearchScope,sql:string):Promise<Record<strin
       return {ok:false,error:scope.signal?.aborted?"research_execution_interrupted":"research_database_transport_failed",...(typeof (error as {code?:unknown})?.code==="string"?{sqlstate:(error as {code:string}).code}:{})};
     }finally{scope.signal?.removeEventListener("abort",abort);await client.end().catch(()=>undefined);}
   }
+  if(!scope.db)return databaseUnavailable;
   const request=scope.db.rpc("supervisor_research_sql",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_sql:sql});
   const {data,error}=await (scope.signal&&typeof request.abortSignal==="function"?request.abortSignal(scope.signal):request);
@@ -118,7 +126,8 @@ const IDENT=/^[A-Za-z_][A-Za-z0-9_]{0,62}$/u;
 const OPERATIONAL="c.relname !~ '^(toast_raw_sample|diag_|diagnostic_|test_|fixture_)'";
 const RELATIONS="from pg_class c join pg_namespace n on n.oid=c.relnamespace "+
   "where n.nspname='public' and c.relkind in ('r','p','v','m') and has_table_privilege(c.oid,'select') and "+OPERATIONAL;
-export async function describeDatabase(scope:ResearchScope,tables:readonly string[]|null):Promise<Record<string,unknown>>{
+export async function describeDatabase(scope:ResearchDatabaseScope,tables:readonly string[]|null):Promise<Record<string,unknown>>{
+  if(!scope.db&&!process.env.SUPERVISOR_RESEARCH_DATABASE_URL)return databaseUnavailable;
   if(!tables||!tables.length){
     return callDatabase(scope,"select c.relname as name, case when c.relkind in ('v','m') then 'view' else 'table' end as kind, "+
       "obj_description(c.oid,'pg_class') as description, (select string_agg(a.attname||' '||format_type(a.atttypid,a.atttypmod), ', ' order by a.attnum) "+
@@ -133,10 +142,12 @@ export async function describeDatabase(scope:ResearchScope,tables:readonly strin
       "from pg_attribute a join pg_class c on c.oid=a.attrelid join pg_namespace n on n.oid=c.relnamespace "+
       "where n.nspname='public' and c.relname = any("+list+") and has_table_privilege(c.oid,'select') and "+OPERATIONAL+" "+
       "and a.attnum>0 and not a.attisdropped order by c.relname, a.attnum"),
-    callDatabase(scope,"select case k.contype when 'f' then 'foreign_key' else 'allowed_values' end as kind, "+
-      "k.conrelid::regclass::text as table, nullif(k.confrelid,0)::regclass::text as references, pg_get_constraintdef(k.oid) as definition "+
-      "from pg_constraint k where (k.contype='c' and k.conrelid::regclass::text = any("+list+")) or (k.contype='f' and "+
-      "(k.conrelid::regclass::text = any("+list+") or k.confrelid::regclass::text = any("+list+"))) order by 1,2"),
+    callDatabase(scope,"with readable as (select c.oid, c.relname "+RELATIONS+") "+
+      "select case k.contype when 'f' then 'foreign_key' else 'allowed_values' end as kind, "+
+      "src.relname as table, dst.relname as references, pg_get_constraintdef(k.oid) as definition "+
+      "from pg_constraint k join readable src on src.oid=k.conrelid left join readable dst on dst.oid=k.confrelid "+
+      "where (k.contype='c' and src.relname = any("+list+")) or "+
+      "(k.contype='f' and dst.oid is not null and (src.relname = any("+list+") or dst.relname = any("+list+"))) order by 1,2"),
   ]);
   return {columns,constraints:links,...(ignored.length?{ignored_names:ignored}:{})};
 }

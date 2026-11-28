@@ -2,15 +2,29 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
+import { describeDatabase, describeDatabaseToolDefinition } from "@/lib/ai/research/tools.server";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
 import { workforceRoster } from "../workforce/roster";
-import { runClaimedAssignmentProvider } from "./assignment-provider.server";
+import { runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
 
 const textPart = z.object({ type: z.literal("output_text"), text: z.string() });
 const assistantMessage = z.object({
   type: z.literal("message"), role: z.literal("assistant"), content: z.array(textPart),
 });
 type ProviderArgs = Parameters<typeof runClaimedAssignmentProvider>[0];
+
+const describeDatabaseArguments = z.strictObject({ tables: z.array(z.string()).nullable() });
+const assignmentReadTools: readonly AssignmentReadTool[] = [
+  { definition: calculationToolDefinition, execute: (_, args) => executeCalculationTool(args) },
+  {
+    definition: describeDatabaseToolDefinition,
+    execute: async ({ businessId, ownerUserId }, args, signal) => {
+      const input = describeDatabaseArguments.safeParse(args);
+      if (!input.success) return { ok: false, error: "invalid_tool_arguments" };
+      return describeDatabase({ businessId, ownerUserId, signal }, input.data.tables);
+    },
+  },
+];
 
 /** Process one admitted replacement assignment using the existing claim,
  * provider checkpoint and atomic publication RPCs. */
@@ -44,7 +58,7 @@ export async function processLunaAssignment({
 
   const turn = await runClaimedAssignmentProvider({
     ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken },
-    readTools: provider.readTools ?? [{ definition: calculationToolDefinition, execute: (_, args) => executeCalculationTool(args) }],
+    readTools: provider.readTools ?? assignmentReadTools,
     buildRequest: async (context, steering) => {
       const request = await provider.buildRequest(context, steering);
       const employee = workforceRoster().find(profile => profile.key === context.employeeKey);
