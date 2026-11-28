@@ -109,8 +109,7 @@ function toolTranscript(previous: SavedProviderResponse) {
   if (receipts.length !== calls.length || calls.some((call, i) => call.call_id !== receipts[i].callId)) {
     throw new Error("luna_tool_receipts_incomplete");
   }
-  // A draft rejected at publication leaves its prior instructions and tool evidence usable.
-  if (!calls.length) return previous.transcript ?? [];
+  // A late correction may refer directly to an unpublished draft.
   return [...previous.transcript ?? [], ...previous.response.output,
     ...receipts.map(toolOutput)];
 }

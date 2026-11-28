@@ -18,7 +18,7 @@ export type ResearchScope={db:SupabaseClient;businessId:string;ownerUserId:strin
   notes?:{save:(topic:string,note:string,basis:string)=>Promise<void>;forget:(topic:string)=>Promise<boolean>}};
 
 type ResearchDatabaseScope = Pick<ResearchScope, "businessId" | "ownerUserId" | "signal"> &
-  Partial<Pick<ResearchScope, "db">>;
+  Partial<Pick<ResearchScope, "db">> & { maxResultBytes?: number };
 
 /** Remember everything read from café data (text and numbers, at any depth) so none of it is sent to a public search. */
 function rememberPrivate(scope:ResearchScope,rows:unknown){
@@ -116,7 +116,11 @@ async function callDatabase(scope:ResearchDatabaseScope,sql:string):Promise<Reco
     try{
       await client.connect();
       if(scope.signal?.aborted)return {ok:false,error:"research_execution_interrupted"};
-      const result=await client.query("select public.supervisor_research_sql($1::uuid,$2::uuid,$3::text) as result",[scope.businessId,scope.ownerUserId,sql]); // hardcode-ok: PostgreSQL positional bind parameters, not monetary literals
+      const result = scope.maxResultBytes === undefined
+        ? await client.query("select public.supervisor_research_sql($1::uuid,$2::uuid,$3::text) as result", // hardcode-ok: PostgreSQL positional bind parameters, not monetary literals
+          [scope.businessId, scope.ownerUserId, sql])
+        : await client.query("select public.supervisor_research_sql($1::uuid,$2::uuid,$3::text,$4::integer) as result", // hardcode-ok: PostgreSQL positional bind parameters, not monetary literals
+          [scope.businessId, scope.ownerUserId, sql, scope.maxResultBytes]);
       const value=result.rows[0]?.result;
       return value&&typeof value==="object"?value as Record<string,unknown>:{ok:false,error:"empty_database_response"};
     }catch(error){
@@ -125,7 +129,8 @@ async function callDatabase(scope:ResearchDatabaseScope,sql:string):Promise<Reco
   }
   if(!scope.db)return databaseUnavailable;
   const request=scope.db.rpc("supervisor_research_sql",{
-    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_sql:sql});
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,p_sql:sql,
+    ...(scope.maxResultBytes === undefined ? {} : { p_result_bytes: scope.maxResultBytes })});
   const {data,error}=await (scope.signal&&typeof request.abortSignal==="function"?request.abortSignal(scope.signal):request);
   if(error)return {ok:false,error:error.message,sqlstate:error.code};
   return data&&typeof data==="object"?data as Record<string,unknown>:{ok:false,error:"empty_database_response"};

@@ -5,6 +5,7 @@ import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/rese
 import {
   describeDatabase, describeResearchDatabaseToolDefinition, runSql, runSqlToolDefinition,
 } from "@/lib/ai/research/tools.server";
+import { durableProviderRequestByteLimit } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
 import { workforceRoster } from "../workforce/roster";
 import { LunaAssignmentYielded, runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
@@ -24,7 +25,7 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
     execute: async ({ businessId, ownerUserId }, args, signal) => {
       const input = describeDatabaseArguments.safeParse(args);
       if (!input.success) return { ok: false, error: "invalid_tool_arguments" };
-      return describeDatabase({ businessId, ownerUserId, signal }, input.data.tables);
+      return describeDatabase({ businessId, ownerUserId, signal, maxResultBytes: durableProviderRequestByteLimit }, input.data.tables);
     },
   },
   {
@@ -32,7 +33,7 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
     execute: async ({ businessId, ownerUserId }, args, signal) => {
       const input = runSqlArguments.safeParse(args);
       if (!input.success) return { ok: false, error: "invalid_tool_arguments" };
-      return runSql({ businessId, ownerUserId, signal }, input.data.sql);
+      return runSql({ businessId, ownerUserId, signal, maxResultBytes: durableProviderRequestByteLimit }, input.data.sql);
     },
   },
 ];

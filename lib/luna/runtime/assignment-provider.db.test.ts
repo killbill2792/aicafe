@@ -336,7 +336,8 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       });
       const foreignRead = sql("call_foreign", `select payload from external_records where business_id='${legacy.businessId}'`);
       const write = sql("call_write", "update external_records set payload='{}' where provider='toast'");
-      const oversized = sql("call_oversized", "select repeat('☕', 100000) as payload");
+      const oversized = sql("call_oversized", `select case when i<100 then repeat('☕', 4000)
+        else (1/(i-i))::text end as payload from generate_series(1, 500) as t(i)`);
       const reconcile = sql("call_reconcile", `with sales as (
         select o.business_id,o.source_account,o.source_key,sum((c->>'amount')::numeric*100) as cents
         from external_records o cross join lateral jsonb_array_elements(o.payload->'checks') c
@@ -400,14 +401,18 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
           expect(input.filter(item => item.type === "function_call_output" && item.call_id === callId))
             .toEqual([{ type: "function_call_output", call_id: callId, output }]);
         }
-        if (index === 3) expect(input.at(-1)).toEqual({ type: "message", role: "user", content: correction });
+        if (index === 3) {
+          expect(input.at(-1)).toEqual({ type: "message", role: "user", content: correction });
+          expect(input.at(-2)).toMatchObject({ type: "message", role: "assistant",
+            content: [{ type: "output_text", text: "Net sales were 2,125 cents and observed fees were 55 cents." }] });
+        }
       }
       const replies = await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'", [toast.threadId]);
       expect(replies.rows).toEqual([{ structured_content: [{ type: "text", text: revisedAnswer }] }]);
 
       const capped = await admit(true, "Report the results for the morning.");
       const firstReply = "Here are the morning results.";
-      const newInstruction = "Use the afternoon instead.";
+      const newInstruction = "Keep your first sentence and add the afternoon results.";
       const correctedReply = "Here are the afternoon results.";
       const cappedTransport = vi.fn<typeof fetch>()
         .mockImplementationOnce(async () => catalogReply(firstReply))
@@ -432,8 +437,10 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         rpc: rpc(secondWorker),
       })).resolves.toBe("completed");
       expect(cappedTransport).toHaveBeenCalledTimes(2);
-      expect(JSON.parse(String(cappedTransport.mock.calls[1][1]?.body)).input.at(-1))
-        .toEqual({ type: "message", role: "user", content: newInstruction });
+      expect(JSON.parse(String(cappedTransport.mock.calls[1][1]?.body)).input.slice(-2)).toEqual([
+        { type: "message", role: "assistant", content: [{ type: "output_text", text: firstReply }] },
+        { type: "message", role: "user", content: newInstruction },
+      ]);
       expect((await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'",
         [capped.threadId])).rows).toEqual([{ structured_content: [{ type: "text", text: correctedReply }] }]);
     } finally {
