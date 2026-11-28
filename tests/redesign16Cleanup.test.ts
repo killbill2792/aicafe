@@ -260,7 +260,7 @@ describe("redesign 16 cleanup integration", () => {
     });
   }
 
-  it("keeps existing translation keys in sync, allowing only exact Task 11, Task 13B, Task 14B and Task 16A English-only copy", () => {
+  it("keeps existing translation keys in sync and checks exact English-only additions", () => {
     // AGENTS.md currently forbids new es/ar copy. Preserve strict parity for
     // every pre-existing key; only the owner-approved Gmail, Task13B and exact Task14B keys are English-only.
     // Task13B mandate's 25 exact keys are separately enforced by StaffStandingMandatePanel.test.ts.
@@ -284,6 +284,12 @@ describe("redesign 16 cleanup integration", () => {
     const toastWebhookEnglishOnly=new Set(["webhookEnabled","webhookActivate","webhookDeactivate","webhookFallback"].map(key=>"ToastConnect."+key));
     const english=localeMessages("en"),spanish=localeMessages("es"),
       arabic=localeMessages("ar");
+    const workforceKeys = ["title", "back", "name", "jobTitle", "edit", "defaults", "save", "saving", "saved", "invalid", "failed"];
+    const workforceEnglishOnly = new Set(workforceKeys.map((key) => "Workforce." + key));
+    expect(Object.keys(english.Workforce ?? {}).sort()).toEqual([...workforceKeys].sort());
+    for (const key of workforceKeys) expect(english.Workforce[key].trim()).not.toBe("");
+    expect(spanish.Workforce).toBeUndefined();
+    expect(arabic.Workforce).toBeUndefined();
     for(const key of toastWebhookEnglishOnly){
       const [namespace,field]=key.split(".");
       expect(english[namespace]?.[field],key).toEqual(expect.any(String));
@@ -302,6 +308,7 @@ describe("redesign 16 cleanup integration", () => {
         .flatMap(([namespace, values]) => Object.keys(values).map(key => `${namespace}.${key}`))
         .filter(key => !englishOnly.test(key) && !approvedTask14bSet.has(key)
           && !approvedTask14cSet.has(key) && !approvedTask15bSet.has(key) && !approvedTask16aSet.has(key) && !approvedU4RoutineSet.has(key) && !approvedTask16cSet.has(key) && !approvedTask14eSet.has(key) && !approvedCrewSelfServiceSet.has(key) && !staffChannelEnglishOnlySet.has(key) && !staffQuestionEnglishSet.has(key) && !task16e.has(key) && !u4EnglishOnly.has(key) && !toastWebhookEnglishOnly.has(key) && key!=="Ui.textSizes"
+          && !workforceEnglishOnly.has(key)
           && !["runAwaitingOwner","runAwaitingOwnerNext","runCancelled","runRetrying","cancelAction","cancelPending","cancelUncertain","cancelCompleted","cancelFailed"].some(name=>key==="SupervisorDurableWork."+name)
           && !/^SupervisorUsage\.(?:help|max|month|proactive|requests|title|unavailable)$/.test(key))
         .sort();

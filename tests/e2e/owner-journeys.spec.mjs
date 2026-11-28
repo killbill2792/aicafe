@@ -26,6 +26,46 @@ async function assertAccessibleControls(page){
   }finally{await session.detach();}
 }
 
+test("@home management team defaults and edits stay scoped to the active café",async({browser})=>{
+  test.setTimeout(100_000);
+  const owner=seededCafe(0),other=seededCafe(1);
+  const primary=await browser.newContext();
+  const foreign=await browser.newContext();
+  const name=`Growth lead ${randomUUID().slice(0,8)}`;
+  const db=new pg.Client({host:"127.0.0.1",port:54322,database:"postgres",user:"postgres",password:"postgres"});
+  await db.connect();
+  try{
+    const page=await primary.newPage();
+    await login(page,owner);
+    await openOwnedPage(page,owner,"operations");
+    await page.getByRole("link",{name:"Management team"}).click();
+    await expect(page.getByRole("heading",{name:"Management team"})).toBeVisible();
+    for(const employee of ["Luna","Alex","Leo","Maya","Olivia"]){
+      await expect(page.getByRole("heading",{name:employee,exact:true})).toBeVisible();
+    }
+    const growth=page.getByRole("article").filter({has:page.getByRole("heading",{name:"Alex",exact:true})});
+    await growth.getByText("Edit profile",{exact:true}).click();
+    await assertAccessibleControls(page);
+    await growth.getByLabel("Display name").fill(name);
+    await growth.getByRole("button",{name:"Save profile"}).click();
+    await expect(page.getByRole("heading",{name,exact:true})).toBeVisible();
+    expect((await db.query("select employee_key,display_name,job_title from public.luna_workforce_profiles where business_id=$1",[owner.businessId])).rows)
+      .toEqual([{employee_key:"growth",display_name:name,job_title:null}]);
+    await page.reload();
+    await expect(page.getByRole("heading",{name,exact:true})).toBeVisible();
+    const second=await foreign.newPage();
+    await login(second,other);
+    await openOwnedPage(second,other,"operations/team");
+    await expect(second.getByRole("heading",{name:"Alex",exact:true})).toBeVisible();
+    await expect(second.getByRole("heading",{name,exact:true})).toHaveCount(0);
+  }finally{
+    await db.query("delete from public.luna_workforce_profiles where business_id=$1 and display_name=$2",[owner.businessId,name]);
+    await db.end();
+    await primary.close();
+    await foreign.close();
+  }
+});
+
 test("@home fresh registration owns a private café and never inherits shared demo",async({browser})=>{
   test.setTimeout(100_000);
   const url=process.env.NEXT_PUBLIC_SUPABASE_URL,secret=process.env.SUPABASE_SERVICE_ROLE_KEY;

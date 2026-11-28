@@ -7123,6 +7123,95 @@
      true
     ],
     [
+     "owner_user_id",
+     "uuid",
+     true
+    ],
+    [
+     "employee_key",
+     "text",
+     true
+    ],
+    [
+     "thread_id",
+     "uuid",
+     true
+    ]
+   ],
+   "relation": "luna_employee_threads",
+   "foreign_keys": [
+    {
+     "target": "ai_threads",
+     "constraint": "luna_employee_threads_business_id_thread_id_owner_user_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "enabled",
+     "boolean",
+     true
+    ]
+   ],
+   "relation": "luna_rollouts",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "luna_rollouts_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
+     "employee_key",
+     "text",
+     true
+    ],
+    [
+     "display_name",
+     "text",
+     false
+    ],
+    [
+     "job_title",
+     "text",
+     false
+    ]
+   ],
+   "relation": "luna_workforce_profiles",
+   "foreign_keys": [
+    {
+     "target": "businesses",
+     "constraint": "luna_workforce_profiles_business_id_fkey"
+    }
+   ]
+  },
+  {
+   "rls": true,
+   "kind": "table",
+   "columns": [
+    [
+     "business_id",
+     "uuid",
+     true
+    ],
+    [
      "id",
      "uuid",
      true
@@ -14450,6 +14539,16 @@
      "owner_answer_ids",
      "uuid[]",
      true
+    ],
+    [
+     "engine",
+     "text",
+     true
+    ],
+    [
+     "employee_key",
+     "text",
+     false
     ]
    ],
    "relation": "supervisor_runs",
