@@ -9,6 +9,7 @@ import {
   type ProcessingFeeRateRule,
 } from "./processingFeeEstimate";
 import { setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
+import { readAllPosRows } from "./pagedReads";
 
 export const OWNER_CONFIRMED_ESTIMATE_PROVIDER = "owner_confirmed";
 
@@ -211,7 +212,7 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
   params: { businessId: string; fromDate: string; toDate: string },
 ): Promise<ProcessingFeeEstimateRefreshSummary> {
   const { businessId, fromDate, toDate } = params;
-  const [plans, rollupsResult, ordersResult] = await Promise.all([
+  const [plans, rollupsResult] = await Promise.all([
     getOwnerConfirmedProcessingFeePlans(supabase, businessId),
     supabase
       .from("daily_rollups")
@@ -222,28 +223,28 @@ export async function refreshOwnerConfirmedProcessingFeeEstimates(
       .gte("business_date", fromDate)
       .lte("business_date", toDate)
       .order("business_date", { ascending: true }),
-    supabase
-      .from("orders")
-      .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
-      .eq("business_id", businessId).eq("toast_excluded", false).is("superseded_by", null)
-      .gte("business_date", fromDate)
-      .lte("business_date", toDate),
   ]);
   if (rollupsResult.error) throw rollupsResult.error;
-  if (ordersResult.error) throw ordersResult.error;
 
   const rollups = (rollupsResult.data ?? []) as RollupRefreshRow[];
   const ordersByDate = new Map<string, ProcessingFeeOrderEvidence[]>();
-  for (const order of ordersResult.data ?? []) {
-    const evidence: ProcessingFeeOrderEvidence = {
+  // Read every required day before writing any estimates. The pagination limit
+  // applies to each day's evidence rather than the whole refresh window.
+  await runInChunks(rollups, 10, async ({ business_date: businessDate }) => {
+    const orders = await readAllPosRows((first, last) => supabase
+      .from("cv_orders")
+      .select("pos_order_id, net_sales_cents, processing_fee_provider")
+      .eq("business_id", businessId)
+      .eq("business_date", businessDate)
+      .eq("status", "actual")
+      .order("order_ref")
+      .range(first, last), "processing fee estimate orders");
+    ordersByDate.set(businessDate, orders.map((order) => ({
       posOrderId: order.pos_order_id,
       netSalesCents: Number(order.net_sales_cents),
       processingFeeProvider: order.processing_fee_provider,
-    };
-    const rows = ordersByDate.get(order.business_date) ?? [];
-    rows.push(evidence);
-    ordersByDate.set(order.business_date, rows);
-  }
+    })));
+  });
 
   await runInChunks(rollups, 10, async (rollup) => {
     const plan = ownerConfirmedPlanForDate(plans, rollup.business_date);
