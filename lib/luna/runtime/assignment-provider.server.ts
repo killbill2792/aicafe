@@ -100,7 +100,7 @@ function requestedCalls(state: SavedProviderResponse) {
   return calls;
 }
 
-const toolOutput = ({ callId, output }: z.infer<typeof toolReceipt>) =>
+const toolOutput = ({ callId, output }: Pick<z.infer<typeof toolReceipt>, "callId" | "output">) =>
   ({ type: "function_call_output", call_id: callId, output });
 
 function toolTranscript(previous: SavedProviderResponse) {
