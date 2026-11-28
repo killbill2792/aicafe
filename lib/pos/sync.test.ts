@@ -53,7 +53,7 @@ describe("Optional Square schedule resilience",()=>{
  it("imports covered sales even when optional scheduling access fails without leaking provider details",async()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date("2026-10-12T19:00:00Z"));
   const {client}=db(),a=adapter();
-  a.fetchPosScheduledShifts=async()=>{throw new Error("Square 403 private-provider-response")};
+  a.syncPublishedSchedule=async()=>{throw new Error("Square 403 private-provider-response")};
   const warning=vi.spyOn(console,"warn").mockImplementation(()=>{});
   try{
    const result=await syncPosData(client,{businessId:"b",locationId:"l",
@@ -66,14 +66,13 @@ describe("Optional Square schedule resilience",()=>{
  });
  it("records published shifts separately and never turns them into paid timecards",async()=>{
   const {client,seen}=db(),a=adapter();
-  a.fetchPosScheduledShifts=async()=>[{externalShiftId:"shift",externalEmployeeId:"staff",
-   externalJobId:null,scheduledStart:"2026-10-11T12:00:00Z",
-   scheduledEnd:"2026-10-11T18:00:00Z",deleted:false}];
+  a.syncPublishedSchedule=vi.fn(async()=>{});
   const result=await syncPosData(client,{businessId:"b",locationId:"l",
    timezone:"America/Los_Angeles",adapter:a,
    since:new Date("2026-10-11T07:00:00Z"),until:new Date("2026-10-12T07:00:00Z")});
   expect(result.scheduledShiftsStatus).toBe("synced");
-  expect(seen).toContain("pos_scheduled_shifts");
+  expect(a.syncPublishedSchedule).toHaveBeenCalledOnce();
+  expect(seen).not.toContain("pos_scheduled_shifts");
   expect(result.timecardsSynced).toBe(0);
  });
  it("passes no-archive protection to the catalog for multiple Square locations",async()=>{

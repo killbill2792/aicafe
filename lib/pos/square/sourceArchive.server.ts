@@ -17,6 +17,18 @@ const orderScope = z.object({
 const paymentScope = z.object({location_id: z.string(), begin_time: z.string(), end_time: z.string()})
   .transform(({location_id: location, begin_time: from, end_time: until}) => ({location, from, until}));
 
+const scheduleScope = z.object({query: z.object({filter: z.object({
+  location_ids: z.tuple([z.string()]), scheduled_shift_statuses: z.tuple([z.literal("PUBLISHED")]),
+  start: z.object({end_at: z.string()}), end: z.object({start_at: z.string()}),
+})})}).transform(({query: {filter}}) => ({
+  location: filter.location_ids[0], from: filter.end.start_at, until: filter.start.end_at,
+}));
+
+const publishedShiftDetails = z.object({
+  location_id: z.string(), team_member_id: z.string().min(1), job_id: z.string().nullish(),
+  start_at: z.string(), end_at: z.string(), is_deleted: z.boolean().nullish(),
+});
+
 /** Remote IDs belong to the merchant, even when the API filters by location.
  * Keep independent location cursors while sharing one record per merchant ID. */
 export function squareArchive(db: SupabaseClient, businessId: string, merchant: string, location: string) {
@@ -38,7 +50,13 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
       if ("location_id" in row && row.location_id != null && row.location_id !== location) {
         throw new Error("Square returned an object outside the requested location");
       }
-      if (window) {
+      if (window && resource === "scheduled_shifts") {
+        const details = publishedShiftDetails.parse("published_shift_details" in row ? row.published_shift_details : undefined);
+        const start = Date.parse(details.start_at), end = Date.parse(details.end_at);
+        if (details.location_id !== location || !(start < window.until && end > window.from && end > start)) {
+          throw new Error("Square returned a shift outside the requested scope");
+        }
+      } else if (window) {
         const data = row as Record<string, unknown>;
         const timestamp = resource === "orders" ? data.closed_at : data.created_at;
         const time = typeof timestamp === "string" ? Date.parse(timestamp) : NaN;
@@ -86,11 +104,12 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
           throw new Error("Invalid Square observation scope");
         }
         const query=savedQuery as Record<string,unknown>;
-        const window = resource === "orders" ? orderScope.parse(query) : resource === "payments" ? paymentScope.parse(query) : null;
+        const scopeSchema = {orders: orderScope, payments: paymentScope, scheduled_shifts: scheduleScope};
+        const window = Object.hasOwn(scopeSchema, resource) ? scopeSchema[resource as keyof typeof scopeSchema].parse(query) : null;
         const from = Date.parse(window?.from ?? "");
         const until = Date.parse(window?.until ?? "");
         if (window && (window.location !== location || !Number.isFinite(from) || !Number.isFinite(until) || from >= until)) {
-          throw new Error("Invalid Square financial window");
+          throw new Error("Invalid Square observation window");
         }
         const page=await fetchPage(query,cursor);
         return {records:recordsFrom(page.items,window ? {from, until} : null),next:page.next};
@@ -104,6 +123,13 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
     return records as Awaited<ReturnType<typeof fetchPage>>["items"];
   };
   return Object.assign(openCollection,{
+    async applyPublishedSchedule(query: Record<string, unknown>) {
+      await authorize();
+      const {error} = await db.rpc("square_apply_published_schedule", {
+        p_business: businessId, p_account: merchant, p_location: location, p_query: JSON.stringify(query),
+      });
+      if (error) throw error;
+    },
     async bindCatalogSources(bindings:CatalogSourceBinding[]) {
       await authorize();
       const {error}=await db.rpc("external_bind_native_identities",{

@@ -141,7 +141,7 @@ describe("Square financial archive scope", () => {
     const read = archive("orders", "ORDERS_READ");
     const sourceOrder = { ...order, location_id: "location", state: "COMPLETED", created_at: "2026-10-01T10:00:00Z" };
     const fetchPage = vi.fn(async () => ({ items: [sourceOrder], next: null }));
-    await expect(read({ ...orderQuery, location_ids: ["other"] }, fetchPage)).rejects.toThrow(/financial window/);
+    await expect(read({ ...orderQuery, location_ids: ["other"] }, fetchPage)).rejects.toThrow(/observation window/);
     expect(fetchPage).not.toHaveBeenCalled();
     await expect(read(orderQuery, fetchPage)).resolves.toEqual([sourceOrder]);
     await expect(read(orderQuery, async () => ({ items: [{ ...sourceOrder, closed_at: undefined }], next: null })))
@@ -178,17 +178,21 @@ describe("Square catalog and published shifts",()=>{
    expect(vi.mocked(squareRequest).mock.calls[0][1]).toBe("/v2/catalog/list");
  });
  it("uses API-published status and café-location scope for scheduled shifts",async()=>{
+  const archive = squareArchive({} as SupabaseClient, "business", "merchant", "location");
+  const project = vi.spyOn(archive,"applyPublishedSchedule").mockResolvedValue(undefined);
+  vi.mocked(synchronizeSource).mockImplementation(async (_db, _source, plan) => {
+    const first = await plan.observe(null,plan.scope);
+    const last = await plan.observe(first.next,plan.scope);
+    return [...first.records,...last.records].map(record=>record.payload);
+  });
   const q={id:"S1",published_shift_details:{location_id:"location",team_member_id:"T1",
    start_at:"2026-10-27T17:00:00Z",end_at:"2026-10-27T21:00:00Z"}};
   vi.mocked(squareRequest)
-   .mockResolvedValueOnce({scheduled_shifts:[q,{...q,id:"another",published_shift_details:{
-    ...q.published_shift_details,location_id:"another"}}],cursor:"next"})
-   .mockResolvedValueOnce({scheduled_shifts:[{...q,id:"S2",published_shift_details:{
-     ...q.published_shift_details,start_at:"2026-11-20T17:00:00Z",end_at:"2026-11-20T21:00:00Z"}}]});
-  const shifts=await createSquareAdapter({accessToken:"token",locationId:"location"})
-    .fetchPosScheduledShifts!({since:new Date("2026-10-27T00:00:00Z"),until:new Date("2026-10-29T00:00:00Z")});
-  expect(shifts).toMatchObject([{externalShiftId:"S1",externalEmployeeId:"T1",
-   scheduledStart:"2026-10-27T17:00:00Z",deleted:false}]);
+   .mockResolvedValueOnce({scheduled_shifts:[q],cursor:"next"})
+   .mockResolvedValueOnce({scheduled_shifts:[]});
+  const sync=createSquareAdapter({accessToken:"token",locationId:"location",archive}).syncPublishedSchedule!;
+  const window={since:new Date("2026-10-27T00:00:00Z"),until:new Date("2026-10-29T00:00:00Z")};
+  await sync(window);
   const req=vi.mocked(squareRequest).mock.calls[0][2] as {method:string;body:{query:{filter:{location_ids:string[];scheduled_shift_statuses:string[]}};limit:number}};
   expect(req.method).toBe("POST");
   expect(req.body.query.filter).toMatchObject({
@@ -196,6 +200,15 @@ describe("Square catalog and published shifts",()=>{
   });
   expect(req.body).toHaveProperty("limit",50);
   expect((vi.mocked(squareRequest).mock.calls[1][2] as {body:{cursor:string}}).body.cursor).toBe("next");
+  expect(project).toHaveBeenCalledExactlyOnceWith(req.body);
+
+  project.mockClear();
+  vi.mocked(squareRequest)
+   .mockResolvedValueOnce({scheduled_shifts:[q],cursor:"next"})
+   .mockResolvedValueOnce({scheduled_shifts:[{...q,id:"another",published_shift_details:{
+     ...q.published_shift_details,location_id:"another"}}]});
+  await expect(sync(window)).rejects.toThrow(/shift outside/);
+  expect(project).not.toHaveBeenCalled();
  });
 });
 

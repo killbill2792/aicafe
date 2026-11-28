@@ -2,7 +2,7 @@ import {readProviderPages} from "@/lib/externalData/pages";
 import "server-only";
 import { squarePaginated, squareRequest } from "./client";
 import type {squareArchive} from "./sourceArchive.server";
-import type { CatalogPriceSource, PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard, PosScheduledShift } from "../types";
+import type { CatalogPriceSource, PosAdapter, PosCatalogItem, PosEmployee, PosOrder, PosTimecard } from "../types";
 
 type SquareMoney = { amount?: number; currency?: string };
 type SquareOrderLineItem = {
@@ -81,6 +81,7 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
   archive?: ReturnType<typeof squareArchive>
 }): PosAdapter {
   const { accessToken, locationId } = params;
+  const archive = params.archive;
 
   return {
     provider: "square",
@@ -272,10 +273,8 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
       }));
     },
 
-    async fetchPosScheduledShifts({since,until}):Promise<PosScheduledShift[]> {
-      type Raw={id?:string;published_shift_details?:{location_id?:string;team_member_id?:string;
-        job_id?:string;start_at?:string;end_at?:string;is_deleted?:boolean}};
-      const read = params.archive?.("scheduled_shifts","TIMECARDS_READ");
+    syncPublishedSchedule: archive && (async ({since,until}) => {
+      const read = archive("scheduled_shifts","TIMECARDS_READ");
       const query = {query:{filter:{
         location_ids:[locationId],
         start:{end_at:until.toISOString()},
@@ -283,24 +282,18 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         scheduled_shift_statuses:["PUBLISHED"]
       }},limit:50};
       const fetchPage = async (body: Record<string,unknown>, cursor: string | null) => {
-        const result=await squareRequest<{scheduled_shifts?:Raw[];cursor?:string}>(
+        const result=await squareRequest<{scheduled_shifts?:unknown[];cursor?:string;errors?:unknown}>(
           accessToken,"/v2/labor/scheduled-shifts/search",{
             method:"POST",body:cursor?{...body,cursor}:body
           });
-        const items=(result.scheduled_shifts ?? []).filter(s=>s.published_shift_details?.location_id===locationId);
-        return {items,next:result.cursor ?? null};
+        if (result.errors || (result.scheduled_shifts != null && !Array.isArray(result.scheduled_shifts))) {
+          throw new Error("Incomplete Square schedule response");
+        }
+        return {items:result.scheduled_shifts ?? [],next:result.cursor ?? null};
       };
-      const list = await (read ? read(query,fetchPage) : readProviderPages(cursor=>fetchPage(query,cursor)));
-      return list.flatMap(shift=>{
-        const d=shift.published_shift_details;
-        if(!shift.id||!d||d.location_id!==locationId||!d.team_member_id||
-          !d.start_at||!d.end_at)return [];
-        if(Date.parse(d.start_at)>=until.getTime()||Date.parse(d.end_at)<=since.getTime())return [];
-        return [{externalShiftId:shift.id,externalEmployeeId:d.team_member_id,
-          externalJobId:d.job_id??null,scheduledStart:d.start_at,scheduledEnd:d.end_at,
-          deleted:d.is_deleted??false}];
-      });
-    },
+      await read(query,fetchPage);
+      await archive.applyPublishedSchedule(query);
+    }),
     async fetchTimecards({ since, until }): Promise<PosTimecard[]> {
       type Timecard = {
         id: string;

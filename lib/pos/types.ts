@@ -119,8 +119,6 @@ export type PosTimecard = {
   breaks: PosTimecardBreak[];
 };
 
-export type PosScheduledShift = {externalShiftId:string;externalEmployeeId:string;
- externalJobId:string|null;scheduledStart:string;scheduledEnd:string;deleted:boolean};
 export type PosAdapter = {
   provider: PosProvider;
   /** Orders closed within [since, until), including their line items. */
@@ -130,7 +128,7 @@ export type PosAdapter = {
   fetchEmployees(): Promise<PosEmployee[]>;
   fetchTimecards(range: { since: Date; until: Date }): Promise<PosTimecard[]>;
   /** Scheduled shifts never count as paid attendance. */
-  fetchPosScheduledShifts?: (range: {since:Date;until:Date}) => Promise<PosScheduledShift[]>;
+  syncPublishedSchedule?: (range: {since:Date;until:Date}) => Promise<void>;
 };
 
 export class PosNotConnectedError extends Error {

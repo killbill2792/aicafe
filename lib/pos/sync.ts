@@ -180,21 +180,12 @@ export async function syncPosData(
   // Published schedules are optional evidence, not a prerequisite for importing paid
   // attendance or sales. Record a safe failure category and retry on the next tick.
   let scheduledShiftsStatus:"not_supported"|"synced"|"unavailable"="not_supported";
-  if(adapter.fetchPosScheduledShifts){
+  if(adapter.syncPublishedSchedule){
     try{
-      const scheduledShifts=await adapter.fetchPosScheduledShifts({
-        since:new Date(Date.now()-7*86400000),until:new Date(Date.now()+14*86400000)
+      const now=Date.now();
+      await adapter.syncPublishedSchedule({
+        since:new Date(now-7*86400000),until:new Date(now+14*86400000)
       });
-      if(scheduledShifts.length){
-        const {error}=await supabase.from("pos_scheduled_shifts").upsert(
-          scheduledShifts.map(s=>({business_id:businessId,location_id:locationId,
-            provider:adapter.provider,external_shift_id:s.externalShiftId,
-            external_employee_id:s.externalEmployeeId,external_job_id:s.externalJobId,
-            scheduled_start:s.scheduledStart,scheduled_end:s.scheduledEnd,deleted:s.deleted,
-            last_synced_at:new Date().toISOString()})),
-          {onConflict:"business_id,provider,external_shift_id"});
-        if(error)throw error;
-      }
       scheduledShiftsStatus="synced";
     }catch(error){
       scheduledShiftsStatus="unavailable";

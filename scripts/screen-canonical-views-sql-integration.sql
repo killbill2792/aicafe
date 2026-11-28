@@ -360,4 +360,51 @@ SELECT (
 \else
 SELECT 1/0;
 \endif
+RESET ROLE;
+-- Deletion in Square removes the published shift from the API. An exact
+-- completed empty receipt retires the saved row without erasing older history.
+INSERT INTO public.pos_scheduled_shifts(business_id,location_id,provider,external_shift_id,
+ external_employee_id,scheduled_start,scheduled_end,deleted)
+VALUES(:'a',:'loc_a','square','older-square','square-employee',current_date-5+time '08:00',current_date-5+time '10:00',false);
+SELECT jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+ 'location_ids',jsonb_build_array('fixture-square-location'),'scheduled_shift_statuses',jsonb_build_array('PUBLISHED'),
+ 'start',jsonb_build_object('end_at',current_date::timestamptz),
+ 'end',jsonb_build_object('start_at',(current_date-2)::timestamptz))))::text AS square_window \gset
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',1,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location','query',:'square_window')),true,
+ jsonb_build_array(jsonb_build_object('key',:'shift_id','payload',jsonb_build_object('id',:'shift_id',
+  'published_shift_details',jsonb_build_object('location_id','fixture-square-location','team_member_id','square-employee',
+  'start_at',(current_date-1+time '13:00')::timestamptz,'end_at',(current_date-1+time '15:00')::timestamptz)))));
+SET LOCAL ROLE service_role;
+SELECT public.square_apply_published_schedule(:'a','fixture-square-merchant','fixture-square-location',:'square_window');
+SELECT (count(*)=1 AND bool_and(scheduled_start=(current_date-1+time '13:00')::timestamptz AND NOT deleted)) AS square_revision_kept
+FROM public.pos_scheduled_shifts WHERE business_id=:'a' AND provider='square' AND external_shift_id=:'shift_id' \gset
+\if :square_revision_kept
+\echo The certified Square revision replaces the saved shift under the same identity.
+\else
+SELECT 1/0;
+\endif
+RESET ROLE;
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',2,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location','query',:'square_window')),true,'[]');
+SET LOCAL ROLE service_role;
+SELECT public.square_apply_published_schedule(:'a','fixture-square-merchant','fixture-square-location',:'square_window');
+SELECT public.square_apply_published_schedule(:'a','fixture-square-merchant','fixture-square-location',:'square_window');
+RESET ROLE;
+SELECT jsonb_build_object('query',jsonb_build_object('filter',jsonb_build_object(
+ 'location_ids',jsonb_build_array('fixture-square-location'),'scheduled_shift_statuses',jsonb_build_array('PUBLISHED'),
+ 'start',jsonb_build_object('end_at',(current_date+2)::timestamptz),
+ 'end',jsonb_build_object('start_at',(current_date+1)::timestamptz))))::text AS square_later_window \gset
+SELECT public.external_commit_page(:'a','square','fixture-square-merchant','scheduled_shifts','fixture-square-location',3,
+ jsonb_build_object('mode','window','scope',jsonb_build_object('location','fixture-square-location','query',:'square_later_window')),true,'[]');
+SELECT (NOT EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='square' AND source_ref='square-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='square' AND source_ref='square-shift:older-square')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'b' AND source='square' AND source_ref='square-shift:'||:'shift_id')
+ AND EXISTS(SELECT FROM public.cv_shifts WHERE business_id=:'a' AND source='app' AND source_ref='shift:'||:'app_shift')
+ AND NOT has_function_privilege('authenticated','public.square_apply_published_schedule(uuid,text,text,text)','execute')) AS square_deletion_kept \gset
+\if :square_deletion_kept
+\echo An empty certified Square window retires missing shifts across later windows and preserves unrelated schedule history.
+\else
+SELECT 1/0;
+\endif
 ROLLBACK;
