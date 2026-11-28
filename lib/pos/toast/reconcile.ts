@@ -65,7 +65,7 @@ async function pullDay(db:SupabaseClient,p:Location,day:string,deadlineAt:number
  * no copy of that import (days imported before the archive existed). */
 async function savedDay(db:SupabaseClient,p:Location,day:string,runId:string|null|undefined){
  if(!runId||!GUID.safeParse(runId).success)return null;
- const rows=await readAllPages((start,end)=>db.from("toast_raw_records").select("payload")
+ const rows=await readAllPages((start,end)=>db.from("external_records").select("payload").eq("provider","toast")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
   .eq("business_date",day).eq("entity","order")
   // Latest importer leaves unchanged objects with an old run_id but updates

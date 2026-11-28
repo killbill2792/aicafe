@@ -28,22 +28,27 @@ const bankContainer = /^(?:bankAccounts?|bankAccountDetails|bankDetails|achDetai
 const normalizeKey = (name: string) => name.replace(/[^a-z0-9]/gi, "");
 const isRawJson = (JSON as typeof JSON & {isRawJSON?: (value: unknown) => boolean}).isRawJSON;
 
-function retain(value: unknown, context: "business"|"payment"|"card"|"bank"): unknown {
+type ProviderPayloadContext = "business" | "payment" | "card" | "bank";
+
+export function retainedProviderFieldContext(name: string, context: ProviderPayloadContext): ProviderPayloadContext | null {
+  const key = normalizeKey(name);
+  if (SECRET_KEY.test(key) || ENDS_WITH_SECRET.test(key) ||
+      ((context === "card" || context === "payment") && PAYMENT_DETAIL.test(key)) ||
+      (context === "card" && CARD_DETAIL.test(key)) ||
+      (context === "bank" && BANK_DETAIL.test(key))) return null;
+  return cardContainer.test(key) ? "card" : bankContainer.test(key) ? "bank" :
+    paymentContainer.test(key) ? "payment" : context;
+}
+
+function retain(value: unknown, context: ProviderPayloadContext): unknown {
   if (isRawJson?.(value)) {
     return plausibleCardNumber((value as {rawJSON: string}).rawJSON) ? "[redacted]" : value;
   }
   if (Array.isArray(value)) return value.map(item => retain(item, context));
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value).flatMap(([name, child]) => {
-      const key = normalizeKey(name);
-      if (SECRET_KEY.test(key) || ENDS_WITH_SECRET.test(key) ||
-          ((context === "card" || context === "payment") && PAYMENT_DETAIL.test(key)) ||
-          (context === "card" && CARD_DETAIL.test(key)) ||
-          (context === "bank" && BANK_DETAIL.test(key))) {
-        return [];
-      }
-      const childContext = cardContainer.test(key) ? "card" : bankContainer.test(key) ? "bank" :
-        paymentContainer.test(key) ? "payment" : context;
+      const childContext = retainedProviderFieldContext(name, context);
+      if (childContext === null) return [];
       return [[name, retain(child, childContext)]];
     });
     return Object.fromEntries(entries);
@@ -57,6 +62,6 @@ function retain(value: unknown, context: "business"|"payment"|"card"|"bank"): un
   return value;
 }
 
-export function retainProviderPayload(value: unknown, kind: "business" | "payment" = "business"): unknown {
+export function retainProviderPayload(value: unknown, kind: ProviderPayloadContext = "business"): unknown {
   return retain(value, kind);
 }

@@ -1,6 +1,6 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {createToastAdapter,type ToastCatalogFact} from "./adapter";
+import {createToastAdapter,type ToastCatalogFact,type ToastEmployeeRosterFact} from "./adapter";
 import {ToastApiError} from "./client";
 type Scope={businessId:string;restaurantGuid:string;deadlineAt?:number};
 /** Keep operational errors in the EXISTING owner-facing Toast health row.
@@ -40,9 +40,8 @@ export async function reconcileToastOperationalHealth(db:SupabaseClient,p:Scope,
 }
 
 /** Staff and menu facts are source-scoped staging, not canonical wage/recipe edits. */
-export async function stageToastRoster(db:SupabaseClient,p:Scope) {
- const adapter=createToastAdapter({db,...p,captureSources:true});
- const rows=await adapter.fetchEmployeeRosterFacts();
+export async function stageToastRoster(db:SupabaseClient,p:Scope,observed?:readonly ToastEmployeeRosterFact[]) {
+ const rows=observed??await createToastAdapter({db,...p,captureSources:true}).fetchEmployeeRosterFacts();
  if(rows.length>5000)throw new ToastApiError("invalid_response");
  for(let i=0;i<rows.length;i+=500){
   const {error}=await db.rpc("toast_stage_employee_roster",{

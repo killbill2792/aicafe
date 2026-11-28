@@ -248,6 +248,7 @@ export type ToastAdapter=PosAdapter&{
   fetchPublishedCatalogBundle():Promise<{source:unknown;items:PosCatalogItem[];facts:ToastCatalogFact[];
     receipt:{restaurantGuid:string;publicationVersion:string;observedAt:string}}>;
   fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
+  fetchEmployeeRosterBundle():Promise<{facts:ToastEmployeeRosterFact[];fetchEmployees():Promise<PosEmployee[]>}>;
   fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]>;
   fetchLaborJobSources():Promise<ToastLaborJobSource[]>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
@@ -546,6 +547,29 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       return [...seen.values()];
   }
 
+  const fetchRoster=()=>laborCollection("/labor/v1/employees",employeesSchema);
+  const fetchJobs=()=>laborCollection("/labor/v1/jobs",toastJobSchema);
+  function employeeName(row:z.infer<typeof employeeSourceSchema>){
+    return [row.chosenName||row.firstName,row.lastName].filter(Boolean).join(" ").trim()
+      ||"Toast employee "+row.guid.slice(0,8);
+  }
+  function rosterFacts(rows:z.infer<typeof employeesSchema>):ToastEmployeeRosterFact[]{
+    return rows.map(row=>({employee_guid:row.guid,display_name:employeeName(row),deleted:Boolean(row.deleted)}));
+  }
+  function employeesWithJobs(rows:z.infer<typeof employeesSchema>,jobs:z.infer<typeof toastJobSchema>):PosEmployee[]{
+    const jobsById=new Map(jobs.filter(j=>!j.deleted).map(j=>[j.guid,j]));
+    return rows.map(r=>{
+      const displayName=employeeName(r);
+      const jobId=r.jobReferences?.find(j=>jobsById.has(j.guid))?.guid;
+      const job=jobId?jobsById.get(jobId):undefined;
+      const override=r.wageOverrides?.find(w=>w.jobReference.guid===jobId);
+      const wage=override?.wage??(job?.wageFrequency==="HOURLY"?job.defaultWage:null);
+      return {posTeamMemberId:"toast:"+restaurantGuid+":"+r.guid,
+        displayName,posName:displayName,role:job?.title??null,
+        hourlyWageCents:wage==null?null:cents(wage),active:!r.deleted};
+    });
+  }
+
   const result:ToastAdapter={
     provider:"toast",
     fetchModifiedOrders:(range)=>allOrders(query(range)),
@@ -597,14 +621,10 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       return {items,facts,source,receipt:{restaurantGuid,publicationVersion,
         observedAt:new Date().toISOString()}};
     },
-    async fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]> {
-      const rows=await laborCollection("/labor/v1/employees",employeesSchema);
-      return rows.map(r=>({
-        employee_guid:r.guid,
-        display_name:([r.chosenName||r.firstName,r.lastName].filter(Boolean).join(" ").trim()||
-          "Toast employee "+r.guid.slice(0,8)),
-        deleted:Boolean(r.deleted)
-      }));
+    fetchEmployeeRosterFacts:async()=>rosterFacts(await fetchRoster()),
+    async fetchEmployeeRosterBundle(){
+      const rows=await fetchRoster();
+      return {facts:rosterFacts(rows),fetchEmployees:async()=>employeesWithJobs(rows,await fetchJobs())};
     },
     async fetchLaborEmployeeSources():Promise<ToastLaborEmployeeSource[]> {
       const rows=await laborCollection("/labor/v1/employees",employeesSchema);
@@ -617,22 +637,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         sourceFields:validatedLaborSource(jobSourceSchema,r)}));
     },
     async fetchEmployees():Promise<PosEmployee[]> {
-      const [rows,jobs]=await Promise.all([
-        laborCollection("/labor/v1/employees",employeesSchema),
-        laborCollection("/labor/v1/jobs",toastJobSchema)
-      ]);
-      const jobsById=new Map(jobs.filter(j=>!j.deleted).map(j=>[j.guid,j]));
-      return rows.map(r=>{
-        const displayName=[r.chosenName||r.firstName,r.lastName].filter(Boolean).join(" ").trim()
-          ||"Toast employee "+r.guid.slice(0,8);
-        const jobId=r.jobReferences?.find(j=>jobsById.has(j.guid))?.guid;
-        const job=jobId?jobsById.get(jobId):undefined;
-        const override=r.wageOverrides?.find(w=>w.jobReference.guid===jobId);
-        const wage=override?.wage??(job?.wageFrequency==="HOURLY"?job.defaultWage:null);
-        return {posTeamMemberId:"toast:"+restaurantGuid+":"+r.guid,
-          displayName,posName:displayName,role:job?.title??null,
-          hourlyWageCents:wage==null?null:cents(wage),active:!r.deleted};
-      });
+      const [rows,jobs]=await Promise.all([fetchRoster(),fetchJobs()]);
+      return employeesWithJobs(rows,jobs);
     },
     fetchAttendanceFacts:(range)=>fetchAttendance(range,"historical"),
     fetchAttendanceChanges:(range)=>fetchAttendance(range,"modified"),

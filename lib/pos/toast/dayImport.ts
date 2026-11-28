@@ -56,7 +56,7 @@ async function localRevisionPages(db:SupabaseClient,p:Params,work:RevisionWork,t
  if(error)throw new ToastApiError("unavailable");
  if(!base||base.import_state!=="imported"||!base.coverage_complete||base.unparsed_count!==0||
     !GUID.safeParse(base.last_import_run_id).success||typeof base.orders_snapshot_sha256!=="string")return null;
- const rows=await readAllPages((start,end)=>db.from("toast_raw_records").select("payload")
+ const rows=await readAllPages((start,end)=>db.from("external_records").select("payload").eq("provider","toast")
   .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).eq("business_date",p.businessDate).eq("entity","order")
   .or("run_id.eq."+base.last_import_run_id+",seen_run_id.eq."+base.last_import_run_id).order("id").range(start,end));
  const pages=buildRevisionPages(rows.map(row=>row.payload),work.revision.orders,base.orders_snapshot_sha256,
