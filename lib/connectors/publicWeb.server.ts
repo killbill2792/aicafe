@@ -5,16 +5,13 @@ import {readWithSourceAccess,SourceAccessChanged} from "@/lib/externalData/pages
 import {assertExternalAccess,WEB_RESOURCE} from "./access.server";
 import type {ConnectorOwner} from "./registry.server";
 import type {WebSearchResult} from "./publicWebResearch.server";
+import {PublicWebPermissionError} from "./publicWebResearch";
+export {PublicWebPermissionError} from "./publicWebResearch";
 
 // The existing café+owner permission is the sole authority. A request-scoped
 // binding keeps parallel city/holiday queries and their retries in the same
 // authenticated owner scope; never infer authority from a city, query or cache.
 const scopeContext=new AsyncLocalStorage<ConnectorOwner>();
-export class PublicWebPermissionError extends Error{
-  constructor(readonly reason:"permissionDenied"|"permissionsUnavailable"){
-    super(reason);this.name="PublicWebPermissionError";
-  }
-}
 export async function assertOwnerPublicWeb(scope:ConnectorOwner):Promise<number>{
   try{
     await assertCafeAiAccess(scope.businessId);

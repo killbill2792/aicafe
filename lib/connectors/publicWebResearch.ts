@@ -1,3 +1,10 @@
+export class PublicWebPermissionError extends Error {
+  constructor(readonly reason:"permissionDenied"|"permissionsUnavailable") {
+    super(reason);
+    this.name="PublicWebPermissionError";
+  }
+}
+
 export const publicWebResearchInstructions =
   "Investigate the public research objective. Formulate and refine your own searches, open reliable sources, " +
   "and corroborate important claims when the question warrants it. Give a useful answer with inline citations " +

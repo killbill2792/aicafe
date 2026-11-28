@@ -4,9 +4,10 @@ import { z } from "zod";
 import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
 import { describeDatabase, describeDatabaseToolDefinition } from "@/lib/ai/research/tools.server";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
-import { assertOwnerPublicWeb, ownerPublicWebSearch } from "@/lib/connectors/publicWeb.server";
+import { readCafeAccess, readExternalAccess, requireConnectorMembership, type AccessReader } from "@/lib/connectors/publicWebAccess.server";
+import { readWithSourceAccess } from "@/lib/externalData/pages";
 import { publicResearchIncludesPrivateValue, publicWebResearchTool } from "@/lib/connectors/publicWebResearch";
-import { searchWeb } from "@/lib/connectors/publicWebResearch.server";
+import { createWebSearch } from "@/lib/connectors/publicWebResearch.server";
 import { loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { workforceRoster } from "../workforce/roster";
 import { runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
@@ -32,18 +33,30 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
 ];
 
 function assignmentWebResearch(accounting: ProviderArgs["accounting"]): AssignmentReadTool {
+  const assertAccess: NonNullable<AssignmentReadTool["sourceRevision"]> = async context => {
+    if(!("from" in accounting.db)||typeof accounting.db.from!=="function")throw Error("public_web_permission_unavailable");
+    const db=accounting.db as AccessReader;
+    await accounting.authorize();
+    await requireConnectorMembership(db,context);
+    const [entitlement,permission]=await Promise.all([readCafeAccess(db,context.businessId),readExternalAccess(db,context,"public_web","public")]);
+    if(!entitlement.active||!permission.allowed)throw Error("public_web_access_revoked");
+    return permission.revision;
+  };
   return {
     definition: publicWebResearchTool,
-    sourceRevision: assertOwnerPublicWeb,
+    sourceRevision: assertAccess,
     usesProvider: true,
     execute: async (context, args, signal) => {
       const parsed = webArguments.safeParse(args);
       if (!parsed.success) return { ok:false, error:"invalid_tool_arguments" };
       if (publicResearchIncludesPrivateValue(parsed.data.query))
         return { ok:false, error:"Rewrite the search as a public research objective without private values." };
-      const value = await ownerPublicWebSearch(context, () => withDurableProviderTurn({ ...accounting, ...context }, async () => {
+      const authorize=() => assertAccess(context);
+      const lookup=createWebSearch({fetch:(input,init)=>readWithSourceAccess(authorize,()=>fetch(input,init),
+        async response=>{await response.body?.cancel().catch(()=>undefined);})});
+      const value = await readWithSourceAccess(authorize, () => withDurableProviderTurn({ ...accounting, ...context }, async () => {
         const outputCap = await loadModelExecutionCap(accounting.db);
-        return searchWeb(parsed.data.query, {
+        return lookup(parsed.data.query, {
           outputCap,
           reserveTransport: request => reserveDurableProviderRequest(request,"hosted_web",outputCap),
           reserveModelCall: () => true,

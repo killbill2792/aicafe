@@ -1,6 +1,6 @@
 import "server-only";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
-import { ownerPublicWebFetch, PublicWebPermissionError } from "./publicWeb.server";
+import { PublicWebPermissionError } from "./publicWebResearch";
 import { publicResearchIncludesPrivateValue, publicWebResearchInstructions } from "./publicWebResearch";
 
 type Source = { title: string; url: string };
@@ -26,7 +26,7 @@ export type WebSearchBudget = {
   reserveTransport?: (request: ResponseRecord) => Promise<Reservation | null>;
 };
 type Dependencies = {
-  fetch?: typeof fetch;
+  fetch: typeof fetch;
   apiKey?: string;
   model?: string;
   now?: () => number;
@@ -86,8 +86,8 @@ export function extractWebSearchAnswer(body: unknown): Answer | null {
   return response && (response.status === undefined || response.status === "completed") ? readAnswer(response) : null;
 }
 
-export function createWebSearch(deps: Dependencies = {}) {
-  const doFetch = deps.fetch ?? ownerPublicWebFetch;
+export function createWebSearch(deps: Dependencies) {
+  const doFetch = deps.fetch;
   const now = deps.now ?? Date.now;
   return async (query: string, budget?: WebSearchBudget, signal?: AbortSignal): Promise<WebSearchResult> => {
     if (signal?.aborted) return { available: false, reason: "timeout" };
@@ -151,4 +151,3 @@ export function createWebSearch(deps: Dependencies = {}) {
     }
   };
 }
-export const searchWeb = createWebSearch();

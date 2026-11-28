@@ -1,5 +1,6 @@
 import "server-only";
 import {z} from "zod";
+import {readExternalAccess} from "./publicWebAccess.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertConnectorOwnerLive,type ConnectorOwner} from "./registry.server";
 
@@ -12,15 +13,7 @@ export const WEB_RESOURCE="public";
 export const FILE_RESOURCE="all";
 export async function externalAccess(scope:ConnectorOwner,kind:ExternalKind,resourceKey:string):
  Promise<ExternalAccess>{
- const {data,error}=await createAdminSupabaseClient().from("supervisor_external_access")
-   .select("allowed,revision").eq("business_id",scope.businessId)
-   .eq("owner_user_id",scope.ownerUserId).eq("kind",kind)
-   .eq("resource_key",kind==="attachment"?resourceKey.toLowerCase():resourceKey).maybeSingle();
- if(error)throw new Error("external_access_unavailable");
- if(!data)return {allowed:true,revision:0};
- if(typeof data.allowed!=="boolean"||!Number.isSafeInteger(Number(data.revision)))
-   throw new Error("external_access_invalid");
- return {allowed:data.allowed,revision:Number(data.revision)};
+ return readExternalAccess(createAdminSupabaseClient(),scope,kind,resourceKey);
 }
 export async function assertExternalAccess(scope:ConnectorOwner,kind:ExternalKind,resourceKey:string){
  await assertConnectorOwnerLive(scope);

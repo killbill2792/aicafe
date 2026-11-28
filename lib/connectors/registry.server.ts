@@ -2,6 +2,7 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {requireConnectorMembership} from "./publicWebAccess.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 
 export type ConnectorOwner={businessId:string;ownerUserId:string};
@@ -22,10 +23,7 @@ export async function requireConnectorOwner():Promise<ConnectorOwner>{
 /** A durable worker's saved scope is not ongoing owner authorization.
  * Verify current membership independently of the original chat/claim. */
 export async function assertConnectorOwnerLive(scope:ConnectorOwner):Promise<void>{
-  const {data,error}=await createAdminSupabaseClient().from("memberships")
-    .select("role").eq("business_id",scope.businessId)
-    .eq("user_id",scope.ownerUserId).maybeSingle();
-  if(error||data?.role!=="owner")throw new Error("connector_owner_access_revoked");
+  await requireConnectorMembership(createAdminSupabaseClient(),scope);
 }
 export async function getConnectorAccount(scope:ConnectorOwner):Promise<ConnectorAccount|null>{
   await assertConnectorOwnerLive(scope);
