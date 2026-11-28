@@ -12,7 +12,7 @@ export async function readCafeAccess(client:AccessReader,businessId:string){
   ]);
   if(tzError)throw tzError;
   if(error&&!["42P01","PGRST205"].includes(error.code??""))throw error;
-  return accessStatus(data,new Date(),business?.timezone||"UTC");
+  return accessStatus(data,new Date(),business?.timezone||undefined);
 }
 
 export async function requireConnectorMembership(client:AccessReader,scope:ConnectorOwner){
