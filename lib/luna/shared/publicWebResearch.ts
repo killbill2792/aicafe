@@ -15,7 +15,7 @@ export const publicWebResearchTool = {
   type: "function", name: "search_web", strict: true,
   description: "Investigate public information beyond the café. Submit the full public research objective " +
     "so the web researcher can search, follow leads and compare sources. Use broad public location when relevant. " +
-    "Exclude confidential details, private records, messages, names, credentials and identifiers. " +
+    "Exclude confidential café details, including private records, messages, staff and customer identities, and credentials. " +
     "Use the returned source links as clickable citations for claims and report any important gaps.",
   parameters: { type: "object", additionalProperties: false, required: ["query"], properties: {
     query: { type: "string", description: "The standalone public research objective." },
