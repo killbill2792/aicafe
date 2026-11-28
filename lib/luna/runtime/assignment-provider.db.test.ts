@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { expect, it, vi } from "vitest";
 import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
+import { backgroundResearchContinuation } from "@/lib/ai/research/backgroundContinuation.server";
+import { meteredInvestigationProvider } from "@/lib/ai/supervisor/routines/investigationUsage.server";
+import { runLunaScheduledResearch } from "@/lib/ai/supervisor/routines/luna-objective.server";
+import { verifyObjectiveTurn } from "@/lib/ai/supervisor/routines/objective.server";
+import { createOwnerRoutine } from "@/lib/ai/supervisor/routines/repository.server";
 import { runClaimedAssignmentProvider } from "./assignment-provider.server";
 import { processLunaAssignment } from "./assignment-worker.server";
 
@@ -31,7 +36,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         if (!/^[a-z_0-9]+$/.test(name)) throw new Error("unexpected test RPC name");
         const values = Object.entries(args).map(([key, value]) => key === "p_blocks" ? JSON.stringify(value) : value);
         if (name === "luna_provider_inputs") return (await db.query(`select * from public.${name}(${params})`, values)).rows;
-        return (await db.query(`select public.${name}(${params}) as result`, values)).rows[0]?.result;
+        return (await db.query(`select to_jsonb(public.${name}(${params})) as result`, values)).rows[0]?.result;
       };
     const accounting = (worker: Client) => ({
       db: { rpc: async (name: string, args: Record<string, unknown>) => {
@@ -61,7 +66,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       const { id: runId, engine } = (await firstWorker.query(`select public.supervisor_admit_owner_run_v2($1,$2,$3,$4,$5,'en','{}') as run`,
         [...scope, messageId, "a".repeat(64)])).rows[0].run;
       expect(engine).toBe(replacement ? "replacement" : "legacy");
-      return { businessId, ownerUserId, threadId, runId: String(runId), scope, question,
+      return { businessId, ownerUserId, threadId, messageId, runId: String(runId), scope, question,
         workerScope: { businessId, ownerUserId, threadId } };
     }
 
@@ -436,6 +441,95 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         .toEqual({ type: "message", role: "user", content: newInstruction });
       expect((await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'",
         [capped.threadId])).rows).toEqual([{ structured_content: [{ type: "text", text: correctedReply }] }]);
+
+      vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", directUrl.toString());
+      const scheduled = await admit(true, "Reconcile Toast sales each day at noon.", "operations");
+      await firstWorker.query("update public.luna_rollouts set scope='workforce' where business_id=$1", [scheduled.businessId]);
+      await admin.query("insert into public.memberships(business_id,user_id,role) values($1,$2,'owner')", [toast.businessId, scheduled.ownerUserId]);
+      await firstWorker.query("select public.external_commit_page($1,'routine-fixture','source','sales','day',0,null,true,$2::jsonb)",
+        [scheduled.businessId, JSON.stringify([{ key: "original", payload: { net: 2125 } }])]);
+      await firstWorker.query("select public.external_commit_page($1,'routine-fixture','source','sales','day',0,null,true,$2::jsonb)",
+        [toast.businessId, JSON.stringify([{ key: "other", payload: { net: 6464 } }])]);
+      vi.stubEnv("SUPERVISOR_U4_ENABLED", "true");
+      const routine = await createOwnerRoutine({ title: "Toast reconciliation", cadence: "daily", weekdays: [], localTime: "12:00" }, {
+        scope: scheduled.workerScope, threadId: scheduled.threadId, ownerMessageId: scheduled.messageId,
+        goalSourceMessageId: scheduled.messageId, client: accounting(firstWorker).db as never,
+      });
+      expect(routine.objectiveText).toBe(scheduled.question);
+      const due = (await admin.query(`select (day at time zone $1)::date::text as local_date,
+        ((day at time zone $1)::date + time '12:00') at time zone $1 as instant
+        from (select now()-interval '1 day' as day) dated`, [routine.timezone])).rows[0];
+      await admin.query("update public.supervisor_routines set updated_at=$2::timestamptz-interval '1 hour' where id=$1", [routine.id, due.instant]);
+      const clock = new Date().toISOString();
+      const admission = await rpc(firstWorker)("u4_due_objective_admission", { p_now: clock, p_limit: 12, p_watch_enabled: false, p_engine: "replacement" });
+      expect(admission).toEqual(expect.arrayContaining([expect.objectContaining({ routine: expect.objectContaining({ id: routine.id }), localDate: due.local_date })]));
+      const claimScheduled = (db: Client, engine = "replacement") => rpc(db)("supervisor_claim_current_routine_occurrence", {
+        p_business_id: scheduled.businessId, p_routine_id: routine.id, p_revision: routine.revision,
+        p_local_date: due.local_date, p_scheduled_for_utc: due.instant, p_now: new Date().toISOString(), p_engine: engine,
+      }) as Promise<{ run_id: string; lease_token: string; engine: string; employee_key: string } | null>;
+      expect(await claimScheduled(firstWorker, "legacy")).toBeNull();
+      const initial = await claimScheduled(firstWorker);
+      expect(initial).toMatchObject({ engine: "replacement", employee_key: "operations" });
+      expect(await claimScheduled(secondWorker)).toBeNull();
+      const query = sql("call_original_scheduled_sales", "select sum((payload->>'net')::int) as cents from external_records where provider='routine-fixture'");
+      const finalReport = "The original Toast sales record reports 2,125 cents.";
+      const provider = vi.fn<import("@/lib/ai/agent/loop.server").AgentProvider>()
+        .mockImplementationOnce(async function* () { yield { type: "response.completed", response: { ...response, output: [query] } }; })
+        .mockImplementationOnce(async function* () {
+          yield { type: "response.completed", response: { ...response, output: [{ type: "message", role: "assistant",
+            content: [{ type: "output_text", text: finalReport }] }] } };
+        });
+      const runScheduled = async (db: Client, claim: NonNullable<typeof initial>, interrupt = false) => {
+        const scope = scheduled.workerScope;
+        const port = accounting(db).db as never;
+        const saved = await backgroundResearchContinuation(port, { ...scope, sourceType: "routine", sourceId: claim.run_id,
+          revision: String(routine.revision), leaseToken: claim.lease_token });
+        const metered = meteredInvestigationProvider(port, { ...scope, sourceType: "routine", sourceId: claim.run_id,
+          leaseToken: claim.lease_token }, provider);
+        return runLunaScheduledResearch({ scope, provider, executionDeadline: saved.executionDeadline,
+          budget: accounting(db).budget, request: { model, max_output_tokens: 100, instructions: "Use recorded evidence.",
+            input: [{ role: "user", content: routine.objectiveText }] },
+          reserve: async payload => ({ launched: () => undefined, complete: await metered.reserve(payload) }),
+          authorize: async () => {
+            expect(await rpc(db)("u4_routine_lease_active", { p_business_id: scope.businessId, p_routine_id: routine.id,
+              p_run_id: claim.run_id, p_lease_token: claim.lease_token })).toBe(true);
+          },
+          continuation: { ...saved, save: async state => {
+            await saved.save(state);
+            if (interrupt && (state as { result?: { toolReceipts?: unknown[] } }).result?.toolReceipts?.length)
+              throw new Error("simulated loss after scheduled SQL receipt");
+          } },
+        });
+      };
+      await expect(runScheduled(firstWorker, initial!, true)).rejects.toThrow("simulated loss after scheduled SQL receipt");
+      vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", undefined);
+      await firstWorker.query("update public.luna_rollouts set enabled=false where business_id=$1", [scheduled.businessId]);
+      await admin.query("update public.supervisor_routine_occurrences set lease_until=clock_timestamp() where run_id=$1", [initial!.run_id]);
+      const recoveredRoutine = await claimScheduled(secondWorker);
+      expect(recoveredRoutine).toMatchObject({ run_id: initial!.run_id, engine: "replacement", employee_key: "operations" });
+      expect(recoveredRoutine?.lease_token).not.toBe(initial!.lease_token);
+      const scheduledTurn = await runScheduled(secondWorker, recoveredRoutine!);
+      const outcome = verifyObjectiveTurn(scheduledTurn, routine);
+      expect(outcome).toMatchObject({ report: finalReport, sourceCount: 1, observedToolNames: ["run_sql"] });
+      expect(provider).toHaveBeenCalledTimes(2);
+      expect(provider.mock.calls[1][0].input).toContainEqual({ type: "function_call_output", call_id: query.call_id,
+        output: JSON.stringify({ ok: true, row_count: 1, rows: [{ cents: 2125 }] }) });
+      const reportArgs = { p_business_id: scheduled.businessId, p_routine_id: routine.id, p_run_id: recoveredRoutine!.run_id,
+        p_lease_token: recoveredRoutine!.lease_token, p_report: outcome.report, p_attention: outcome.attention,
+        p_proof: { sources: outcome.sourceRefs.map(ref => ({ source: "cafe_state", identifier: ref.tool, evidenceDigest: ref.evidenceDigest })),
+          sourceCount: outcome.sourceCount, quality: "answered", externalEffects: "not_attempted" }, p_now: new Date().toISOString() };
+      expect(await rpc(secondWorker)("u4_publish_objective_report", reportArgs)).toBe(true);
+      expect(await rpc(secondWorker)("u4_publish_objective_report", reportArgs)).toBe(false);
+      expect((await admin.query("select role,count(*)::int as count from public.ai_messages where thread_id=$1 group by role order by role",
+        [scheduled.threadId])).rows).toEqual([{ role: "owner", count: 1 }, { role: "supervisor", count: 1 }]);
+      expect((await admin.query(`select source_type,status,count(*)::int as count from public.supervisor_system_usage_events
+        where business_id=$1 group by source_type,status`, [scheduled.businessId])).rows).toEqual([
+        { source_type: "routine", status: "completed", count: 2 },
+      ]);
+      const nextDay = new Date(Date.parse(due.instant) + 86_400_000);
+      expect(await rpc(secondWorker)("supervisor_claim_current_routine_occurrence", { p_business_id: scheduled.businessId,
+        p_routine_id: routine.id, p_revision: routine.revision, p_local_date: nextDay.toISOString().slice(0,10),
+        p_scheduled_for_utc: nextDay, p_now: new Date(nextDay.getTime() + 60_000) })).toBeNull();
     } finally {
       vi.unstubAllEnvs();
       await admin.query(`drop role ${role}`);

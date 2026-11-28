@@ -9,7 +9,7 @@ const mocks=vi.hoisted(()=>({
   enqueue:vi.fn(async()=>2),
   investigate:vi.fn(async(_db:unknown,_now:Date,_maxSteps:number,_provider?:unknown,_proof?:unknown,_deadline?:number)=>({processed:1,collected:1,investigated:0,followUps:0,rechecked:0,failed:0})),
   routines:vi.fn(async(_db:unknown,_businessId:string,_timezone:string,_now:Date,_enqueue?:unknown)=>({routinesChecked:1,runs:1,notices:1,failed:0,evidenceChecks:1,investigationsQueued:2})),
-  objectives:vi.fn(async(_db?:unknown,_now?:Date,_provider?:unknown,_deadline?:number)=>({admitted:0,claimed:0,completed:0,failed:0,deferred:0})),
+  objectives:vi.fn(async(_db?:unknown,_now?:Date,_provider?:unknown,_deadline?:number,_engine?:string)=>({admitted:0,claimed:0,completed:0,failed:0,deferred:0})),
   push:vi.fn(async()=>({sent:0,retried:0,failed:0})),
 }));
 vi.mock("@/lib/security/bearer",()=>({verifyBearer:(req:Request,secret:string)=>
@@ -213,7 +213,8 @@ describe("U4 development/release boundary",()=>{
 
 it("passes absolute cron lane deadlines to resumable research, even after slow earlier lanes",async()=>{
  const start=Date.now();
- mocks.objectives.mockImplementationOnce(async(_db,_now,_provider,deadline)=>{
+ mocks.objectives.mockImplementationOnce(async(_db,_now,_provider,deadline,engine)=>{
+  expect(engine).toBe("legacy");
   expect(deadline).toBe(start+35_000);
   vi.setSystemTime(deadline!);
   return {admitted:1,claimed:1,completed:0,failed:0,deferred:1};

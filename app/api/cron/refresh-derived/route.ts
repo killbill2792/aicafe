@@ -21,9 +21,8 @@ export async function GET(request:Request){
   let checked=0,refreshed=0,failed=0,deferred=0;
   const routines={routinesChecked:0,runs:0,notices:0,failed:0,evidenceChecks:0,investigationsQueued:0};
   const now=new Date();
-  // One existing cron authority: cheap due objectives run first, independent
-  // of the slower 15-minute derived refresh fleet window.
-  const dueObjectives=await dispatchDueObjectivesAcrossCafes(db,now,undefined,now.getTime()+35_000).catch(()=>
+  // Existing general and Watch objectives keep their refresh cadence.
+  const dueObjectives=await dispatchDueObjectivesAcrossCafes(db,now,undefined,now.getTime()+35_000,"legacy").catch(()=>
     ({admitted:0,claimed:0,completed:0,failed:1,deferred:0}));
   // Source refresh/triage receives an explicit early 90-second window, after
   // the time-sensitive objective claim but before slower queued push/chat/model

@@ -152,19 +152,25 @@ export async function listRoutineOccurrenceCandidates(db:SupabaseClient,params:{
     localDate:row.local_date,scheduledForUtc:row.scheduled_for_utc,
   }));
 }
-export type ClaimedRoutine={runId:string;leaseToken:string;revision:number};
+export type RoutineEngine="legacy"|"replacement";
+export type ClaimedRoutine={runId:string;leaseToken:string;revision:number;engine?:RoutineEngine;employeeKey?:string};
 export async function claimRoutineOccurrence(db:SupabaseClient,params:{
-  businessId:string;routineId:string;revision:number;localDate:string;dueAt:Date;now:Date
+  businessId:string;routineId:string;revision:number;localDate:string;dueAt:Date;now:Date;engine?:RoutineEngine
 }):Promise<ClaimedRoutine|null>{
   const {data,error}=await db.rpc("supervisor_claim_current_routine_occurrence",{
     p_business_id:params.businessId,p_routine_id:params.routineId,
     p_revision:params.revision,p_local_date:params.localDate,p_scheduled_for_utc:params.dueAt.toISOString(),
     p_now:params.now.toISOString(),
+    ...(params.engine?{p_engine:params.engine}:{}),
   });
+  if(error?.message==="luna_routine_engine_changed")return null;
   if(error)throw error;
   if(!data)return null;
-  const row=data as {run_id:string;lease_token:string;revision:number};
-  return {runId:row.run_id,leaseToken:row.lease_token,revision:row.revision};
+  const row=z.object({run_id:z.uuid(),lease_token:z.uuid(),revision:z.number().int().positive(),
+    engine:z.enum(["legacy","replacement"]).optional(),employee_key:z.string().nullish()}).parse(data);
+  if(row.engine==="replacement"&&!row.employee_key)throw new Error("luna_routine_employee_unavailable");
+  return {runId:row.run_id,leaseToken:row.lease_token,revision:row.revision,
+    ...(row.employee_key?{engine:row.engine,employeeKey:row.employee_key}:{})};
 }
 export async function finishRoutineOccurrence(db:SupabaseClient,params:{
   businessId:string;routineId:string;runId:string;leaseToken:string;

@@ -1,13 +1,14 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { SupervisorReplyBlock } from "@/lib/ai/conversations/contracts";
 import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
 import {
   describeDatabase, describeResearchDatabaseToolDefinition, runSql, runSqlToolDefinition,
 } from "@/lib/ai/research/tools.server";
 import { decodeClaim, runScopeSchema, type RunScope, type StepClaim } from "@/lib/ai/supervisor/runs/contracts";
 import { workforceRoster } from "../workforce/roster";
-import { LunaAssignmentYielded, runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
+import { LunaAssignmentYielded, runClaimedAssignmentProvider, type AssignmentReadTool, type SavedProviderResponse } from "./assignment-provider.server";
 
 const textPart = z.object({ type: z.literal("output_text"), text: z.string() });
 const assistantMessage = z.object({
@@ -17,7 +18,7 @@ type ProviderArgs = Parameters<typeof runClaimedAssignmentProvider>[0];
 
 const describeDatabaseArguments = z.strictObject({ tables: z.array(z.string()).nullable() });
 const runSqlArguments = z.strictObject({ sql: z.string().trim().min(1) });
-const assignmentReadTools: readonly AssignmentReadTool[] = [
+export const assignmentReadTools: readonly AssignmentReadTool[] = [
   { definition: calculationToolDefinition, execute: (_, args) => executeCalculationTool(args) },
   {
     definition: describeResearchDatabaseToolDefinition,
@@ -37,12 +38,28 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
   },
 ];
 
+export function assignmentInstructions(instructions: string, key: string) {
+  const employee = workforceRoster().find(profile => profile.key === key);
+  if (!employee) throw new Error("luna_assignment_employee_unavailable");
+  return [instructions, `Your assigned role is ${employee.title}.`,
+    employee.communicationStyle, ...employee.responsibilities].join("\n");
+}
+
+export function assignmentTextBlocks(result: SavedProviderResponse) {
+  const items = result.response.output.filter(item => item.type !== "reasoning");
+  const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)
+    .filter(part => part.text.length > 0).map(part => ({ type: "text", text: part.text }));
+  if (!blocks.length) throw new Error("luna_assignment_reply_empty");
+  return blocks;
+}
+
 /** Process one admitted replacement assignment using the existing claim,
  * provider checkpoint and atomic publication RPCs. */
 export async function processLunaAssignment({
-  scope: claimedScope, runId: id, dispatch, ...provider
+  scope: claimedScope, runId: id, dispatch, resultBlocks, ...provider
 }: Omit<ProviderArgs, "lease" | "supersedeOperation"> & {
   scope: RunScope; runId: string; dispatch?: { workerId: string; step: StepClaim };
+  resultBlocks?: (result: SavedProviderResponse) => readonly SupervisorReplyBlock[];
 }): Promise<"busy" | "blocked" | "completed"> {
   const scope = runScopeSchema.parse(claimedScope);
   const runId = z.uuid().parse(id);
@@ -74,10 +91,7 @@ export async function processLunaAssignment({
     readTools: provider.readTools ?? assignmentReadTools,
     buildRequest: async (context, steering) => {
       const request = await provider.buildRequest(context, steering);
-      const employee = workforceRoster().find(profile => profile.key === context.employeeKey);
-      if (!employee) throw new Error("luna_assignment_employee_unavailable");
-      return { ...request, instructions: [request.instructions, `Your assigned role is ${employee.title}.`,
-        employee.communicationStyle, ...employee.responsibilities].join("\n") };
+      return { ...request, instructions: assignmentInstructions(request.instructions, context.employeeKey) };
     },
   };
   let supersedeOperation: string | undefined;
@@ -87,10 +101,7 @@ export async function processLunaAssignment({
       throw error;
     });
     if (!turn) return "busy";
-    const items = turn.result.response.output.filter(item => item.type !== "reasoning");
-    const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)
-      .filter(part => part.text.length > 0).map(part => ({ type: "text", text: part.text }));
-    if (!blocks.length) throw new Error("luna_assignment_reply_empty");
+    const blocks = [...assignmentTextBlocks(turn.result), ...resultBlocks?.(turn.result) ?? []];
 
     signal.throwIfAborted();
     const replyId = randomUUID();

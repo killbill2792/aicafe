@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const work = vi.hoisted(() => ({
-  process: vi.fn(), start: vi.fn(), replacement: vi.fn(), budget: vi.fn(),
+  process: vi.fn(), start: vi.fn(), replacement: vi.fn(), budget: vi.fn(), scheduled: vi.fn(),
 }));
 vi.mock("@/lib/ai/supervisor/runs/worker.server", () => ({
   processOldestDurableRun: work.process,
@@ -9,6 +9,8 @@ vi.mock("@/lib/ai/supervisor/runs/worker.server", () => ({
   configuredBudget: work.budget,
 }));
 vi.mock("@/lib/ai/supervisor/runs/luna-entry.server", () => ({ runNextLunaAssignment: work.replacement }));
+vi.mock("@/lib/supabase/admin", () => ({ createAdminSupabaseClient: () => ({}) }));
+vi.mock("@/lib/ai/supervisor/routines/dispatch.server", () => ({ dispatchDueObjectivesAcrossCafes: work.scheduled }));
 import { GET, POST } from "./route";
 
 const url = "https://example.test/api/cron/supervisor-run-worker";
@@ -22,11 +24,14 @@ const ownerMessageId = "00000000-0000-4000-8000-000000000111";
 beforeEach(() => {
   work.process.mockReset().mockResolvedValue({ processed: 1, state: "completed" });
   work.start.mockReset().mockResolvedValue({ id: "00000000-0000-4000-8000-000000000222", status: "pending" });
+  vi.stubEnv("SUPERVISOR_U4_ENABLED", "false");
+  work.scheduled.mockReset();
   work.replacement.mockReset().mockResolvedValue({ processed: 0, state: null });
   process.env.CRON_SECRET = "private-test-cron-secret";
   delete process.env.SUPERVISOR_RUN_WORKER_ENABLED;
 });
 afterEach(() => {
+  vi.unstubAllEnvs();
   if (old.secret === undefined) delete process.env.CRON_SECRET;
   else process.env.CRON_SECRET = old.secret;
   if (old.flag === undefined) delete process.env.SUPERVISOR_RUN_WORKER_ENABLED;
@@ -75,6 +80,18 @@ describe("durable Supervisor worker cron trust boundary", () => {
     expect(await response.json()).toEqual({ processed: 1, state: "completed", replacement: { processed: 1, state: "completed" } });
     expect(work.process).toHaveBeenCalledOnce();
     expect(work.replacement).toHaveBeenCalledOnce();
+  });
+  it("admits due workforce objectives on the minute tick without running source refresh", async () => {
+    process.env.SUPERVISOR_RUN_WORKER_ENABLED = "true";
+    vi.stubEnv("SUPERVISOR_U4_ENABLED", "true");
+    expect((await GET(request("GET"))).status).toBe(401);
+    expect(work.scheduled).not.toHaveBeenCalled();
+    const outcome = { admitted: 1, claimed: 1, completed: 1, failed: 0, deferred: 0 };
+    work.scheduled.mockResolvedValueOnce(outcome);
+    const response = await GET(request("GET", "Bearer private-test-cron-secret"));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ scheduled: outcome });
+    expect(work.scheduled).toHaveBeenCalledExactlyOnceWith({}, expect.any(Date), undefined, expect.any(Number), "replacement");
   });
   it("does not disclose internal failures or run any work on invalid config", async () => {
     process.env.SUPERVISOR_RUN_WORKER_ENABLED = "true";
