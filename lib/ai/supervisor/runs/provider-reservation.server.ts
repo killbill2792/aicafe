@@ -1,0 +1,166 @@
+import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
+import { PRODUCTION_SUPERVISOR_OPENAI_MODEL, configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
+import { modelTokenUsage, standardModelTokenRates, estimateModelCallCostMicros, hostedWebActualCostMicros } from "@/lib/calc/supervisorTokenCost";
+import type { WorkerBudget } from "./usage.server";
+
+type ReservationDatabase = {
+  rpc(name: string, params: Record<string, unknown>): PromiseLike<{
+    data: unknown;
+    error: { code?: string } | null;
+  }>;
+};
+
+/** The existing durable owner-turn lease, not a new queue or agent. Each
+ * provider launch spends in the existing persisted system-attempt ledger.
+ * Request bodies and owner content are never written to that ledger. */
+export type DurableProviderScope = {
+  db: ReservationDatabase; businessId:string; ownerUserId:string; threadId:string;
+  runId:string; ownerMessageId:string; jobId:string; claimToken:string;
+  budget:WorkerBudget; ownerDailyCap:number|null; authorize:()=>Promise<void>;
+  unrestrictedResearch?:boolean;
+};
+type DurableProviderContext = { scope:DurableProviderScope; launched:string[]; denied:boolean };
+const durableProviderTurns = new AsyncLocalStorage<DurableProviderContext>();
+/** Expanded capacity requires a migrated database. On rolling deploy, an
+ * absent RPC keeps the legacy cap; other failures stop admission. */
+export async function loadModelExecutionCap(db:ReservationDatabase,model=configuredSupervisorModel()):Promise<number>{
+  if(model!==PRODUCTION_SUPERVISOR_OPENAI_MODEL||
+     process.env.AI_CAFE_LIVE_ACCEPTANCE==="OWNER_APPROVED_LOCAL_ONLY"||
+     process.env.AICAFE_TASK14B_BUDGET_LEDGER)return 1200;
+  const {data,error}=await db.rpc("supervisor_model_execution_cap",{p_model:model});
+  if(error){
+    if(error.code==="PGRST202"||error.code==="42883")return 1200;
+    throw Error("worker_execution_cap_unavailable");
+  }
+  if(data!==8192&&data!==1200)throw Error("worker_execution_cap_unavailable");
+  return data;
+}
+export function hasDurableProviderTurn(): boolean {
+  return durableProviderTurns.getStore() !== undefined;
+}
+export function withDurableProviderTurn<T>(scope:DurableProviderScope,work:()=>Promise<T>):Promise<T>{
+  return durableProviderTurns.run({scope,launched:[],denied:false},work);
+}
+export function currentDurableUsageAccounting(
+  owner:{businessId:string;ownerUserId:string;threadId:string;ownerMessageId:string},calls:number,
+):{runId:string;attemptIds:string[]}|null{
+  const ctx=durableProviderTurns.getStore();
+  if(!ctx||calls===0)return null;
+  if(ctx.scope.businessId!==owner.businessId||ctx.scope.ownerUserId!==owner.ownerUserId||
+     ctx.scope.threadId!==owner.threadId||ctx.scope.ownerMessageId!==owner.ownerMessageId||
+     calls!==ctx.launched.length)throw new Error("durable_usage_scope_mismatch");
+  return {runId:ctx.scope.runId,attemptIds:[...ctx.launched]};
+}
+function configuredReserve(value:string|undefined,fallback:number):number{
+  if(value===undefined)return fallback;
+  if(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)<1)
+    throw new Error("invalid_worker_provider_reservation_setting");
+  return Number(value);
+}
+export type DurableProviderReservation={
+  launched:()=>void;
+  complete:(response:{model?:unknown;service_tier?:unknown;usage?:unknown;output?:unknown})=>Promise<void>;
+};
+
+/** A conservative reservation is not an exact provider invoice. Count every
+ * serialized UTF-8 byte plus framing allowance; multimedia/hosted retrieval
+ * reserves the whole known standard short-context limit. Commercial costs are measured, not a Max admission gate. */
+export async function reserveDurableProviderRequest(
+  params: Record<string, unknown>, kind: "responses" | "hosted_web" = "responses", outputCap = 1200,
+  metrics?: (response: Parameters<DurableProviderReservation["complete"]>[0], durationMs: number) => unknown,
+):Promise<DurableProviderReservation|null>{
+  const ctx=durableProviderTurns.getStore();if(!ctx)return null;
+  const {scope}=ctx;
+  if(ctx.denied)throw new Error("durable_provider_reservation_unavailable");
+  try{
+    const model=params.model,rawOutput=params.max_output_tokens;
+    const unrestricted=scope.unrestrictedResearch===true;
+    if(typeof model!=="string"||(!unrestricted&&rawOutput===undefined)||
+      (rawOutput!==undefined&&(typeof rawOutput!=="number"||!Number.isSafeInteger(rawOutput)||rawOutput<1||
+      (!unrestricted&&rawOutput>outputCap))))throw new Error("durable_provider_request_invalid");
+    const output=typeof rawOutput==="number"?rawOutput:null;
+    // Measure text/framing separately from trusted attachment binary
+    // transport. The provider tokenizes the decoded media, not the base64
+    // representation. Strip only the binary data URL in a real user content
+    // item from this accounting COPY, never from the transmitted request.
+    // All text/tool outputs, filenames and ordinary URL bytes still count.
+    // Unknown media types are not discounted. Known inline media reserves the
+    // full existing short-context ceiling; measured usage remains fenced.
+    let multimedia=false;
+    const accountingInput=Array.isArray(params.input)?params.input.map(item=>{
+      if(!item||typeof item!=="object"||item.role!=="user"||!Array.isArray(item.content))return item;
+      return {...item,content:item.content.map((part:unknown)=>{
+        if(!part||typeof part!=="object")return part;
+        const p=part as Record<string,unknown>;
+        const field=p.type==="input_image"?"image_url":p.type==="input_file"?"file_data":null;
+        if(!field||typeof p[field]!=="string")return part;
+        multimedia=true;
+        const raw=p[field];
+        const prefix=p.type==="input_image"?
+          /^data:image\/(?:jpeg|png|webp);base64,/u.exec(raw)?.[0]:
+          /^data:application\/pdf;base64,/u.exec(raw)?.[0];
+        if(!prefix||raw.length<=prefix.length||!/^[+\/A-Za-z0-9]+={0,2}$/u.test(raw.slice(prefix.length)))return part;
+        return {...p,[field]:prefix};
+      })};
+    }):params.input;
+    const serialized=JSON.stringify({...params,input:accountingInput});
+    const inputUpper=Math.max(Buffer.byteLength(serialized,"utf8")+4096,
+      multimedia||kind==="hosted_web"?272000:1);
+    const rates=standardModelTokenRates(model,params.service_tier,inputUpper);
+    const primary=model===configuredSupervisorModel();
+    const configuredInput=primary?process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS:undefined;
+    const configuredOutput=primary?process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS:undefined;
+    const inRate=Math.max(Number(rates?.input),Number(configuredInput??0));
+    const outRate=Math.max(Number(rates?.output),Number(configuredOutput??0));
+    const hostedRate=process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS;
+    const hostedFee=kind==="hosted_web"?(hostedRate===undefined?null:configuredReserve(hostedRate,0)):0;
+    if(!unrestricted&&inputUpper>272000) throw new Error("durable_provider_request_invalid");
+    const estimate=hostedFee===null||output===null?null:Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
+    // An unknown rate remains NULL telemetry, never a commercial refusal for Max.
+    const costUpper=estimate!==null&&Number.isSafeInteger(estimate)&&estimate>=0?estimate:null;
+    await scope.authorize();
+    const id=randomUUID();
+    const {error}=await scope.db.rpc("supervisor_reserve_durable_model_call",{
+      p_attempt_id:id,p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+      p_thread_id:scope.threadId,p_run_id:scope.runId,p_owner_message_id:scope.ownerMessageId,
+      p_job_id:scope.jobId,p_claim_token:scope.claimToken,p_model:model,p_input_upper:inputUpper,
+      p_output_cap:output,p_cost_upper:costUpper,p_max_calls:unrestricted?null:scope.budget.maxModelCalls,
+      p_max_input_upper:unrestricted?null:configuredReserve(process.env.SUPERVISOR_WORKER_MAX_RESERVED_INPUT_UNITS,600000),
+      p_max_output_cap:unrestricted?null:scope.budget.maxOutputTokens,
+      p_max_cost:null,
+      p_owner_daily_cap:scope.ownerDailyCap,
+    });
+    if(error)throw new Error("durable_provider_reservation_denied",{cause:error});
+    let started=false,completed=false,startedAt=0;
+    return {
+      launched:()=>{if(started||ctx.denied)throw new Error("durable_provider_launch_conflict");
+        started=true;startedAt=Date.now();ctx.launched.push(id);},
+      complete:async(response)=>{
+        if(!started||completed)throw new Error("durable_provider_completion_conflict");
+        const actual=response.model;
+        const measured=modelTokenUsage(response.usage);
+        const actualRates=measured&&typeof actual==="string"?
+          standardModelTokenRates(actual,response.service_tier,measured.inputTokens):null;
+        if(!measured||typeof actual!=="string"||actual!==model||
+          (!unrestricted&&measured.inputTokens>inputUpper)||(output!==null&&measured.outputTokens>output)){
+          ctx.denied=true;throw new Error("durable_provider_usage_unverified");
+        }
+        const tokenCost=actualRates?estimateModelCallCostMicros(measured,actualRates):null;
+        const cost=kind==='hosted_web'?hostedWebActualCostMicros(tokenCost,response.output):tokenCost;
+        const completeArgs={
+          p_attempt_id:id,p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+          p_thread_id:scope.threadId,p_model:actual,p_input_tokens:measured.inputTokens,
+          p_output_tokens:measured.outputTokens,p_estimated_cost_micros:cost,
+        };
+        let {error}=await scope.db.rpc("supervisor_complete_investigation_model_call",metrics ?
+          {...completeArgs,p_execution_metrics:metrics(response,Math.max(0,Date.now()-startedAt))} : completeArgs);
+        if(metrics&&(error?.code==="PGRST202"||error?.code==="42883"))
+          ({error}=await scope.db.rpc("supervisor_complete_investigation_model_call",completeArgs));
+        if(error){ctx.denied=true;throw new Error("durable_provider_completion_unavailable",{cause:error});}
+        completed=true;
+      },
+    };
+  }catch(error){ctx.denied=true;throw error;}
+}

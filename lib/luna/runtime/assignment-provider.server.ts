@@ -1,7 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import {
+  loadModelExecutionCap, reserveDurableProviderRequest, withDurableProviderTurn, type DurableProviderScope,
+} from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { streamResponses } from "../shared/responses.server";
+import { employeeKeys, type EmployeeKey } from "../workforce/roster";
 
 const completedResponse = z.object({
   id: z.string().min(1),
@@ -32,6 +36,7 @@ export type ProviderRequest = {
   instructions: string;
   input: readonly Record<string, unknown>[];
   tools?: readonly Record<string, unknown>[];
+  max_output_tokens: number;
 };
 
 export type AssignmentProviderPort = {
@@ -48,6 +53,11 @@ export type AssignmentProviderPort = {
 
 const providerEntry = z.object({
   job: z.object({ id: z.uuid(), owner_message_id: z.uuid(), status: z.enum(["running", "done"]) }),
+  employeeKey: z.enum(employeeKeys),
+  originalInput: z.object({
+    text: z.string().nullable(), receivedAt: z.iso.datetime({ offset: true }),
+    locale: z.enum(["en", "es", "ar"]), attachmentIds: z.array(z.uuid()),
+  }),
   phase: z.enum(["ready", "provider_pending", "read_pending", "effect_pending"]),
   sequence: z.number().int().nonnegative(),
   operation: z.uuid().nullable(),
@@ -56,20 +66,26 @@ const providerEntry = z.object({
 const steeringPage = z.array(z.object({ position: z.coerce.number().int().positive(), message_id: z.uuid(), content: z.string() }));
 
 type AssignmentLease = { businessId: string; ownerUserId: string; threadId: string; runId: string; claimToken: string };
-type ProviderContext = AssignmentLease & { jobId: string; ownerMessageId: string };
+type ProviderContext = AssignmentLease & {
+  jobId: string;
+  ownerMessageId: string;
+  employeeKey: EmployeeKey;
+  originalInput: z.infer<typeof providerEntry>["originalInput"];
+};
+type AssignmentAccounting = Pick<DurableProviderScope, "db" | "budget" | "ownerDailyCap" | "authorize">;
 type Rpc = (name: string, params: Record<string, unknown>) => Promise<unknown>;
 
 /** Both interactive and scheduled dispatch can pass their existing owner-turn
  * lease here. Only the scoped request builder selects inputs and capabilities. */
 export async function runClaimedAssignmentProvider({
-  lease, rpc, signal, request, buildRequest, reserve,
+  lease, rpc, signal, request, buildRequest, accounting,
 }: {
   lease: AssignmentLease;
   rpc: Rpc;
   signal: AbortSignal;
   request?: typeof fetch;
   buildRequest: (context: ProviderContext, steering: z.infer<typeof steeringPage>) => Promise<ProviderRequest>;
-  reserve: (context: ProviderContext, payload: Record<string, unknown>) => ReturnType<AssignmentProviderPort["reserve"]>;
+  accounting: AssignmentAccounting;
 }): Promise<{ jobId: string; result: SavedProviderResponse } | null> {
   signal.throwIfAborted();
   const scope = {
@@ -78,7 +94,10 @@ export async function runClaimedAssignmentProvider({
   };
   const entry = providerEntry.nullable().parse(await rpc("luna_open_assignment_provider", scope));
   if (!entry || entry.job.status === "done") return null;
-  const context = { ...lease, jobId: entry.job.id, ownerMessageId: entry.job.owner_message_id };
+  const context = {
+    ...lease, jobId: entry.job.id, ownerMessageId: entry.job.owner_message_id,
+    employeeKey: entry.employeeKey, originalInput: entry.originalInput,
+  };
   const checkpoint = (sequence: number, operation: string, receipt: string | null) =>
     rpc("supervisor_checkpoint_owner_run_v2", {
       ...scope, p_expected_seq: sequence, p_operation: operation,
@@ -105,7 +124,16 @@ export async function runClaimedAssignmentProvider({
       }
       return buildRequest(context, steering);
     },
-    reserve: (payload) => reserve(context, payload),
+    reserve: async (payload) => {
+      if (process.env.AI_CAFE_LIVE_ACCEPTANCE === "OWNER_APPROVED_LOCAL_ONLY" || process.env.AICAFE_TASK14B_BUDGET_LEDGER) {
+        throw new Error("luna_assignment_requires_separate_paid_acceptance");
+      }
+      const outputCap = await loadModelExecutionCap(accounting.db, String(payload.model));
+      const reservation = await withDurableProviderTurn({ ...accounting, ...lease, jobId: context.jobId, ownerMessageId: context.ownerMessageId },
+        () => reserveDurableProviderRequest(payload, "responses", outputCap));
+      if (!reservation) throw new Error("luna_assignment_reservation_unavailable");
+      return reservation;
+    },
     save: async (sequence, state) => {
       if (await rpc("supervisor_research_checkpoint_v2", {
         ...scope, p_expected_seq: sequence, p_write: true, p_state: state,

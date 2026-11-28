@@ -5,7 +5,7 @@ import { runClaimedAssignmentProvider } from "./assignment-provider.server";
 
 const database = process.env.SUPERVISOR_RUN_DB_URL;
 
-it.runIf(!!database)("shares the fenced Responses checkpoint across direct and due assignment claims", async () => {
+it.runIf(!!database)("reserves and settles Responses usage across direct, recovered and due claims", async () => {
   const url = new URL(database!);
   if (url.protocol !== "postgresql:" || !["127.0.0.1", "localhost"].includes(url.hostname) ||
       !["54322", "55322"].includes(url.port) || url.pathname !== "/postgres") throw new Error("disposable Supabase required");
@@ -31,6 +31,15 @@ it.runIf(!!database)("shares the fenced Responses checkpoint across direct and d
         if (name === "luna_provider_inputs") return (await db.query(`select * from public.${name}(${params})`, values)).rows;
         return (await db.query(`select public.${name}(${params}) as result`, values)).rows[0]?.result;
       };
+    const accounting = (worker: Client) => ({
+      db: { rpc: async (name: string, args: Record<string, unknown>) => {
+        try { return { data: await rpc(worker)(name, args), error: null }; }
+        catch (error) { return { data: null, error: error as { code?: string } }; }
+      } },
+      budget: { maxElapsedMs: 60_000, maxModelCalls: 6, maxToolCalls: 8, maxInputTokens: 60_000, maxOutputTokens: 7_200 },
+      ownerDailyCap: 1,
+      authorize: async () => undefined, // Postgres independently checks current owner membership and the lease.
+    });
 
     async function admit(replacement: boolean, question: string) {
       const [businessId, ownerUserId, threadId, messageId] = Array.from({ length: 4 }, () => randomUUID());
@@ -58,16 +67,26 @@ it.runIf(!!database)("shares the fenced Responses checkpoint across direct and d
       firstWorker.query("select public.supervisor_run_complete_step($1,$2,$3,$4,'authorize_owner',$5,$6)",
         [...run.scope, run.runId, step.claim_token, `owner:${run.ownerUserId}`]);
 
-    const response = { id: "resp_disposable", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "Read the last two shifts." }] }] };
-    const transport = vi.fn<typeof fetch>(async () => new Response(`data: ${JSON.stringify({ type: "response.completed", response })}\n\n`));
-    const reserve = vi.fn(async () => ({ launched: () => undefined, complete: async () => undefined }));
+    const model = "gpt-4.1-mini";
+    const response = {
+      id: "resp_disposable", model, status: "completed",
+      usage: { input_tokens: 45, output_tokens: 12, input_tokens_details: { cached_tokens: 0 } },
+      output: [{ type: "message", content: [{ type: "output_text", text: "Read the last two shifts." }] }],
+    };
+    let steerInFlight: (() => Promise<void>) | undefined;
+    const transport = vi.fn<typeof fetch>(async () => {
+      const reserved = await admin.query(`select model from public.supervisor_system_usage_events
+        where business_id=any($1::uuid[]) and source_type='durable_run' and status='attempted'`,
+      [cleanup.map(fixture => fixture.businessId)]);
+      expect(reserved.rows).toEqual([{ model }]);
+      await steerInFlight?.();
+      return new Response(`data: ${JSON.stringify({ type: "response.completed", response })}\n\n`);
+    });
     const buildRequest: Parameters<typeof runClaimedAssignmentProvider>[0]["buildRequest"] = async (context, steering) => {
-      const message = await firstWorker.query(`select text_content from public.ai_messages where id=$1
-        and business_id=$2 and owner_user_id=$3 and thread_id=$4 and role='owner'`,
-        [context.ownerMessageId, context.businessId, context.ownerUserId, context.threadId]);
-      expect(message.rowCount).toBe(1);
-      return { model: "deterministic", instructions: "Answer the scoped owner request.",
-        input: [message.rows[0].text_content, ...steering.map(item => item.content)].map(content => ({ role: "user", content })) };
+      expect(context.employeeKey).toBe("general_manager");
+      expect(context.originalInput).toMatchObject({ locale: "en", attachmentIds: [] });
+      return { model, max_output_tokens: 100, instructions: "Answer the scoped owner request.",
+        input: [context.originalInput.text, ...steering.map(item => item.content)].map(content => ({ role: "user", content })) };
     };
     const signal = new AbortController().signal;
     const owner = await admit(true, "What changed during the afternoon?");
@@ -75,7 +94,7 @@ it.runIf(!!database)("shares the fenced Responses checkpoint across direct and d
     await firstWorker.query("select public.luna_steer_assignment($1,$2,$3,$4,$5,'Include Wednesday.')",
       [...owner.scope, owner.runId, randomUUID()]);
     const firstLease = { ...owner, claimToken: String((await claim(firstWorker, owner)).claim_token) };
-    const firstRun = { lease: firstLease, signal, request: transport, reserve, buildRequest };
+    const firstRun = { lease: firstLease, signal, request: transport, accounting: accounting(firstWorker), buildRequest };
     await expect(runClaimedAssignmentProvider({ ...firstRun, rpc: rpc(firstWorker, (name, args) => {
       if (name === "supervisor_checkpoint_owner_run_v2" && args.p_action === "complete") throw new Error("simulated loss after save");
     }) })).rejects.toThrow("simulated loss after save");
@@ -85,12 +104,15 @@ it.runIf(!!database)("shares the fenced Responses checkpoint across direct and d
     await admin.query("update public.supervisor_run_steps set lease_until=clock_timestamp() where run_id=$1 and step_key='owner_turn'", [owner.runId]);
     await expect(runClaimedAssignmentProvider({ ...firstRun, rpc: rpc(firstWorker) })).rejects.toThrow("durable_job_lease_lost");
     const recoveredLease = { ...owner, claimToken: String((await claim(secondWorker, owner)).claim_token) };
-    const recovery = { ...firstRun, lease: recoveredLease, rpc: rpc(secondWorker) };
+    const recovery = { ...firstRun, lease: recoveredLease, rpc: rpc(secondWorker), accounting: accounting(secondWorker) };
     const recovered = await runClaimedAssignmentProvider(recovery);
     expect(recovered?.result.response).toEqual(response);
     expect(await runClaimedAssignmentProvider(recovery)).toEqual(recovered);
-    expect(reserve).toHaveBeenCalledTimes(1);
     expect(transport).toHaveBeenCalledTimes(1);
+    const usage = await admin.query(`select model,status,input_tokens::integer,output_tokens::integer,reserved_output_cap::integer,durable_claim_token
+      from public.supervisor_system_usage_events where source_type='durable_run' and source_id=$1`, [owner.runId]);
+    expect(usage.rows).toEqual([{ model, status: "completed", input_tokens: 45, output_tokens: 12,
+      reserved_output_cap: 100, durable_claim_token: firstLease.claimToken }]);
     if (!recovered) throw new Error("missing recovered owner response");
     const { checkpoint_seq: sequence } = (await admin.query("select checkpoint_seq from public.supervisor_run_steps where run_id=$1 and step_key='owner_turn'", [owner.runId])).rows[0];
     const replyId = randomUUID();
@@ -121,13 +143,40 @@ it.runIf(!!database)("shares the fenced Responses checkpoint across direct and d
     const claimed = await next();
     expect(claimed.run_id).toBe(due.runId);
     expect(claimed.claim.step.step_key).toBe("owner_turn");
-    const dueResult = await runClaimedAssignmentProvider({ ...recovery, lease: { ...due, claimToken: claimed.claim.step.claim_token } });
+    const dueClaimToken = claimed.claim.step.claim_token;
+    steerInFlight = async () => {
+      await firstWorker.query("select public.luna_steer_assignment($1,$2,$3,$4,$5,'Include the back room too.')",
+        [...due.scope, due.runId, randomUUID()]);
+    };
+    const dueResult = await runClaimedAssignmentProvider({ ...recovery, lease: { ...due, claimToken: dueClaimToken } });
     expect(dueResult?.result.response).toEqual(response);
     expect(transport).toHaveBeenCalledTimes(2);
-    const saved = await admin.query(`select checkpoint_receipts->-1->>'receipt' as provider_ref, c.state
+    expect(JSON.parse(String(transport.mock.calls[1][1]?.body)).input).toEqual([{ role: "user", content: due.question }]);
+    const saved = await admin.query(`select checkpoint_seq, checkpoint_receipts->-1->>'receipt' as provider_ref, c.state
       from public.supervisor_run_steps s join public.supervisor_research_continuations c using (run_id)
       where run_id=$1 and s.step_key='owner_turn'`, [due.runId]);
-    expect(saved.rows[0]).toEqual({ provider_ref: `provider:${dueResult?.result.operation}`, state: dueResult?.result });
+    expect(saved.rows[0]).toMatchObject({ provider_ref: `provider:${dueResult?.result.operation}`, state: dueResult?.result });
+    if (!dueResult) throw new Error("missing due assignment response");
+    const dueOwnerMessageId = (await admin.query("select request_key from public.supervisor_runs where id=$1", [due.runId])).rows[0].request_key;
+    await expect(secondWorker.query(`select public.luna_commit_assignment_result($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [...due.scope, due.runId, dueClaimToken, dueResult.jobId, saved.rows[0].checkpoint_seq,
+        dueResult.result.operation, randomUUID(), JSON.stringify(blocks),
+        { status: "answered", ownerMessageId: dueOwnerMessageId, durableRunId: due.runId, agentMetadata: { endReason: "complete" } }]))
+      .rejects.toThrow("assignment_has_new_input");
+
+    const secondMessageId = randomUUID();
+    await admin.query(`insert into public.ai_messages(id,business_id,owner_user_id,thread_id,author_user_id,role,content_type,text_content,client_message_id)
+      values ($1,$2,$3,$4,$3,'owner','text','How did the weekend go?',$5)`, [secondMessageId, ...owner.scope, randomUUID()]);
+    const { id: nextRunId } = (await firstWorker.query(`select public.supervisor_admit_owner_run_v2($1,$2,$3,$4,$5,'en','{}') as run`,
+      [...owner.scope, secondMessageId, "a".repeat(64)])).rows[0].run;
+    const nextRun = { ...owner, runId: String(nextRunId) };
+    await authorize(nextRun, await claim(firstWorker, nextRun));
+    const nextLease = { ...nextRun, claimToken: String((await claim(firstWorker, nextRun)).claim_token) };
+    await expect(runClaimedAssignmentProvider({ ...firstRun, lease: nextLease, rpc: rpc(firstWorker) }))
+      .rejects.toThrow("durable_provider_reservation_denied");
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect((await admin.query(`select attempt_id from public.supervisor_system_usage_events
+      where source_type='durable_run' and source_id=$1`, [nextRunId])).rows).toEqual([]);
   } finally {
     for (const { businessId, ownerUserId } of cleanup) {
       await admin.query("delete from public.businesses where id=$1", [businessId]);

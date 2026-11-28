@@ -6,6 +6,7 @@ import { Client } from 'pg';
 import { verifyResult } from './assignment-result.mjs';
 import { verifySteering } from './assignment-inputs.mjs';
 import { verifyWorkforceProfiles } from './workforce-profiles.mjs';
+import { verifyLegacyFollowups } from './legacy-followups.mjs';
 
 const connectionString = process.env.SUPERVISOR_RUN_DB_URL;
 const target = new URL(connectionString);
@@ -93,6 +94,8 @@ try {
   const [a, b] = workers;
   await verifyWorkforceProfiles({ admin, a, b, first: await fixture(), second: await fixture() });
   await verifyFleetDispatch(a, b);
+  const followups = await fixture();
+  await verifyLegacyFollowups({ admin, a, b, scope: followups.scope, run: await admit(a, followups) });
   const legacy = await fixture();
   const replacement = await fixture();
   await a.query('insert into public.luna_rollouts(business_id,enabled) values ($1,true)', [replacement.scope[0]]);
@@ -100,6 +103,8 @@ try {
     const [run, duplicate] = await Promise.all(workers.map(db => admit(db, cafe)));
     assert.equal(run.id, duplicate.id);
     assert.equal(run.engine, engine);
+    assert.equal(run.employee_key, engine === 'replacement' ? 'general_manager' : null);
+    assert.equal(duplicate.employee_key, run.employee_key);
     assert.equal(run.execution_version, 2);
     assert.equal(duplicate.engine, engine);
     const [wrong, first] = await Promise.all([claim(a, other, cafe.scope, run), claim(b, engine, cafe.scope, run)]);
@@ -119,8 +124,12 @@ try {
   await verifySteering({ admin, a, b, scope: steering.scope, run: await admit(a, steering), otherScope: legacy.scope });
 
   const run = await admit(a, replacement);
+  await assert.rejects(admin.query("update public.supervisor_runs set employee_key='growth' where id=$1", [run.id]),
+    /assignment_identity_is_immutable/);
   await a.query('update public.luna_rollouts set enabled=false where business_id=$1', [replacement.scope[0]]);
-  assert.equal((await admit(b, replacement)).engine, 'replacement');
+  const replay = await admit(b, replacement);
+  assert.equal(replay.engine, 'replacement');
+  assert.equal(replay.employee_key, 'general_manager');
   const newLegacy = await a.query(`select public.supervisor_run_start($1,$2,$3,$4,$5,'[{"key":"read","retry":"idempotent"}]') as run`,
     [...replacement.scope, randomUUID(), 'b'.repeat(64)]);
   assert.equal(newLegacy.rows[0].run.engine, 'legacy');

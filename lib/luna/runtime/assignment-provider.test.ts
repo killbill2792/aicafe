@@ -17,7 +17,7 @@ function dependencies() {
   const port = {
     load: vi.fn<AssignmentProviderPort["load"]>(async () => null),
     begin: vi.fn(async () => 1),
-    buildRequest: vi.fn(async () => ({ model: "test-model", instructions: "Answer the owner.", input: [], tools: [] })),
+    buildRequest: vi.fn(async () => ({ model: "test-model", instructions: "Answer the owner.", input: [], tools: [], max_output_tokens: 100 })),
     reserve: vi.fn(async () => reservation), save: vi.fn(async () => undefined),
     complete: vi.fn(async () => undefined),
   } satisfies AssignmentProviderPort;

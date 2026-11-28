@@ -13407,6 +13407,11 @@
      "engine",
      "text",
      true
+    ],
+    [
+     "employee_key",
+     "text",
+     false
     ]
    ],
    "relation": "supervisor_runs",
