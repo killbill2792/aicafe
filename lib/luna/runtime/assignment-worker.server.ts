@@ -2,10 +2,13 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { calculationToolDefinition, executeCalculationTool } from "@/lib/ai/research/calculation";
-import { describeDatabase, describeDatabaseToolDefinition } from "@/lib/ai/research/tools.server";
+import {
+  describeDatabase, describeResearchDatabaseToolDefinition, runSql, runSqlToolDefinition,
+} from "@/lib/ai/research/tools.server";
+import { durableProviderRequestByteLimit } from "@/lib/ai/supervisor/runs/provider-reservation.server";
 import { decodeClaim, runScopeSchema, type RunScope } from "@/lib/ai/supervisor/runs/contracts";
 import { workforceRoster } from "../workforce/roster";
-import { runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
+import { LunaAssignmentYielded, runClaimedAssignmentProvider, type AssignmentReadTool } from "./assignment-provider.server";
 
 const textPart = z.object({ type: z.literal("output_text"), text: z.string() });
 const assistantMessage = z.object({
@@ -14,14 +17,23 @@ const assistantMessage = z.object({
 type ProviderArgs = Parameters<typeof runClaimedAssignmentProvider>[0];
 
 const describeDatabaseArguments = z.strictObject({ tables: z.array(z.string()).nullable() });
+const runSqlArguments = z.strictObject({ sql: z.string().trim().min(1) });
 const assignmentReadTools: readonly AssignmentReadTool[] = [
   { definition: calculationToolDefinition, execute: (_, args) => executeCalculationTool(args) },
   {
-    definition: describeDatabaseToolDefinition,
+    definition: describeResearchDatabaseToolDefinition,
     execute: async ({ businessId, ownerUserId }, args, signal) => {
       const input = describeDatabaseArguments.safeParse(args);
       if (!input.success) return { ok: false, error: "invalid_tool_arguments" };
-      return describeDatabase({ businessId, ownerUserId, signal }, input.data.tables);
+      return describeDatabase({ businessId, ownerUserId, signal, maxResultBytes: durableProviderRequestByteLimit }, input.data.tables);
+    },
+  },
+  {
+    definition: runSqlToolDefinition,
+    execute: async ({ businessId, ownerUserId }, args, signal) => {
+      const input = runSqlArguments.safeParse(args);
+      if (!input.success) return { ok: false, error: "invalid_tool_arguments" };
+      return runSql({ businessId, ownerUserId, signal, maxResultBytes: durableProviderRequestByteLimit }, input.data.sql);
     },
   },
 ];
@@ -30,7 +42,7 @@ const assignmentReadTools: readonly AssignmentReadTool[] = [
  * provider checkpoint and atomic publication RPCs. */
 export async function processLunaAssignment({
   scope: claimedScope, runId: id, ...provider
-}: Omit<ProviderArgs, "lease"> & { scope: RunScope; runId: string }): Promise<"busy" | "blocked" | "completed"> {
+}: Omit<ProviderArgs, "lease" | "supersedeOperation"> & { scope: RunScope; runId: string }): Promise<"busy" | "blocked" | "completed"> {
   const scope = runScopeSchema.parse(claimedScope);
   const runId = z.uuid().parse(id);
   const identity = {
@@ -56,7 +68,7 @@ export async function processLunaAssignment({
   if (step.kind === "completed" || step.kind === "busy" || step.kind === "blocked") return step.kind;
   if (step.kind !== "claimed" || step.key !== "owner_turn") throw new Error("luna_assignment_step_unrecognized");
 
-  const turn = await runClaimedAssignmentProvider({
+  const providerArgs: ProviderArgs = {
     ...provider, signal, lease: { ...scope, runId, claimToken: step.claimToken },
     readTools: provider.readTools ?? assignmentReadTools,
     buildRequest: async (context, steering) => {
@@ -66,20 +78,32 @@ export async function processLunaAssignment({
       return { ...request, instructions: [request.instructions, `Your assigned role is ${employee.title}.`,
         employee.communicationStyle, ...employee.responsibilities].join("\n") };
     },
-  });
-  if (!turn) return "busy";
-  const items = turn.result.response.output.filter(item => item.type !== "reasoning");
-  const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)
-    .filter(part => part.text.length > 0).map(part => ({ type: "text", text: part.text }));
-  if (!blocks.length) throw new Error("luna_assignment_reply_empty");
+  };
+  let supersedeOperation: string | undefined;
+  for (;;) {
+    const turn = await runClaimedAssignmentProvider({ ...providerArgs, supersedeOperation }).catch(error => {
+      if (error instanceof LunaAssignmentYielded) return null;
+      throw error;
+    });
+    if (!turn) return "busy";
+    const items = turn.result.response.output.filter(item => item.type !== "reasoning");
+    const blocks = z.array(assistantMessage).min(1).parse(items).flatMap(message => message.content)
+      .filter(part => part.text.length > 0).map(part => ({ type: "text", text: part.text }));
+    if (!blocks.length) throw new Error("luna_assignment_reply_empty");
 
-  signal.throwIfAborted();
-  const replyId = randomUUID();
-  const receipt = await provider.rpc("luna_commit_assignment_result", {
-    ...identity, p_claim_token: step.claimToken, p_job_id: turn.jobId, p_expected_seq: turn.sequence,
-    p_provider_operation: turn.result.operation, p_reply_id: replyId, p_blocks: blocks,
-    p_grounding: { status: "answered", ownerMessageId: turn.ownerMessageId, durableRunId: runId, agentMetadata: { endReason: "complete" } },
-  });
-  if (receipt !== replyId) throw new Error("luna_assignment_reply_unverified");
-  return "completed";
+    signal.throwIfAborted();
+    const replyId = randomUUID();
+    try {
+      const receipt = await provider.rpc("luna_commit_assignment_result", {
+        ...identity, p_claim_token: step.claimToken, p_job_id: turn.jobId, p_expected_seq: turn.sequence,
+        p_provider_operation: turn.result.operation, p_reply_id: replyId, p_blocks: blocks,
+        p_grounding: { status: "answered", ownerMessageId: turn.ownerMessageId, durableRunId: runId, agentMetadata: { endReason: "complete" } },
+      });
+      if (receipt !== replyId) throw new Error("luna_assignment_reply_unverified");
+      return "completed";
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "assignment_has_new_input") throw error;
+      supersedeOperation = turn.result.operation;
+    }
+  }
 }

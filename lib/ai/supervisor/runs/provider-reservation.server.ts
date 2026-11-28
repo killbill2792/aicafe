@@ -5,6 +5,10 @@ import { PRODUCTION_SUPERVISOR_OPENAI_MODEL, configuredSupervisorModel } from "@
 import { modelTokenUsage, standardModelTokenRates, estimateModelCallCostMicros, hostedWebActualCostMicros } from "@/lib/calc/supervisorTokenCost";
 import type { WorkerBudget } from "./usage.server";
 
+const durableRequestFramingBytes = 4096;
+const durableProviderInputLimit = 272000;
+export const durableProviderRequestByteLimit = durableProviderInputLimit - durableRequestFramingBytes;
+
 type ReservationDatabase = {
   rpc(name: string, params: Record<string, unknown>): PromiseLike<{
     data: unknown;
@@ -106,8 +110,8 @@ export async function reserveDurableProviderRequest(
       })};
     }):params.input;
     const serialized=JSON.stringify({...params,input:accountingInput});
-    const inputUpper=Math.max(Buffer.byteLength(serialized,"utf8")+4096,
-      multimedia||kind==="hosted_web"?272000:1);
+    const inputUpper=Math.max(Buffer.byteLength(serialized,"utf8")+durableRequestFramingBytes,
+      multimedia||kind==="hosted_web"?durableProviderInputLimit:1);
     const rates=standardModelTokenRates(model,params.service_tier,inputUpper);
     const primary=model===configuredSupervisorModel();
     const configuredInput=primary?process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS:undefined;
@@ -116,7 +120,7 @@ export async function reserveDurableProviderRequest(
     const outRate=Math.max(Number(rates?.output),Number(configuredOutput??0));
     const hostedRate=process.env.SUPERVISOR_WORKER_HOSTED_WEB_RESERVE_MICROS;
     const hostedFee=kind==="hosted_web"?(hostedRate===undefined?null:configuredReserve(hostedRate,0)):0;
-    if(!unrestricted&&inputUpper>272000) throw new Error("durable_provider_request_invalid");
+    if(!unrestricted&&inputUpper>durableProviderInputLimit) throw new Error("durable_provider_request_invalid");
     const estimate=hostedFee===null||output===null?null:Math.ceil(inputUpper*inRate+output*outRate)+hostedFee;
     // An unknown rate remains NULL telemetry, never a commercial refusal for Max.
     const costUpper=estimate!==null&&Number.isSafeInteger(estimate)&&estimate>=0?estimate:null;
