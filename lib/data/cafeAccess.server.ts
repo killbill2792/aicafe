@@ -4,7 +4,7 @@ import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 import {ConversationApiError} from "@/lib/ai/conversations/auth.server";
-import {readCafeAccess} from "@/lib/connectors/publicWebAccess.server";
+import {readCafeAccess} from "@/lib/access/scopedAccess.server";
 import {normalizeCode,validCode,type CafeAccess} from "@/lib/access/status";
 export type OwnerAccess={businessId:string;userId:string;access:CafeAccess};
 export async function getCafeAccess(businessId:string):Promise<CafeAccess>{

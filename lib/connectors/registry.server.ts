@@ -2,7 +2,7 @@ import "server-only";
 import {createHash} from "node:crypto";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import {requireConnectorMembership} from "./publicWebAccess.server";
+import {requireConnectorMembership} from "@/lib/access/scopedAccess.server";
 import {getActiveBusinessId} from "@/lib/data/getActiveBusinessId";
 
 export type ConnectorOwner={businessId:string;ownerUserId:string};

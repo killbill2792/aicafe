@@ -8,7 +8,7 @@ import {newResolveState,observeToolResult} from "@/lib/ai/agent/resolve";
 import {withoutSavedFactFields} from "@/lib/ownerFacts/askGuard";
 import type {OwnerRunCheckpoint,MatchedOwnerAnswer,ResearchContinuationPort} from "@/lib/ai/supervisor/runs/contracts";
 import {providerUsageReceipt,requestComposition} from "@/lib/ai/agent/executionPolicy";
-import type {WebSearchBudget} from "@/lib/connectors/publicWebResearch.server";
+import type {WebSearchBudget} from "@/lib/luna/shared/publicWebResearch.server";
 import {createHash} from "node:crypto";
 import {resolveResearchSpec,INLINE_PRESENTATION_HINT,type PresentationEvidence,type PresentationContext} from "./presentation";
 import {researchInlineEvents} from "./inlineStream";

@@ -1,6 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ConnectorOwner } from "./registry.server";
+import type { ConnectorOwner } from "@/lib/connectors/registry.server";
 import { accessStatus } from "@/lib/access/status";
 
 export type AccessReader = Pick<SupabaseClient, "from">;

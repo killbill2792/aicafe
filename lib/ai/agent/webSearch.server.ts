@@ -1,10 +1,10 @@
 import "server-only";
-import { createWebSearch as createPublicWebSearch, type WebSearchBudget } from "@/lib/connectors/publicWebResearch.server";
+import { createWebSearch as createPublicWebSearch, type WebSearchBudget } from "@/lib/luna/shared/publicWebResearch.server";
 import { ownerPublicWebFetch } from "@/lib/connectors/publicWeb.server";
 import { requestComposition, type RequestComposition } from "./executionPolicy";
 
-export { extractWebSearchAnswer, webSearchUsage } from "@/lib/connectors/publicWebResearch.server";
-export type { WebSearchResult, WebSearchUsage } from "@/lib/connectors/publicWebResearch.server";
+export { extractWebSearchAnswer, webSearchUsage } from "@/lib/luna/shared/publicWebResearch.server";
+export type { WebSearchResult, WebSearchUsage } from "@/lib/luna/shared/publicWebResearch.server";
 
 type LegacyBudget = WebSearchBudget & {
   onRequestComposition?: (composition: RequestComposition | null) => void;

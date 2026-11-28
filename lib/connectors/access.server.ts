@@ -1,6 +1,6 @@
 import "server-only";
 import {z} from "zod";
-import {readExternalAccess} from "./publicWebAccess.server";
+import {readExternalAccess} from "@/lib/access/scopedAccess.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {assertConnectorOwnerLive,type ConnectorOwner} from "./registry.server";
 

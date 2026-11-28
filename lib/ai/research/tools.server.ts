@@ -1,8 +1,8 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {Client} from "pg";
-import {publicResearchIncludesPrivateValue,publicWebResearchTool} from "@/lib/connectors/publicWebResearch";
-import type {WebSearchResult} from "@/lib/connectors/publicWebResearch.server";
+import {publicResearchIncludesPrivateValue,publicWebResearchTool} from "@/lib/luna/shared/publicWebResearch";
+import type {WebSearchResult} from "@/lib/luna/shared/publicWebResearch.server";
 import {calculationToolDefinition,executeCalculationTool} from "./calculation";
 export {calculate} from "./calculation";
 
