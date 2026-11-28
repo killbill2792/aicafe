@@ -75,7 +75,7 @@ it("does not restart a provider while a tool boundary still needs recovery", asy
   expect(fetch).not.toHaveBeenCalled();
 });
 
-it("offers scoped metadata discovery and reports absent direct transport", async () => {
+it("offers the shared scoped SQL tools without exposing café or owner parameters", async () => {
   vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", undefined);
   const workerProvider = vi.spyOn(assignmentProvider, "runClaimedAssignmentProvider").mockResolvedValue(null);
   try {
@@ -90,17 +90,21 @@ it("offers scoped metadata discovery and reports absent direct transport", async
       buildRequest: vi.fn(),
     })).resolves.toBe("busy");
     const [{ lease, readTools, signal }] = workerProvider.mock.calls[0];
-    expect(readTools?.map(tool => tool.definition.name)).toEqual(["calculate", "describe_database"]);
+    expect(readTools?.map(tool => tool.definition.name)).toEqual(["calculate", "describe_database", "run_sql"]);
     const metadata = readTools!.find(tool => tool.definition.name === "describe_database")!;
     expect(metadata.definition.description).toContain("column's type");
-    expect(metadata.definition.description).not.toContain("external_records.payload");
     const legacyMetadata = researchToolDefinitions.find(tool => tool.name === "describe_database")!;
-    expect(legacyMetadata.description).toContain("Inspect representative scoped external_records.payload values");
-    expect(legacyMetadata.parameters).toEqual(metadata.definition.parameters);
+    expect(metadata.definition).toEqual(legacyMetadata);
+    expect(metadata.definition.description).toContain("Inspect representative scoped external_records.payload values");
+    const sql = readTools!.find(tool => tool.definition.name === "run_sql")!;
+    expect(sql.definition).toEqual(researchToolDefinitions.find(tool => tool.name === "run_sql"));
     const context = { ...lease, jobId: randomUUID(), ownerMessageId: randomUUID(), employeeKey: "general_manager" as const,
       originalInput: { text: "Describe the catalog.", receivedAt: new Date().toISOString(), locale: "en" as const, attachmentIds: [] } };
     await expect(metadata.execute(context, { tables: null }, signal)).resolves.toEqual({ ok: false, error: "research_database_connection_unavailable" });
     await expect(metadata.execute(context, { tables: null, businessId: randomUUID() }, signal)).resolves.toEqual({ ok: false, error: "invalid_tool_arguments" });
+    await expect(sql.execute(context, { sql: "select 1" }, signal)).resolves.toEqual({ ok: false, error: "research_database_connection_unavailable" });
+    await expect(sql.execute(context, { sql: " " }, signal)).resolves.toEqual({ ok: false, error: "invalid_tool_arguments" });
+    await expect(sql.execute(context, { sql: "select 1", ownerUserId: randomUUID() }, signal)).resolves.toEqual({ ok: false, error: "invalid_tool_arguments" });
   } finally {
     workerProvider.mockRestore();
     vi.unstubAllEnvs();

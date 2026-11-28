@@ -21,9 +21,9 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
       await worker.query("set role service_role; set request.jwt.claim.role = 'service_role'");
     }
     const [firstWorker, secondWorker] = workers;
-    const rpc = (db: Client, before?: (name: string, args: Record<string, unknown>) => void) =>
+    const rpc = (db: Client, before?: (name: string, args: Record<string, unknown>) => void | Promise<void>) =>
       async (name: string, args: Record<string, unknown>) => {
-        before?.(name, args);
+        await before?.(name, args);
         const params = Object.entries(args).map(([key], index) => {
           if (!/^p_[a-z_]+$/.test(key)) throw new Error("unexpected test RPC argument");
           return `${key} => $${index + 1}`;
@@ -271,7 +271,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         }),
       })).rejects.toThrow("simulated loss after metadata save");
       const metadataPayload = JSON.parse(String(metadataTransport.mock.calls[0][1]?.body));
-      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database"]);
+      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database", "run_sql"]);
       const checkpoint = await admin.query(`select state from public.supervisor_research_continuations where run_id=$1`, [discovery.runId]);
       const [savedMetadata] = checkpoint.rows[0].state.toolReceipts;
       expect(savedMetadata.callId).toBe(metadataCall.call_id);
@@ -308,6 +308,100 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         type: "function_call_output", call_id: metadataCall.call_id,
         output: JSON.stringify({ ok: false, error: "research_database_connection_unavailable" }),
       });
+
+      const toast = await admit(true, "Reconcile original Toast sales and processing fees. Identify missing fee evidence.");
+      await admin.query("insert into public.memberships(business_id,user_id,role) values ($1,$2,'owner')", [legacy.businessId, toast.ownerUserId]);
+      const restaurant = randomUUID();
+      const [splitOrder, missingOrder, foreignOrder] = Array.from({ length: 3 }, () => randomUUID());
+      const order = (guid: string, amount: number) => ({ key: guid, payload: { guid, checks: [
+        { guid: randomUUID(), amount, deleted: false, voided: false },
+        { guid: randomUUID(), amount: 10, voided: true },
+      ] } });
+      const commit = (businessId: string, resource: string, stream: string, records: unknown[], observation: object | null = null) =>
+        admin.query("select public.external_commit_page($1,'toast',$2,$3,$4,0,$5,true,$6::jsonb)",
+          [businessId, restaurant, resource, stream, observation, JSON.stringify(records)]);
+      await commit(toast.businessId, "order", "closed-orders", [order(splitOrder, 12.5), order(missingOrder, 8.75)]);
+      await commit(legacy.businessId, "order", "closed-orders", [order(foreignOrder, 92.43)]);
+      for (const [orderGuid, amount, fee] of [[splitOrder, 8, 0.37], [splitOrder, 4.5, 0.18], [missingOrder, 8.75, undefined]] as const) {
+        const guid = randomUUID();
+        await commit(toast.businessId, "orders/v2/payments/{guid}", guid, [{ key: guid, payload: {
+          guid, orderGuid, amount, originalProcessingFee: fee, type: "CREDIT", paymentStatus: "CAPTURED",
+        } }], { scope: { paymentGuid: guid }, mode: "point" });
+      }
+      const sourceSnapshot = () => admin.query("select business_id,source_key,payload from public.external_records where source_account=$1 order by business_id,source_key",
+        [restaurant]);
+      const original = (await sourceSnapshot()).rows;
+      const sql = (call_id: string, statement: string) => ({
+        type: "function_call", name: "run_sql", call_id, arguments: JSON.stringify({ sql: statement }),
+      });
+      const foreignRead = sql("call_foreign", `select payload from external_records where business_id='${legacy.businessId}'`);
+      const write = sql("call_write", "update external_records set payload='{}' where provider='toast'");
+      const reconcile = sql("call_reconcile", `with sales as (
+        select o.business_id,o.source_account,o.source_key,sum((c->>'amount')::numeric*100) as cents
+        from external_records o cross join lateral jsonb_array_elements(o.payload->'checks') c
+        where o.provider='toast' and o.entity='order' and c->>'voided' is distinct from 'true'
+          and c->>'deleted' is distinct from 'true'
+        group by o.business_id,o.source_account,o.source_key
+      ), fees as (
+        select business_id,source_account,payload->>'orderGuid' as order_key,
+          sum((payload->>'originalProcessingFee')::numeric*100) as cents,
+          count(*) filter (where payload->>'originalProcessingFee' is null) as missing
+        from external_records where provider='toast' and entity='orders/v2/payments/{guid}'
+          and payload->>'paymentStatus'='CAPTURED' and payload->>'type'='CREDIT'
+        group by business_id,source_account,payload->>'orderGuid'
+      ) select sum(sales.cents) as sales_cents,sum(fees.cents) as observed_fee_cents,
+        count(*) filter (where fees.order_key is null or fees.missing>0) as orders_with_missing_fees
+      from sales left join fees on (sales.business_id,sales.source_account,sales.source_key)=
+        (fees.business_id,fees.source_account,fees.order_key)`);
+      const revisedAnswer = "Toast net sales were 2,125 cents. Observed fees were 55 cents on split tenders. One order has missing fee evidence.";
+      const correction = "Report cents and explicitly say the observed fees were on split tenders.";
+      const toastTransport = vi.fn<typeof fetch>()
+        .mockImplementationOnce(async () => reply({ ...response, output: [metadataCall] }))
+        .mockImplementationOnce(async () => reply({ ...response, output: [foreignRead, write, reconcile] }))
+        .mockImplementationOnce(async () => catalogReply("Net sales were 2,125 cents and observed fees were 55 cents."))
+        .mockImplementationOnce(async () => catalogReply(revisedAnswer));
+      const toastAssignment = { ...metadataAssignment, scope: toast.workerScope, runId: toast.runId, request: toastTransport };
+      const sqlAccounting = (db: Client) => ({ ...accounting(db), ownerDailyCap: 4 });
+      const sqlReceipts = async () => (await admin.query("select state from public.supervisor_research_continuations where run_id=$1",
+        [toast.runId])).rows[0].state.toolReceipts as { callId: string; output: string }[];
+      vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", directUrl.toString());
+      await expect(processLunaAssignment({ ...toastAssignment, accounting: sqlAccounting(firstWorker),
+        rpc: rpc(firstWorker, async (name, params) => {
+          if (name === "supervisor_checkpoint_owner_run_v2" && String(params.p_receipt_ref).startsWith("read:") &&
+              (await sqlReceipts()).at(-1)?.callId === reconcile.call_id) throw new Error("worker stopped after SQL save");
+        }),
+      })).rejects.toThrow("worker stopped after SQL save");
+      const reads = await sqlReceipts();
+      expect(reads.map(({ callId, output }) => [callId, JSON.parse(output)])).toEqual([
+        [foreignRead.call_id, { ok: true, row_count: 0, rows: [] }],
+        [write.call_id, expect.objectContaining({ ok: false })],
+        [reconcile.call_id, { ok: true, row_count: 1, rows: [{ sales_cents: 2125, observed_fee_cents: 55, orders_with_missing_fees: 1 }] }],
+      ]);
+      expect((await sourceSnapshot()).rows).toEqual(original);
+      vi.stubEnv("SUPERVISOR_RESEARCH_DATABASE_URL", undefined);
+      await admin.query("update public.supervisor_run_steps set lease_until=clock_timestamp() where run_id=$1 and step_key='owner_turn'", [toast.runId]);
+      let publishAttempts = 0;
+      await expect(processLunaAssignment({ ...toastAssignment, accounting: sqlAccounting(secondWorker),
+        rpc: rpc(secondWorker, async name => {
+          if (name === "luna_commit_assignment_result" && ++publishAttempts === 1) {
+            await firstWorker.query("select public.luna_steer_assignment($1,$2,$3,$4,$5,$6)",
+              [...toast.scope, toast.runId, randomUUID(), correction]);
+          }
+        }),
+      })).resolves.toBe("completed");
+      expect(publishAttempts).toBe(2);
+      expect(toastTransport).toHaveBeenCalledTimes(4);
+      for (const index of [2, 3]) {
+        const input: { type: string; role?: string; content?: string; call_id?: string; output?: string }[] =
+          JSON.parse(String(toastTransport.mock.calls[index][1]?.body)).input;
+        for (const { callId, output } of reads) {
+          expect(input.filter(item => item.type === "function_call_output" && item.call_id === callId))
+            .toEqual([{ type: "function_call_output", call_id: callId, output }]);
+        }
+        if (index === 3) expect(input.at(-1)).toEqual({ type: "message", role: "user", content: correction });
+      }
+      const replies = await admin.query("select structured_content from public.ai_messages where thread_id=$1 and role='supervisor'", [toast.threadId]);
+      expect(replies.rows).toEqual([{ structured_content: [{ type: "text", text: revisedAnswer }] }]);
     } finally {
       vi.unstubAllEnvs();
       await admin.query(`drop role ${role}`);

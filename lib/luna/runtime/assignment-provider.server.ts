@@ -100,9 +100,11 @@ function requestedCalls(state: SavedProviderResponse) {
 function toolTranscript(previous: SavedProviderResponse) {
   const receipts = previous.toolReceipts ?? [];
   const calls = requestedCalls(previous);
-  if (!calls.length || receipts.length !== calls.length || calls.some((call, i) => call.call_id !== receipts[i].callId)) {
+  if (receipts.length !== calls.length || calls.some((call, i) => call.call_id !== receipts[i].callId)) {
     throw new Error("luna_tool_receipts_incomplete");
   }
+  // A draft rejected at publication leaves its prior instructions and tool evidence usable.
+  if (!calls.length) return previous.transcript ?? [];
   return [...previous.transcript ?? [], ...previous.response.output,
     ...receipts.map(receipt => ({ type: "function_call_output", call_id: receipt.callId, output: receipt.output }))];
 }
@@ -119,7 +121,7 @@ async function readToolOutput(tool: AssignmentReadTool | undefined, raw: string,
 /** Both interactive and scheduled dispatch can pass their existing owner-turn
  * lease here. Only the scoped request builder selects inputs and capabilities. */
 export async function runClaimedAssignmentProvider({
-  lease, rpc, signal, request, buildRequest, accounting, readTools,
+  lease, rpc, signal, request, buildRequest, accounting, readTools, supersedeOperation,
 }: {
   lease: AssignmentLease;
   rpc: Rpc;
@@ -128,6 +130,7 @@ export async function runClaimedAssignmentProvider({
   buildRequest: (context: ProviderContext, steering: z.infer<typeof steeringPage>) => Promise<ProviderRequest>;
   accounting: AssignmentAccounting;
   readTools?: readonly AssignmentReadTool[];
+  supersedeOperation?: string;
 }): Promise<{ jobId: string; ownerMessageId: string; sequence: number; result: SavedProviderResponse } | null> {
   signal.throwIfAborted();
   const scope = {
@@ -202,7 +205,7 @@ export async function runClaimedAssignmentProvider({
     complete: async (sequence, operation) => {
       await transition(sequence, operation, "complete", null, `provider:${operation}`);
     },
-  }, signal, request);
+  }, signal, request, supersedeOperation);
   const resumingRead = entry.phase === "read_pending" || (entry.phase === "ready" && entry.lastReceipt?.startsWith("read:"));
   if (resumingRead && !readTools) throw new Error("luna_provider_requires_recovered_tool_boundary");
   let result = resumingRead ? savedResponse.parse(await load(entry.sequence)) : await provider();
@@ -246,6 +249,7 @@ export async function advanceAssignmentProvider(
   port: AssignmentProviderPort,
   signal: AbortSignal,
   request?: typeof fetch,
+  supersedeOperation?: string,
 ): Promise<SavedProviderResponse> {
   if (checkpoint.phase !== "ready" && checkpoint.phase !== "provider_pending") {
     throw new Error("luna_provider_requires_recovered_tool_boundary");
@@ -253,7 +257,8 @@ export async function advanceAssignmentProvider(
   signal.throwIfAborted();
   const stored = await port.load(checkpoint.sequence);
   const saved = stored == null ? null : savedResponse.parse(stored);
-  if (saved && checkpoint.phase === "ready" && checkpoint.lastReceipt === `provider:${saved.operation}`) {
+  if (saved && checkpoint.phase === "ready" && saved.operation !== supersedeOperation &&
+      checkpoint.lastReceipt === `provider:${saved.operation}`) {
     return saved;
   }
   if (checkpoint.phase === "provider_pending" && !checkpoint.operation) {
