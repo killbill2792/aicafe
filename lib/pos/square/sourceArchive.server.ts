@@ -1,8 +1,21 @@
 import "server-only";
 import type {SupabaseClient} from "@supabase/supabase-js";
+import {z} from "zod";
 import {synchronizeSource,type SourceIdentifier} from "@/lib/externalData/archive.server";
 import {SquareRequestError,type SquarePageReader} from "./client";
 import type {CatalogSourceBinding} from "../types";
+
+const orderScope = z.object({
+  location_ids: z.tuple([z.string()]),
+  query: z.object({filter: z.object({date_time_filter: z.object({
+    closed_at: z.object({start_at: z.string(), end_at: z.string()}),
+  })})}),
+}).transform(({location_ids: [location], query}) => ({
+  location, from: query.filter.date_time_filter.closed_at.start_at, until: query.filter.date_time_filter.closed_at.end_at,
+}));
+
+const paymentScope = z.object({location_id: z.string(), begin_time: z.string(), end_time: z.string()})
+  .transform(({location_id: location, begin_time: from, end_time: until}) => ({location, from, until}));
 
 /** Remote IDs belong to the merchant, even when the API filters by location.
  * Keep independent location cursors while sharing one record per merchant ID. */
@@ -18,12 +31,21 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
     return data.token_expires_at??data.merchant_id;
   }
   const openCollection=(resource: string, permission: string): SquarePageReader => async (query, fetchPage) => {
-    const recordsFrom = (rows: readonly unknown[]) => rows.map(row => {
+    const recordsFrom = (rows: readonly unknown[], window: {from: number; until: number} | null) => rows.map(row => {
       if (!row || typeof row !== "object" || !("id" in row) || typeof row.id !== "string" || !row.id) {
         throw new Error("Missing Square object ID");
       }
       if ("location_id" in row && row.location_id != null && row.location_id !== location) {
         throw new Error("Square returned an object outside the requested location");
+      }
+      if (window) {
+        const data = row as Record<string, unknown>;
+        const timestamp = resource === "orders" ? data.closed_at : data.created_at;
+        const time = typeof timestamp === "string" ? Date.parse(timestamp) : NaN;
+        if (data.location_id !== location || !Number.isFinite(time) || time < window.from || time > window.until ||
+          (resource === "orders" && data.state != null && data.state !== "COMPLETED")) {
+          throw new Error("Square returned a financial object outside the requested scope");
+        }
       }
       const identifiers: SourceIdentifier[]=[];
       if (resource === "payments" && "order_id" in row && typeof row.order_id === "string" && row.order_id) {
@@ -63,8 +85,15 @@ export function squareArchive(db: SupabaseClient, businessId: string, merchant: 
         if(scope.location!==location||!savedQuery||typeof savedQuery!=="object"||Array.isArray(savedQuery)){
           throw new Error("Invalid Square observation scope");
         }
-        const page=await fetchPage(savedQuery as Record<string,unknown>,cursor);
-        return {records:recordsFrom(page.items),next:page.next};
+        const query=savedQuery as Record<string,unknown>;
+        const window = resource === "orders" ? orderScope.parse(query) : resource === "payments" ? paymentScope.parse(query) : null;
+        const from = Date.parse(window?.from ?? "");
+        const until = Date.parse(window?.until ?? "");
+        if (window && (window.location !== location || !Number.isFinite(from) || !Number.isFinite(until) || from >= until)) {
+          throw new Error("Invalid Square financial window");
+        }
+        const page=await fetchPage(query,cursor);
+        return {records:recordsFrom(page.items,window ? {from, until} : null),next:page.next};
       },
       failure:error=>({status:error instanceof SquareRequestError
           ? error.status === 401 || error.status === 403 ? "permission_required" : "unavailable"

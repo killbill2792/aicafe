@@ -1,16 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { synchronizeSource } from "@/lib/externalData/archive.server";
 import { createSquareAdapter, normalizeSquareProcessingFeeCents } from "./adapter";
 import { squarePaginated, squareRequest } from "./client";
+import { squareArchive } from "./sourceArchive.server";
 
 vi.mock("./client", () => ({ squarePaginated: vi.fn(), squareRequest: vi.fn() }));
+vi.mock("@/lib/externalData/archive.server", () => ({ synchronizeSource: vi.fn() }));
 
 const order = { id: "order-1", closed_at: "2026-10-02T12:00:00Z", total_money: { amount: 1_500 }, line_items: [] };
 const range = { since: new Date("2026-10-02T00:00:00Z"), until: new Date("2026-10-03T00:00:00Z") };
 
 beforeEach(() => {vi.mocked(squarePaginated).mockReset();vi.mocked(squareRequest).mockReset();});
 
-async function fetchWithPayments(payments: unknown[]) {
-  vi.mocked(squarePaginated).mockResolvedValueOnce([order]).mockResolvedValueOnce(payments);
+async function fetchWithPayments(payments: unknown[], tenders?: { payment_id?: string }[]) {
+  vi.mocked(squarePaginated).mockResolvedValueOnce([{ ...order, tenders }]).mockResolvedValueOnce(payments);
   return (await createSquareAdapter({ accessToken: "secret", locationId: "location" }).fetchOrders(range))[0];
 }
 
@@ -59,6 +63,8 @@ describe("Square processing fees", () => {
     const payment = { order_id: "order-1", status: "COMPLETED", source_type: "CARD" };
     expect(await fetchWithPayments([{ ...payment, processing_fee: [{}] }]))
       .toMatchObject({ processingFeeStatus: "missing" });
+    expect(await fetchWithPayments([{ ...payment, processing_fee: [] }]))
+      .toMatchObject({ processingFeeStatus: "missing" });
     expect(await fetchWithPayments([{ ...payment, processing_fee: [{ amount_money: { amount: 0 } }] }]))
       .toMatchObject({ processingFeeCents: 0, processingFeeStatus: "actual" });
   });
@@ -79,6 +85,18 @@ describe("Square processing fees", () => {
     ])).toMatchObject({ processingFeeCents: 44, processingFeeStatus: "actual" });
   });
 
+  it("waits for every declared tender in an eventually consistent payment list", async () => {
+    const card = { id: "card", order_id: order.id, status: "COMPLETED", source_type: "CARD",
+      processing_fee: [{ amount_money: { amount: -44 } }] };
+    const cash = { id: "cash", order_id: order.id, status: "COMPLETED", source_type: "CASH" };
+    const tenders = [{ payment_id: card.id }, { payment_id: cash.id }];
+    expect(await fetchWithPayments([card], tenders)).toMatchObject({ processingFeeStatus: "missing" });
+    expect(await fetchWithPayments([card, { ...cash, id: "other-cash" }], tenders))
+      .toMatchObject({ processingFeeStatus: "missing" });
+    expect(await fetchWithPayments([cash, card], tenders))
+      .toMatchObject({ processingFeeCents: 44, processingFeeStatus: "actual" });
+  });
+
   it("allows a later resync to move a card fee from missing to actual", async () => {
     vi.mocked(squarePaginated)
       .mockResolvedValueOnce([order])
@@ -91,6 +109,45 @@ describe("Square processing fees", () => {
     const adapter = createSquareAdapter({ accessToken: "secret", locationId: "location" });
     expect((await adapter.fetchOrders(range))[0]).toMatchObject({ processingFeeCents: 0, processingFeeStatus: "missing" });
     expect((await adapter.fetchOrders(range))[0]).toMatchObject({ processingFeeCents: 44, processingFeeStatus: "actual" });
+  });
+});
+
+describe("Square financial archive scope", () => {
+  const archive = squareArchive({} as SupabaseClient, "business", "merchant", "location");
+  const from = range.since.toISOString();
+  const until = range.until.toISOString();
+  const at = "2026-10-02T10:00:00Z";
+  const paymentQuery = { location_id: "location", begin_time: from, end_time: until };
+  const orderQuery = { location_ids: ["location"], query: { filter: { date_time_filter: { closed_at: { start_at: from, end_at: until } } } } };
+
+  beforeEach(() => {
+    vi.mocked(synchronizeSource).mockImplementation(async (_db, _source, plan) => {
+      const page = await plan.observe(null, plan.scope);
+      return page.records.map(record => record.payload);
+    });
+  });
+
+  it("requires proof of location and creation time for each payment", async () => {
+    const read = archive("payments", "PAYMENTS_READ");
+    const payment = { id: "payment", location_id: "location", created_at: at, order_id: "order-1", unknown_field: null };
+    const collect = (item: object) => read(paymentQuery, async () => ({ items: [item], next: null }));
+    await expect(collect(payment)).resolves.toEqual([payment]);
+    await expect(collect({ ...payment, location_id: undefined })).rejects.toThrow(/scope/);
+    await expect(collect({ ...payment, created_at: "2026-10-01T10:00:00Z" })).rejects.toThrow(/scope/);
+    await expect(collect({ ...payment, location_id: "foreign" })).rejects.toThrow(/location/);
+  });
+
+  it("checks closing time for orders and fails an invalid request before reading", async () => {
+    const read = archive("orders", "ORDERS_READ");
+    const sourceOrder = { ...order, location_id: "location", state: "COMPLETED", created_at: "2026-10-01T10:00:00Z" };
+    const fetchPage = vi.fn(async () => ({ items: [sourceOrder], next: null }));
+    await expect(read({ ...orderQuery, location_ids: ["other"] }, fetchPage)).rejects.toThrow(/financial window/);
+    expect(fetchPage).not.toHaveBeenCalled();
+    await expect(read(orderQuery, fetchPage)).resolves.toEqual([sourceOrder]);
+    await expect(read(orderQuery, async () => ({ items: [{ ...sourceOrder, closed_at: undefined }], next: null })))
+      .rejects.toThrow(/scope/);
+    await expect(read(orderQuery, async () => ({ items: [{ ...sourceOrder, state: "OPEN" }], next: null })))
+      .rejects.toThrow(/scope/);
   });
 });
 

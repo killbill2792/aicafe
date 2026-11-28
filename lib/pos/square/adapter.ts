@@ -27,9 +27,10 @@ type SquareOrder = {
   refunds?: { amount_money?: SquareMoney }[];
   employee_id?:string;ticket_name?:string;
   fulfillments?:Array<{type?:string;state?:string}>;
-  tenders?:Array<{employee_id?:string}>;
+  tenders?:Array<{employee_id?:string;payment_id?:string}>;
 };
 type SquarePayment = {
+  id?: string;
   order_id?: string;
   status?: string;
   source_type?: string;
@@ -55,7 +56,7 @@ function classifySquarePaymentFee(payment: SquarePayment): { applicable: boolean
     return { applicable: true, complete: true, amountCents: 0 };
   }
 
-  if (Array.isArray(payment.processing_fee)) {
+  if (Array.isArray(payment.processing_fee) && payment.processing_fee.length > 0) {
     const amounts = payment.processing_fee.map(entry => entry?.amount_money?.amount);
     if (!amounts.every((amount): amount is number => typeof amount === "number" && Number.isSafeInteger(amount))) {
       return { applicable: true, complete: false, amountCents: 0 };
@@ -111,17 +112,17 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         { location_id: locationId, begin_time: since.toISOString(), end_time: until.toISOString() },
         "payments", params.archive?.("payments","PAYMENTS_READ"), "GET",
       );
-      const feeByOrder = new Map<string, { amountCents: number; complete: boolean; applicableCount: number }>();
+      const feeByOrder = new Map<string, { amountCents: number; complete: boolean; applicableCount: number; paymentIds: Set<string> }>();
       for (const payment of payments) {
         if (!payment.order_id) continue;
         const classified = classifySquarePaymentFee(payment);
         if (!classified.applicable) continue;
-        const prior = feeByOrder.get(payment.order_id) ?? { amountCents: 0, complete: true, applicableCount: 0 };
-        feeByOrder.set(payment.order_id, {
-          amountCents: prior.amountCents + classified.amountCents,
-          complete: prior.complete && classified.complete,
-          applicableCount: prior.applicableCount + 1,
-        });
+        const total = feeByOrder.get(payment.order_id) ?? { amountCents: 0, complete: true, applicableCount: 0, paymentIds: new Set<string>() };
+        total.amountCents += classified.amountCents;
+        total.complete &&= classified.complete;
+        total.applicableCount += 1;
+        if (payment.id) total.paymentIds.add(payment.id);
+        feeByOrder.set(payment.order_id, total);
       }
 
       const result: PosOrder[] = orders.map((order) => {
@@ -131,7 +132,17 @@ export function createSquareAdapter(params: { accessToken: string; locationId: s
         const net = order.net_amounts?.total_money ? cents(order.net_amounts.total_money) : gross - discounts - refunds;
 
         const processingFee = feeByOrder.get(order.id);
-        const processingFeeComplete = Boolean(processingFee && processingFee.applicableCount > 0 && processingFee.complete);
+        // ListPayments is eventually consistent and filters on payment creation time,
+        // whereas SearchOrders uses closing time. Match each known tender before
+        // certifying an order that declares its payment identities.
+        const tenderPaymentIds = order.tenders?.flatMap(tender => tender.payment_id ? [tender.payment_id] : []) ?? [];
+        const processingFeeComplete = Boolean(processingFee && processingFee.applicableCount > 0 && processingFee.complete && (
+          tenderPaymentIds.length === 0 || (
+            new Set(tenderPaymentIds).size === order.tenders?.length &&
+            tenderPaymentIds.length === processingFee.applicableCount &&
+            tenderPaymentIds.every(id => processingFee.paymentIds.has(id))
+          )
+        ));
         return {
           posOrderId: order.id,
           posLocationId: order.location_id ?? locationId,
