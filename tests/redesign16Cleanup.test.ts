@@ -284,7 +284,7 @@ describe("redesign 16 cleanup integration", () => {
     const toastWebhookEnglishOnly=new Set(["webhookEnabled","webhookActivate","webhookDeactivate","webhookFallback"].map(key=>"ToastConnect."+key));
     const english=localeMessages("en"),spanish=localeMessages("es"),
       arabic=localeMessages("ar");
-    const workforceKeys = ["title", "back", "name", "jobTitle", "edit", "defaults", "save", "saving", "saved", "invalid", "failed"];
+    const workforceKeys = ["title", "back", "name", "jobTitle", "edit", "defaults", "save", "saving", "saved", "invalid", "failed", "openConversation", "openHistory"];
     const workforceEnglishOnly = new Set(workforceKeys.map((key) => "Workforce." + key));
     expect(Object.keys(english.Workforce ?? {}).sort()).toEqual([...workforceKeys].sort());
     for (const key of workforceKeys) expect(english.Workforce[key].trim()).not.toBe("");
