@@ -19,7 +19,7 @@ const env=process.env,{appUrl,dbUrl}=assertLocalLiveEnvironment(env);
 verifyCheckoutHead(env.HEAD_SHA);
 if(env.AICAFE_PUBLIC_WEB_ACCEPTANCE!=="OWNER_AUTHORIZED_ONCE")fail("one_bounded_owner_grant_required");
 const [{default:pg},{chromium}]=await Promise.all([import("pg"),import("@playwright/test")]);
-const db=new pg.Client({connectionString:dbUrl}),browser=await chromium.launch({headless:true});
+const db=new pg.Client({connectionString:dbUrl}),browser=await chromium.launch({headless:true,executablePath:env.AICAFE_ACCEPTANCE_CHROMIUM});
 const cafe=TEST_CAFES[0],other=TEST_CAFES[1];
 try{
   await db.connect();

@@ -271,7 +271,7 @@ it.runIf(!!database)("reserves and settles Responses usage across direct, recove
         }),
       })).rejects.toThrow("simulated loss after metadata save");
       const metadataPayload = JSON.parse(String(metadataTransport.mock.calls[0][1]?.body));
-      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database"]);
+      expect(metadataPayload.tools.map((tool: { name: string }) => tool.name)).toEqual(["calculate", "describe_database", "search_web"]);
       const checkpoint = await admin.query(`select state from public.supervisor_research_continuations where run_id=$1`, [discovery.runId]);
       const [savedMetadata] = checkpoint.rows[0].state.toolReceipts;
       expect(savedMetadata.callId).toBe(metadataCall.call_id);
