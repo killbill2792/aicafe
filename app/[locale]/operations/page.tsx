@@ -141,6 +141,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <TeamInbox members={members} cards={cards} copy={copy}
       staffRulesLink={<div className="flex flex-wrap gap-2">
+        {ownerCanSubscribe && <Link href="/operations/team" className="flex min-h-12 items-center rounded-xl border border-line px-4 font-bold text-ink no-underline">{enMessages.Workforce.title}</Link>}
         <Link href="/operations/experiments" className="flex min-h-12 items-center self-start rounded-xl border border-ink bg-card px-4 font-bold text-ink no-underline">{t("experimentsLink")} →</Link>
         <Link href="/staff/rules" className="flex min-h-12 items-center self-start rounded-xl border border-line px-4 text-accent-text underline">{tStaffRules("rulesCard")}</Link>
       </div>}

@@ -1,3 +1,4 @@
+import { ProviderAvailabilityError, streamResponses } from "@/lib/luna/shared/responses.server";
 import { ZodError } from "zod";
 import {presentationSourceNames} from "@/lib/ai/conversations/presentation";
 import {reserveTask14bPaidRequest} from "./task14bPaidBudget.server";
@@ -22,12 +23,6 @@ import {ownerRunStatement,type OwnerRunCheckpoint,type MatchedOwnerAnswer} from 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = ProviderFunctionCall;
 type Event = { type: string; [key: string]: unknown };
-/** A provider-availability failure may use the explicitly configured fallback
- * only before the model has produced usable output or executed any tools.
- * Reject auth, bad parameters, content-filter and durable-fence errors. */
-class ProviderAvailabilityError extends Error {
-  constructor(readonly reason:string){super("provider_error");}
-}
 const providerAvailabilityCodes=new Set([
   "server_error","rate_limit_exceeded","model_unavailable","model_not_found",
   "temporarily_unavailable","overloaded","engine_overloaded",
@@ -133,40 +128,7 @@ export async function* openAIProvider(params: Record<string, unknown>, signal: A
   // Reserve the worst-case billable call BEFORE transport, even on retry.
   if(process.env.AICAFE_TASK14B_BUDGET_LEDGER)
     await reserveTask14bPaidRequest(params,serialized);
-  let response:Response;
-  try{
-    response=await fetch("https://api.openai.com/v1/responses", {
-      method:"POST",signal,headers:{Authorization:"Bearer "+(process.env.OPENAI_API_KEY??""),
-        "Content-Type":"application/json"},body:serialized,
-    });
-  }catch(error){
-    console.error("supervisor_provider_transport_failure",{model:String(params.model??"unknown"),
-      kind:error instanceof Error?error.name:"unknown"});
-    throw error;
-  }
-  if (!response.ok || !response.body) {
-    console.error("supervisor_provider_error",{model:String(params.model??"unknown"),status:response.status});
-    if(response.status===404||response.status===429||response.status>=500)
-      throw new ProviderAvailabilityError("http_"+response.status);
-    throw new Error("provider_error");
-  }
-  const reader = response.body.getReader(), decoder = new TextDecoder();
-  let buffer = "";
-  try {
-    while (true) {
-      const chunk = await reader.read();
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      let boundary: RegExpExecArray | null;
-      while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
-        const frame = buffer.slice(0, boundary.index);
-        buffer = buffer.slice(boundary.index + boundary[0].length);
-        const line = frame.split(/\r?\n/).find(part => part.startsWith("data: "));
-        if (!line || line === "data: [DONE]") continue;
-        try { yield JSON.parse(line.slice(6)) as Event; } catch { /* malformed event does not discard turn */ }
-      }
-    }
-  } finally { reader.releaseLock(); }
+  yield* streamResponses(params.model, serialized, signal);
 }
 
 export async function runAgentTurn(args: {

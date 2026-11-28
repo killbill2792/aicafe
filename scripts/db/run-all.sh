@@ -193,6 +193,10 @@ supabase_lane() {
     check supabase "Luna run/effect identities and cross-engine execution when present" env \
       SUPERVISOR_RUN_DB_URL="$supabase_url" node scripts/db/luna-engine-race.mjs
   fi
+  check supabase "Luna assignment admission, engine ownership and lease recovery" env \
+    SUPERVISOR_RUN_DB_URL="$supabase_url" node scripts/db/luna-integration/assignment-claims.mjs
+  check supabase "Luna provider checkpoint: direct and due entry, recovery and café isolation" env \
+    SUPERVISOR_RUN_DB_URL="$supabase_url" npx vitest run lib/luna/runtime/assignment-provider.db.test.ts --reporter=verbose
   check supabase "U1 historical replay evaluator fail-closed checks" node --test scripts/acceptance/u1-incident-replay.test.mjs
   check supabase "U1 three historical refs matched recorded incident replay" node scripts/acceptance/u1-incident-replay.mjs
   check supabase "Supervisor direct SQL research: discovery, read-only SQL, café isolation, calculator, chat turn" env \
