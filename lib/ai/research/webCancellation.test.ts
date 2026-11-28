@@ -43,6 +43,16 @@ describe("research web cancellation",()=>{
     expect(fetcher).not.toHaveBeenCalled();
     expect(reserveTransport).not.toHaveBeenCalled();
   });
+  it("does not create either transport reservation when the model-call budget denies a lookup",async()=>{
+    const fetch=vi.fn<typeof globalThis.fetch>(), scheduled=vi.fn(), durable=vi.fn();
+    const search=createWebSearch({fetch,apiKey:"test",reserveTransport:scheduled});
+    await expect(search("Compare museum admission policies.",{
+      reserveModelCall:()=>false,recordUsage:vi.fn(),reserveTransport:durable,
+    })).resolves.toEqual({available:false,reason:"budget"});
+    expect(scheduled).not.toHaveBeenCalled();
+    expect(durable).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("does not issue a second POST when the provider did not return a response ID",async()=>{
     let saved:PublicWebCheckpoint|undefined;
     const search=createWebSearch({fetch:vi.fn(async()=>{throw new DOMException("Timeout","TimeoutError");}),apiKey:"test"});

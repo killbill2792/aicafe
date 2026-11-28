@@ -148,11 +148,11 @@ export function createWebSearch(deps: Dependencies) {
       let reservation: Reservation | null | undefined;
       let finish: Awaited<ReturnType<NonNullable<Dependencies["reserveTransport"]>>> | undefined;
       if (!state) {
+        signal?.throwIfAborted();
+        if (budget && !budget.reserveModelCall()) return { available: false, reason: "budget" };
         budget?.onRequest?.(request);
         finish = await deps.reserveTransport?.(request);
         reservation = await budget?.reserveTransport?.(request);
-        signal?.throwIfAborted();
-        if (budget && !budget.reserveModelCall()) return { available: false, reason: "budget" };
         // An interrupted or ambiguous POST cannot safely be repeated.
         if (revision !== undefined) await save({ revision, attemptId: reservation?.attemptId });
         reservation?.launched();
